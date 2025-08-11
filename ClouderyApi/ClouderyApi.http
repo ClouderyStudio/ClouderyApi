@@ -1,0 +1,6 @@
+@ClouderyApi_HostAddress = http://localhost:5171
+
+GET {{ClouderyApi_HostAddress}}
+Accept: application/json
+
+###
