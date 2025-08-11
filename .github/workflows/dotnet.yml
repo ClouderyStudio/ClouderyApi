@@ -23,5 +23,9 @@ jobs:
       run: dotnet build --no-restore --configuration Release ClouderyApi
     - name: Test
       run: dotnet test --no-build --verbosity normal
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        path: ./ClouderyApi/bin/Release/net9.0/ClouderyApi.dll
     
 
