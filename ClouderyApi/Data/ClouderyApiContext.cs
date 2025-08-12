@@ -15,9 +15,6 @@ namespace ClouderyApi.Data
         {
         }
 
-        public DbSet<ClouderyApi.Models.Whitelist> Whitelists { get; set; } = default!;
-        public DbSet<ClouderyApi.Models.ZhuxsFile> ZhuxsFiles { get; set; } = default!;
-        public DbSet<ClouderyApi.Models.ZhuxsTerm> ZhuxsTerms { get; set; } = default!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<ZhuxsTerm>()
@@ -31,6 +28,16 @@ namespace ClouderyApi.Data
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, new JsonSerializerOptions()),
                     v => JsonSerializer.Deserialize<List<TermFile>>(v, new JsonSerializerOptions()));
+
+            modelBuilder.Entity<ZhuxsApplication>()
+                .Property(e => e.Sharables)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, new JsonSerializerOptions()),
+                    v => JsonSerializer.Deserialize<List<Sharable>>(v, new JsonSerializerOptions()));
         }
+        public DbSet<ClouderyApi.Models.Whitelist> Whitelists { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.ZhuxsFile> ZhuxsFiles { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.ZhuxsTerm> ZhuxsTerms { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.ZhuxsApplication> ZhuxsApplications { get; set; } = default!;
     }
 }
