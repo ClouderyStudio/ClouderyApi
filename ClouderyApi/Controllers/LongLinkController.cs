@@ -21,7 +21,7 @@ namespace ClouderyApi.Controllers
             {
                 result.Append(Convert.ToString(b, 2).PadLeft(8, '0'));
             }
-            return "https://api.cldery.com/misc/longlink/jump/" + result.ToString().Replace("0","y").Replace("1","s");
+            return "https://loooooooong.a.8.9.a.f.f.0.7.0.0.6.2.ip6.arpa/" + result.ToString().Replace("0","y").Replace("1","s");
         }
 
         // GET: misc/longlink/jump
