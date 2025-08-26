@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace ClouderyApi.Models
+namespace ClouderyApi.Models.Zhuxs
 {
     [Keyless]
     public class TermInfo
@@ -20,7 +20,7 @@ namespace ClouderyApi.Models
         public required float Size { get; set; }
         public required string Unit { get; set; }
     }
-    public class ZhuxsTerm
+    public class Term
     {
         public required string Id { get; set; }
         public required string RecordDate { get; set; }

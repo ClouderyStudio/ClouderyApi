@@ -3,13 +3,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.Drawing;
 using System.Text;
 
-namespace ClouderyApi.Controllers
+namespace ClouderyApi.Controllers.Misc
 {
     [Route("misc/[controller]")]
     [ApiController]
     public class LongLinkController : ControllerBase
     {
-        // GET: misc/longlink/gen
         [HttpGet]
         [Route("gen/{originLink}")]
         public string GetGeneratedLongLink(string originLink)
@@ -24,7 +23,6 @@ namespace ClouderyApi.Controllers
             return "https://loooooooong.a.8.9.a.f.f.0.7.0.0.6.2.ip6.arpa/" + result.ToString().Replace("0","y").Replace("1","s");
         }
 
-        // GET: misc/longlink/jump
         [HttpGet]
         [Route("jump/{decodedOriginLink}")]
         public IActionResult RedirectToOriginLink(string decodedOriginLink)

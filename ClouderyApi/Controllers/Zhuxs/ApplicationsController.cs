@@ -6,31 +6,29 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ClouderyApi.Data;
-using ClouderyApi.Models;
+using ClouderyApi.Models.Zhuxs;
 
-namespace ClouderyApi.Controllers
+namespace ClouderyApi.Controllers.Zhuxs
 {
     [Route("zhuxs/[controller]")]
     [ApiController]
-    public class ZhuxsApplicationsController : ControllerBase
+    public class ApplicationsController : ControllerBase
     {
         private readonly ClouderyApiContext _context;
 
-        public ZhuxsApplicationsController(ClouderyApiContext context)
+        public ApplicationsController(ClouderyApiContext context)
         {
             _context = context;
         }
 
-        // GET: api/ZhuxsApplications
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ZhuxsApplication>>> GetZhuxsApplication()
+        public async Task<ActionResult<IEnumerable<Application>>> GetZhuxsApplication()
         {
             return await _context.ZhuxsApplications.ToListAsync();
         }
 
-        // GET: api/ZhuxsApplications/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<ZhuxsApplication>> GetZhuxsApplication(string id)
+        public async Task<ActionResult<Application>> GetZhuxsApplication(string id)
         {
             var zhuxsApplication = await _context.ZhuxsApplications.FindAsync(id);
 
@@ -42,10 +40,8 @@ namespace ClouderyApi.Controllers
             return zhuxsApplication;
         }
 
-        // PUT: api/ZhuxsApplications/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutZhuxsApplication(string id, ZhuxsApplication zhuxsApplication)
+        public async Task<IActionResult> PutZhuxsApplication(string id, Application zhuxsApplication)
         {
             if (id != zhuxsApplication.Id)
             {
@@ -73,10 +69,8 @@ namespace ClouderyApi.Controllers
             return NoContent();
         }
 
-        // POST: api/ZhuxsApplications
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<ZhuxsApplication>> PostZhuxsApplication(ZhuxsApplication zhuxsApplication)
+        public async Task<ActionResult<Application>> PostZhuxsApplication(Application zhuxsApplication)
         {
             _context.ZhuxsApplications.Add(zhuxsApplication);
             try
@@ -98,7 +92,6 @@ namespace ClouderyApi.Controllers
             return CreatedAtAction("GetZhuxsApplication", new { id = zhuxsApplication.Id }, zhuxsApplication);
         }
 
-        // DELETE: api/ZhuxsApplications/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteZhuxsApplication(string id)
         {

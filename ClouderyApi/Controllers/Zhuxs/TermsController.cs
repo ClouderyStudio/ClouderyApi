@@ -6,31 +6,29 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ClouderyApi.Data;
-using ClouderyApi.Models;
+using ClouderyApi.Models.Zhuxs;
 
-namespace ClouderyApi.Controllers
+namespace ClouderyApi.Controllers.Zhuxs
 {
     [Route("zhuxs/[controller]")]
     [ApiController]
-    public class ZhuxsTermsController : ControllerBase
+    public class TermsController : ControllerBase
     {
         private readonly ClouderyApiContext _context;
 
-        public ZhuxsTermsController(ClouderyApiContext context)
+        public TermsController(ClouderyApiContext context)
         {
             _context = context;
         }
 
-        // GET: api/ZhuxsTerms
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ZhuxsTerm>>> GetZhuxsTerm()
+        public async Task<ActionResult<IEnumerable<Term>>> GetZhuxsTerm()
         {
             return await _context.ZhuxsTerms.ToListAsync();
         }
 
-        // GET: api/ZhuxsTerms/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<ZhuxsTerm>> GetZhuxsTerm(string id)
+        public async Task<ActionResult<Term>> GetZhuxsTerm(string id)
         {
             var zhuxsTerm = await _context.ZhuxsTerms.FindAsync(id);
 
@@ -42,10 +40,8 @@ namespace ClouderyApi.Controllers
             return zhuxsTerm;
         }
 
-        // PUT: api/ZhuxsTerms/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutZhuxsTerm(string id, ZhuxsTerm zhuxsTerm)
+        public async Task<IActionResult> PutZhuxsTerm(string id, Term zhuxsTerm)
         {
             if (id != zhuxsTerm.Id)
             {
@@ -73,10 +69,8 @@ namespace ClouderyApi.Controllers
             return NoContent();
         }
 
-        // POST: api/ZhuxsTerms
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<ZhuxsTerm>> PostZhuxsTerm(ZhuxsTerm zhuxsTerm)
+        public async Task<ActionResult<Term>> PostZhuxsTerm(Term zhuxsTerm)
         {
             _context.ZhuxsTerms.Add(zhuxsTerm);
             try
@@ -98,7 +92,6 @@ namespace ClouderyApi.Controllers
             return CreatedAtAction("GetZhuxsTerm", new { id = zhuxsTerm.Id }, zhuxsTerm);
         }
 
-        // DELETE: api/ZhuxsTerms/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteZhuxsTerm(string id)
         {

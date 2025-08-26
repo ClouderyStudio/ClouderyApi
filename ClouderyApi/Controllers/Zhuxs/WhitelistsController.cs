@@ -6,9 +6,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ClouderyApi.Data;
-using ClouderyApi.Models;
+using ClouderyApi.Models.Zhuxs;
 
-namespace ClouderyApi.Controllers
+namespace ClouderyApi.Controllers.Zhuxs
 {
     [Route("zhuxs/[controller]")]
     [ApiController]
@@ -21,18 +21,16 @@ namespace ClouderyApi.Controllers
             _context = context;
         }
 
-        // GET: api/Whitelists
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Whitelist>>> GetWhitelist()
         {
-            return await _context.Whitelists.ToListAsync();
+            return await _context.ZhuxsWhitelists.ToListAsync();
         }
 
-        // GET: api/Whitelists/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Whitelist>> GetWhitelist(string id)
         {
-            var whitelist = await _context.Whitelists.FindAsync(id);
+            var whitelist = await _context.ZhuxsWhitelists.FindAsync(id);
 
             if (whitelist == null)
             {
@@ -42,11 +40,10 @@ namespace ClouderyApi.Controllers
             return whitelist;
         }
 
-        // POST: api/Whitelists
         [HttpPost]
         public async Task<ActionResult<Whitelist>> PostWhitelist(Whitelist whitelist)
         {
-            _context.Whitelists.Add(whitelist);
+            _context.ZhuxsWhitelists.Add(whitelist);
             try
             {
                 await _context.SaveChangesAsync();
@@ -66,17 +63,16 @@ namespace ClouderyApi.Controllers
             return CreatedAtAction("GetWhitelist", new { id = whitelist.Id }, whitelist);
         }
 
-        // DELETE: api/Whitelists/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteWhitelist(string id)
         {
-            var whitelist = await _context.Whitelists.FindAsync(id);
+            var whitelist = await _context.ZhuxsWhitelists.FindAsync(id);
             if (whitelist == null)
             {
                 return NotFound();
             }
 
-            _context.Whitelists.Remove(whitelist);
+            _context.ZhuxsWhitelists.Remove(whitelist);
             await _context.SaveChangesAsync();
 
             return NoContent();
@@ -84,7 +80,7 @@ namespace ClouderyApi.Controllers
 
         private bool WhitelistExists(string id)
         {
-            return _context.Whitelists.Any(e => e.Id == id);
+            return _context.ZhuxsWhitelists.Any(e => e.Id == id);
         }
     }
 }

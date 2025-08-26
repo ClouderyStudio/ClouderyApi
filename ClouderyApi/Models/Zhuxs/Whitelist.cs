@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models
+namespace ClouderyApi.Models.Zhuxs
 {
     public class Whitelist
     {

@@ -1,13 +1,13 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
 
-namespace ClouderyApi.Models
+namespace ClouderyApi.Models.Zhuxs
 {
     public class Sharable
     {
         public required string Question { get; set; }
         public required string Answer { get; set; }
     }
-    public class ZhuxsApplication
+    public class Application
     {
         public required string Id { get; set; }
         public required bool Passed { get; set; }

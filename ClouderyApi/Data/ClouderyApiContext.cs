@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Models;
+﻿using ClouderyApi.Models.Zhuxs;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -17,27 +17,26 @@ namespace ClouderyApi.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<ZhuxsTerm>()
+            modelBuilder.Entity<Term>()
                 .Property(e => e.Information)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, new JsonSerializerOptions()),
                     v => JsonSerializer.Deserialize<TermInfo>(v, new JsonSerializerOptions()));
 
-            modelBuilder.Entity<ZhuxsTerm>()
+            modelBuilder.Entity<Term>()
                 .Property(e => e.Files)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, new JsonSerializerOptions()),
                     v => JsonSerializer.Deserialize<List<TermFile>>(v, new JsonSerializerOptions()));
 
-            modelBuilder.Entity<ZhuxsApplication>()
+            modelBuilder.Entity<Application>()
                 .Property(e => e.Sharables)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, new JsonSerializerOptions()),
                     v => JsonSerializer.Deserialize<List<Sharable>>(v, new JsonSerializerOptions()));
         }
-        public DbSet<ClouderyApi.Models.Whitelist> Whitelists { get; set; } = default!;
-        public DbSet<ClouderyApi.Models.ZhuxsFile> ZhuxsFiles { get; set; } = default!;
-        public DbSet<ClouderyApi.Models.ZhuxsTerm> ZhuxsTerms { get; set; } = default!;
-        public DbSet<ClouderyApi.Models.ZhuxsApplication> ZhuxsApplications { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.Zhuxs.Whitelist> ZhuxsWhitelists { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.Zhuxs.Term> ZhuxsTerms { get; set; } = default!;
+        public DbSet<ClouderyApi.Models.Zhuxs.Application> ZhuxsApplications { get; set; } = default!;
     }
 }
