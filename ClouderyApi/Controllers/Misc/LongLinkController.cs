@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using System.Drawing;
+using System.Text.RegularExpressions;
 using System.Text;
 
 namespace ClouderyApi.Controllers.Misc
@@ -27,8 +26,8 @@ namespace ClouderyApi.Controllers.Misc
         [Route("jump/{decodedOriginLink}")]
         public IActionResult RedirectToOriginLink(string decodedOriginLink)
         {
-            System.Text.RegularExpressions.CaptureCollection cs =
-                System.Text.RegularExpressions.Regex.Match(decodedOriginLink.Replace("y", "0").Replace("s", "1"), @"([01]{8})+").Groups[1].Captures;
+            CaptureCollection cs =
+                Regex.Match(decodedOriginLink.Replace("y", "0").Replace("s", "1"), @"([01]{8})+").Groups[1].Captures;
             byte[] data = new byte[cs.Count];
             for (int i = 0; i < cs.Count; i++)
             {

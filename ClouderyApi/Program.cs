@@ -1,5 +1,4 @@
 using ClouderyApi.Data;
-using ClouderyApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -54,9 +53,11 @@ app.MapControllers();
 
 app.UseSwagger();
 
+#if DEBUG
 app.UseSwaggerUI(u =>
 {
     u.SwaggerEndpoint("/swagger/v1/swagger.json", "WebAPI_v1");
 });
+#endif
 
 app.Run();
