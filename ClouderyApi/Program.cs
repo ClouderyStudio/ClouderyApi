@@ -1,5 +1,6 @@
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,18 +18,19 @@ builder.Services.AddCors(c =>
     c.AddPolicy("AllowAllOrigins", policy =>
     {
         policy.AllowAnyOrigin()
-        .AllowAnyMethod()
-        .AllowAnyHeader();
+            .AllowAnyMethod()
+            .AllowAnyHeader();
     });
 });
 
-builder.Services.AddSwaggerGen(u => {
-    u.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+builder.Services.AddSwaggerGen(u =>
+{
+    u.SwaggerDoc("v1", new OpenApiInfo
     {
         Version = "Ver:1.0.0",
         Title = "ClouderyApi",
         Description = "ClouderyApi",
-        Contact = new Microsoft.OpenApi.Models.OpenApiContact
+        Contact = new OpenApiContact
         {
             Name = "JustQiyi",
             Email = "justqiyi@qq.com"
@@ -40,10 +42,7 @@ var app = builder.Build();
 
 app.UseCors("AllowAllOrigins");
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 app.UseHttpsRedirection();
 
@@ -54,10 +53,7 @@ app.MapControllers();
 app.UseSwagger();
 
 #if DEBUG
-app.UseSwaggerUI(u =>
-{
-    u.SwaggerEndpoint("/swagger/v1/swagger.json", "WebAPI_v1");
-});
+app.UseSwaggerUI(u => { u.SwaggerEndpoint("/swagger/v1/swagger.json", "WebAPI_v1"); });
 #endif
 
 app.Run();

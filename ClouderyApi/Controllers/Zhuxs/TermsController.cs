@@ -1,110 +1,83 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using ClouderyApi.Data;
+﻿using ClouderyApi.Data;
 using ClouderyApi.Models.Zhuxs;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.Controllers.Zhuxs
+namespace ClouderyApi.Controllers.Zhuxs;
+
+[Route("zhuxs/[controller]")]
+[ApiController]
+public class TermsController(ClouderyApiContext context) : ControllerBase
 {
-    [Route("zhuxs/[controller]")]
-    [ApiController]
-    public class TermsController : ControllerBase
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Term>>> GetZhuxsTerm()
     {
-        private readonly ClouderyApiContext _context;
+        return await context.ZhuxsTerms.ToListAsync();
+    }
 
-        public TermsController(ClouderyApiContext context)
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Term>> GetZhuxsTerm(string id)
+    {
+        var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);
+
+        if (zhuxsTerm == null) return NotFound();
+
+        return zhuxsTerm;
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutZhuxsTerm(string id, Term zhuxsTerm)
+    {
+        if (id != zhuxsTerm.Id) return BadRequest();
+
+        context.Entry(zhuxsTerm).State = EntityState.Modified;
+
+        try
         {
-            _context = context;
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (!ZhuxsTermExists(id)) return NotFound();
+
+            throw;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Term>>> GetZhuxsTerm()
+        return NoContent();
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<Term>> PostZhuxsTerm(Term zhuxsTerm)
+    {
+        context.ZhuxsTerms.Add(zhuxsTerm);
+        try
         {
-            return await _context.ZhuxsTerms.ToListAsync();
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            if (ZhuxsTermExists(zhuxsTerm.Id)) return Conflict();
+
+            throw;
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Term>> GetZhuxsTerm(string id)
-        {
-            var zhuxsTerm = await _context.ZhuxsTerms.FindAsync(id);
+        return CreatedAtAction("GetZhuxsTerm", new { id = zhuxsTerm.Id }, zhuxsTerm);
+    }
 
-            if (zhuxsTerm == null)
-            {
-                return NotFound();
-            }
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteZhuxsTerm(string id)
+    {
+        var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);
+        if (zhuxsTerm == null) return NotFound();
 
-            return zhuxsTerm;
-        }
+        context.ZhuxsTerms.Remove(zhuxsTerm);
+        await context.SaveChangesAsync();
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutZhuxsTerm(string id, Term zhuxsTerm)
-        {
-            if (id != zhuxsTerm.Id)
-            {
-                return BadRequest();
-            }
+        return NoContent();
+    }
 
-            _context.Entry(zhuxsTerm).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ZhuxsTermExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        [HttpPost]
-        public async Task<ActionResult<Term>> PostZhuxsTerm(Term zhuxsTerm)
-        {
-            _context.ZhuxsTerms.Add(zhuxsTerm);
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                if (ZhuxsTermExists(zhuxsTerm.Id))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return CreatedAtAction("GetZhuxsTerm", new { id = zhuxsTerm.Id }, zhuxsTerm);
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteZhuxsTerm(string id)
-        {
-            var zhuxsTerm = await _context.ZhuxsTerms.FindAsync(id);
-            if (zhuxsTerm == null)
-            {
-                return NotFound();
-            }
-
-            _context.ZhuxsTerms.Remove(zhuxsTerm);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool ZhuxsTermExists(string id)
-        {
-            return _context.ZhuxsTerms.Any(e => e.Id == id);
-        }
+    private bool ZhuxsTermExists(string id)
+    {
+        return context.ZhuxsTerms.Any(e => e.Id == id);
     }
 }

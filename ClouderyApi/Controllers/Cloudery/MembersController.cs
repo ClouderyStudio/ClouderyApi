@@ -1,110 +1,83 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using ClouderyApi.Data;
+﻿using ClouderyApi.Data;
 using ClouderyApi.Models.Cloudery;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.Controllers.Cloudery
+namespace ClouderyApi.Controllers.Cloudery;
+
+[Route("cloudery/[controller]")]
+[ApiController]
+public class MembersController(ClouderyApiContext context) : ControllerBase
 {
-    [Route("cloudery/[controller]")]
-    [ApiController]
-    public class MembersController : ControllerBase
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Member>>> GetClouderyMember()
     {
-        private readonly ClouderyApiContext _context;
+        return await context.ClouderyMembers.ToListAsync();
+    }
 
-        public MembersController(ClouderyApiContext context)
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Member>> GetClouderyMember(string id)
+    {
+        var clouderyMember = await context.ClouderyMembers.FindAsync(id);
+
+        if (clouderyMember == null) return NotFound();
+
+        return clouderyMember;
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutClouderyMember(string id, Member clouderyMember)
+    {
+        if (id != clouderyMember.Id) return BadRequest();
+
+        context.Entry(clouderyMember).State = EntityState.Modified;
+
+        try
         {
-            _context = context;
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (!ClouderyMemberExsits(id)) return NotFound();
+
+            throw;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Member>>> GetClouderyMember()
+        return NoContent();
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<Member>> PostClouderyMember(Member clouderyMember)
+    {
+        context.ClouderyMembers.Add(clouderyMember);
+        try
         {
-            return await _context.ClouderyMembers.ToListAsync();
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            if (ClouderyMemberExsits(clouderyMember.Id)) return Conflict();
+
+            throw;
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Member>> GetClouderyMember(string id)
-        {
-            var clouderyMember = await _context.ClouderyMembers.FindAsync(id);
+        return CreatedAtAction("GetClouderyMember", new { id = clouderyMember.Id }, clouderyMember);
+    }
 
-            if (clouderyMember == null)
-            {
-                return NotFound();
-            }
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteClouderyMember(string id)
+    {
+        var clouderyMember = await context.ClouderyMembers.FindAsync(id);
+        if (clouderyMember == null) return NotFound();
 
-            return clouderyMember;
-        }
+        context.ClouderyMembers.Remove(clouderyMember);
+        await context.SaveChangesAsync();
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutClouderyMember(string id, Member clouderyMember)
-        {
-            if (id != clouderyMember.Id)
-            {
-                return BadRequest();
-            }
+        return NoContent();
+    }
 
-            _context.Entry(clouderyMember).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ClouderyMemberExsits(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        [HttpPost]
-        public async Task<ActionResult<Member>> PostClouderyMember(Member clouderyMember)
-        {
-            _context.ClouderyMembers.Add(clouderyMember);
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                if (ClouderyMemberExsits(clouderyMember.Id))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return CreatedAtAction("GetClouderyMember", new { id = clouderyMember.Id }, clouderyMember);
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteClouderyMember(string id)
-        {
-            var clouderyMember = await _context.ClouderyMembers.FindAsync(id);
-            if (clouderyMember == null)
-            {
-                return NotFound();
-            }
-
-            _context.ClouderyMembers.Remove(clouderyMember);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool ClouderyMemberExsits(string id)
-        {
-            return _context.ClouderyMembers.Any(e => e.Id == id);
-        }
+    private bool ClouderyMemberExsits(string id)
+    {
+        return context.ClouderyMembers.Any(e => e.Id == id);
     }
 }
