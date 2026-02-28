@@ -12,6 +12,6 @@ public class Application
 {
     public required string Id { get; set; }
     public required bool Passed { get; set; }
-
+    public required DateTime SubmissionDate { get; set; }
     [Column(TypeName = "json")] public List<Sharable>? Sharables { get; set; }
 }
