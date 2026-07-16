@@ -1,6 +1,8 @@
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Casdoor.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +14,10 @@ builder.Services.AddDbContext<ClouderyApiContext>(options =>
 {
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
 });
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme);
 
 builder.Services.AddCors(c =>
 {
@@ -45,6 +51,8 @@ app.UseCors("AllowAllOrigins");
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 
