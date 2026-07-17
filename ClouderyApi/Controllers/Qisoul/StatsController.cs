@@ -1,5 +1,4 @@
 ﻿using ClouderyApi.Data;
-using ClouderyApi.Models.Qisoul;
 using ClouderyApi.Models.Qisoul.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

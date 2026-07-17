@@ -673,9 +673,9 @@ public class MarenController : ControllerBase
         "畸形种有本事在网上跳的跟只虱子一样，下线以后滚你妈出租屋里像只瘟鸡一样low逼你妈是把键盘吃肚子里了吧，出生时候才有你这种憨批。"
     ];
     #endregion
-    
+
     private readonly Random rand = new();
-    
+
     [HttpGet]
     [Route("{type}")]
     public string GetMarenPoem(string type = "common")

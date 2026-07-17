@@ -1,7 +1,4 @@
-﻿using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
-using System.Net;
-using System.Reflection.Metadata.Ecma335;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.Json;
 

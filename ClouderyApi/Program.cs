@@ -1,8 +1,8 @@
+using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Casdoor.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
