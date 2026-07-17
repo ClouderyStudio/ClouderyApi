@@ -24,9 +24,4 @@
         <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Controllers\Qisoul\" />
-      <Folder Include="Models\Qisoul\" />
-    </ItemGroup>
-
 </Project>
