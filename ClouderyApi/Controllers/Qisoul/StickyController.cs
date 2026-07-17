@@ -78,7 +78,7 @@ public class StickyController : ControllerBase
                 Content = dto.Content,
                 Icon = dto.Icon ?? "📌",
                 Color = dto.Color ?? "rgba(236, 227, 219, 0.45)",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             };
 
             _context.Stickies.Add(sticky);

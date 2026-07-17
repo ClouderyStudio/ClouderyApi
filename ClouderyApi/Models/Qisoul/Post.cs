@@ -30,7 +30,7 @@ namespace ClouderyApi.Models.Qisoul
 
         public int Comments { get; set; } = 0;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         public DateTime? UpdatedAt { get; set; }
 

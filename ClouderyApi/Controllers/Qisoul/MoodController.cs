@@ -51,7 +51,7 @@ namespace ClouderyApi.Controllers.Qisoul;
                 if (endDate.HasValue)
                     query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate <= endDate.Value);
                 else
-                    query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate >= DateTime.UtcNow.AddDays(-days));
+                    query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate >= DateTime.Now.AddDays(-days));
 
                 var records = await query
                     .Select(m => new MoodRecordResponseDto
@@ -143,8 +143,8 @@ namespace ClouderyApi.Controllers.Qisoul;
                     Note = dto.Note,
                     Diary = dto.Diary,
                     Tags = dto.Tags,
-                    RecordDate = dto.RecordDate ?? DateTime.UtcNow,
-                    CreatedAt = DateTime.UtcNow
+                    RecordDate = dto.RecordDate ?? DateTime.Now,
+                    CreatedAt = DateTime.Now
                 };
 
                 _context.MoodRecords.Add(record);

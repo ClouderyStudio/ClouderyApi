@@ -23,7 +23,7 @@ namespace ClouderyApi.Models.Qisoul
 
         public int Likes { get; set; } = 0;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         [ForeignKey(nameof(UserId))]
         public virtual User? User { get; set; }

@@ -22,7 +22,7 @@ namespace ClouderyApi.Models.Qisoul
         [MaxLength(100)]
         public string CasdoorId { get; set; } = string.Empty;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         public DateTime? LastLoginAt { get; set; }
 

@@ -39,7 +39,7 @@ public class StatsController : ControllerBase
         try
         {
             var userId = GetUserId();
-            var endDate = DateTime.UtcNow.Date;
+            var endDate = DateTime.Now.Date;
             var startDate = view == "week"
                 ? endDate.AddDays(-7)
                 : endDate.AddDays(-30);
@@ -131,7 +131,7 @@ public class StatsController : ControllerBase
         if (records.Count == 0) return 0;
 
         var streak = 0;
-        var current = DateTime.UtcNow.Date;
+        var current = DateTime.Now.Date;
 
         foreach (var date in records)
         {

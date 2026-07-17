@@ -154,7 +154,7 @@ namespace ClouderyApi.Controllers.Qisoul;
                     Content = dto.Content,
                     Category = dto.Category,
                     Icon = dto.Icon ?? "📖",
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.Now
                 };
 
                 _context.Posts.Add(post);
@@ -242,4 +242,65 @@ namespace ClouderyApi.Controllers.Qisoul;
                 return StatusCode(500, new { success = false, message = "服务器错误" });
             }
         }
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdatePost(Guid id, [FromBody] UpdatePostDto dto)
+    {
+        try
+        {
+            var userId = GetUserId();
+            var post = await _context.Posts
+                .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+
+            if (post == null)
+                return NotFound(new { success = false, message = "帖子不存在或无权限" });
+
+            // 更新字段
+            post.Title = dto.Title;
+            post.Content = dto.Content;
+            post.Category = dto.Category;
+            post.Icon = dto.Icon ?? post.Icon;
+            post.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("用户 {UserId} 更新了帖子 {PostId}", userId, id);
+
+            return Ok(new
+            {
+                success = true,
+                message = "更新成功",
+                data = new PostResponseDto
+                {
+                    Id = post.Id,
+                    Title = post.Title,
+                    Content = post.Content,
+                    Category = post.Category,
+                    Icon = post.Icon,
+                    Likes = post.Likes,
+                    Comments = post.Comments,
+                    CreatedAt = post.CreatedAt,
+                    UpdatedAt = post.UpdatedAt,
+                    Username = post.User?.Username
+                }
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new { success = false, message = "请先登录" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新帖子失败");
+            return StatusCode(500, new { success = false, message = "服务器错误" });
+        }
     }
+
+    // DTO
+    public class UpdatePostDto
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string? Icon { get; set; }
+    }
+}

@@ -29,9 +29,9 @@ namespace ClouderyApi.Models.Qisoul
         [MaxLength(500)]
         public string? Tags { get; set; } // JSON 数组或逗号分隔
 
-        public DateTime RecordDate { get; set; } = DateTime.UtcNow;
+        public DateTime RecordDate { get; set; } = DateTime.Now;
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         [ForeignKey(nameof(UserId))]
         public virtual User? User { get; set; }

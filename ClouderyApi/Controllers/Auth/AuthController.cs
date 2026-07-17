@@ -113,7 +113,7 @@ public class AuthController : ControllerBase
                 new AuthenticationProperties
                 {
                     IsPersistent = true,
-                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7),
+                    ExpiresUtc = DateTimeOffset.Now.AddDays(7),
                     AllowRefresh = true,
                 }
             );
@@ -158,7 +158,7 @@ public class AuthController : ControllerBase
                 existingUser.Username = casdoorUser.Name ?? casdoorUser.Email?.Split('@')[0] ?? "用户";
                 existingUser.Email = casdoorUser.Email;
                 existingUser.Avatar = casdoorUser.Avatar;
-                existingUser.LastLoginAt = DateTime.UtcNow;
+                existingUser.LastLoginAt = DateTime.Now;
 
                 await _context.SaveChangesAsync();
                 _logger.LogInformation("更新用户信息: {UserId}", existingUser.Id);
@@ -173,8 +173,8 @@ public class AuthController : ControllerBase
                 Email = casdoorUser.Email,
                 Avatar = casdoorUser.Avatar,
                 CasdoorId = casdoorUser.Id,
-                CreatedAt = DateTime.UtcNow,
-                LastLoginAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now,
+                LastLoginAt = DateTime.Now
             };
 
             _context.Users.Add(newUser);
