@@ -32,12 +32,15 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? new[] {
+    ?? new [] {
         "http://localhost:5173",
         "http://localhost:5174",
         "https://localhost:5173",
         "http://localhost:5175",
-        "https://localhost:5174"
+        "https://localhost:5174",
+        "https://qisoul.cldery.com",
+        "https://cldery.com",
+        "https://www.cldery.com"
     };
 
 builder.Services.AddCors(c =>
