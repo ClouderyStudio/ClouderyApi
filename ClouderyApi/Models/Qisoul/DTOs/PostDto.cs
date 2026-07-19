@@ -22,5 +22,6 @@
         public DateTime? UpdatedAt { get; set; }
         public string? Username { get; set; }
         public string? UserAvatar { get; set; }
+        public int CommentCount { get; set; }
     }
 }

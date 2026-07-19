@@ -14,6 +14,7 @@ public class QisoulDbContext : DbContext
     public DbSet<MoodRecord> MoodRecords { get; set; }
     public DbSet<Post> Posts { get; set; }
     public DbSet<Sticky> Stickies { get; set; }
+    public DbSet<Comment> Comments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,5 +46,12 @@ public class QisoulDbContext : DbContext
         modelBuilder.Entity<Sticky>()
             .Property(s => s.Likes)
             .HasDefaultValue(0);
+
+        // Comment 索引
+        modelBuilder.Entity<Comment>()
+            .HasIndex(c => new { c.PostId, c.CreatedAt });
+
+        modelBuilder.Entity<Comment>()
+            .HasIndex(c => c.UserId);
     }
 }
