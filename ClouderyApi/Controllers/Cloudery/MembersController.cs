@@ -1,5 +1,6 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Cloudery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,15 +8,18 @@ namespace ClouderyApi.Controllers.Cloudery;
 
 [Route("cloudery/[controller]")]
 [ApiController]
+[Authorize] // 写操作需登录；GET 保留匿名
 public class MembersController(ClouderyApiContext context) : ControllerBase
 {
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Member>>> GetClouderyMember()
     {
         return await context.ClouderyMembers.ToListAsync();
     }
 
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<Member>> GetClouderyMember(string id)
     {
         var clouderyMember = await context.ClouderyMembers.FindAsync(id);
@@ -38,7 +42,7 @@ public class MembersController(ClouderyApiContext context) : ControllerBase
         }
         catch (DbUpdateConcurrencyException)
         {
-            if (!ClouderyMemberExsits(id)) return NotFound();
+            if (!ClouderyMemberExists(id)) return NotFound();
 
             throw;
         }
@@ -56,7 +60,7 @@ public class MembersController(ClouderyApiContext context) : ControllerBase
         }
         catch (DbUpdateException)
         {
-            if (ClouderyMemberExsits(clouderyMember.Id)) return Conflict();
+            if (ClouderyMemberExists(clouderyMember.Id)) return Conflict();
 
             throw;
         }
@@ -76,7 +80,7 @@ public class MembersController(ClouderyApiContext context) : ControllerBase
         return NoContent();
     }
 
-    private bool ClouderyMemberExsits(string id)
+    private bool ClouderyMemberExists(string id)
     {
         return context.ClouderyMembers.Any(e => e.Id == id);
     }

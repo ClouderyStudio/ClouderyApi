@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Qisoul;
 using ClouderyApi.Models.Qisoul.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -25,9 +25,9 @@ public class CommentController : ControllerBase
     private Guid GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim))
-            throw new UnauthorizedAccessException("用户未登录");
-        return Guid.Parse(userIdClaim);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            throw new UnauthorizedAccessException("用户未登录或标识无效");
+        return userId;
     }
 
     // ====== 获取帖子的所有评论（支持嵌套） ======
@@ -68,13 +68,8 @@ public class CommentController : ControllerBase
                 })
                 .ToListAsync();
 
-            // 更新帖子的评论数
-            var post = await _context.Posts.FindAsync(postId);
-            if (post != null)
-            {
-                post.Comments = comments.Count + comments.Sum(c => c.Replies?.Count ?? 0);
-                await _context.SaveChangesAsync();
-            }
+            // 说明：GET 请求不再写入数据库（原实现会在每次读取时更新帖子的冗余计数字段，
+            // 引发 GET 副作用与并发竞争）。评论数仅在创建/删除时维护。
 
             return Ok(new { success = true, data = comments });
         }

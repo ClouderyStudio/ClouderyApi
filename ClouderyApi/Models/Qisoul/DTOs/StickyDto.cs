@@ -1,10 +1,19 @@
-﻿namespace ClouderyApi.Models.Qisoul.DTOs
+using System.ComponentModel.DataAnnotations;
+
+namespace ClouderyApi.Models.Qisoul.DTOs
 {
     public class StickyDto
     {
         public Guid? Id { get; set; }
+
+        [Required]
+        [MaxLength(500)]
         public string Content { get; set; } = string.Empty;
+
+        [MaxLength(50)]
         public string? Icon { get; set; }
+
+        [MaxLength(50)]
         public string? Color { get; set; }
     }
 

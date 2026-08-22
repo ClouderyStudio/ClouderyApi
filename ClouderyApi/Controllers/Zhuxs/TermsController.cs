@@ -1,5 +1,6 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Zhuxs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,15 +8,18 @@ namespace ClouderyApi.Controllers.Zhuxs;
 
 [Route("zhuxs/[controller]")]
 [ApiController]
+[Authorize] // 写操作需登录；GET 保留匿名
 public class TermsController(ClouderyApiContext context) : ControllerBase
 {
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Term>>> GetZhuxsTerm()
     {
         return await context.ZhuxsTerms.ToListAsync();
     }
 
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<Term>> GetZhuxsTerm(string id)
     {
         var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);

@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Qisoul;
 using ClouderyApi.Models.Qisoul.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -29,7 +29,10 @@ public class MoodController : ControllerBase
         if (string.IsNullOrEmpty(userIdClaim))
             throw new UnauthorizedAccessException("用户未登录");
 
-        return Guid.Parse(userIdClaim);
+        if (!Guid.TryParse(userIdClaim, out var userId))
+            throw new UnauthorizedAccessException("用户标识无效");
+
+        return userId;
     }
 
     // ====== 获取心情记录列表 ======
@@ -42,17 +45,25 @@ public class MoodController : ControllerBase
         try
         {
             var userId = GetUserId();
-            var query = _context.MoodRecords
-                .Where(m => m.UserId == userId)
-                .OrderByDescending(m => m.RecordDate);
 
-            // 日期范围过滤
+            // 参数校验：days 限制在 1~3650
+            days = Math.Clamp(days, 1, 3650);
+
+            var query = _context.MoodRecords
+                .Where(m => m.UserId == userId) as IQueryable<MoodRecord>;
+
+            // 日期范围过滤：
+            // - 传了 startDate：只应用该下界（用于“某天之后”查询）
+            // - 传了 endDate：应用该上界
+            // - 两者都没传：默认回退到最近 days 天
             if (startDate.HasValue)
-                query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate >= startDate.Value);
+                query = query.Where(m => m.RecordDate >= startDate.Value);
             if (endDate.HasValue)
-                query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate <= endDate.Value);
-            else
-                query = (IOrderedQueryable<MoodRecord>)query.Where(m => m.RecordDate >= DateTime.Now.AddDays(-days));
+                query = query.Where(m => m.RecordDate <= endDate.Value);
+            else if (!startDate.HasValue)
+                query = query.Where(m => m.RecordDate >= DateTime.Now.AddDays(-days));
+
+            query = query.OrderByDescending(m => m.RecordDate);
 
             var records = await query
                 .Select(m => new MoodRecordResponseDto

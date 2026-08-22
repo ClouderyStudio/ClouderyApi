@@ -1,4 +1,4 @@
-﻿using Casdoor.Client;
+using Casdoor.Client;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Qisoul;
 using Microsoft.AspNetCore.Authentication;
@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Security.Cryptography;
 
 namespace ClouderyApi.Controllers.Auth;
 
@@ -42,6 +43,29 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 生成 OAuth state（防 CSRF 登录）：前端跳转 Casdoor 登录前调用，
+    /// 拿到 state 后随登录流程带回，回调时服务端校验与 cookie 一致。
+    /// </summary>
+    [HttpGet("state")]
+    public IActionResult GetOAuthState()
+    {
+        var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        Response.Cookies.Append("oauth_state", state, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.None,
+            Secure = true,
+            MaxAge = TimeSpan.FromMinutes(10)
+        });
+
+        return Ok(new { success = true, state });
+    }
+
+    /// <summary>
     /// OAuth2 回调接口 - 用 code 换取用户信息并建立会话
     /// </summary>
     [HttpPost("callback")]
@@ -55,7 +79,24 @@ public class AuthController : ControllerBase
                 return BadRequest(new { success = false, message = "授权码不能为空" });
             }
 
-            _logger.LogInformation("收到 OAuth 回调请求，Code: {Code}", request.Code);
+            // 1.5 校验 OAuth state（防 CSRF 登录）
+            // 登录发起方应先用 GET /identity/auth/state 获取 state，并将该 state 带上，
+            // 回调时必须与服务器种下的 cookie 一致。
+            var cookieState = Request.Cookies["oauth_state"];
+            var hasState = !string.IsNullOrEmpty(request.State);
+            if (hasState && (string.IsNullOrEmpty(cookieState) || cookieState != request.State))
+            {
+                _logger.LogWarning("OAuth state 校验失败，拒绝登录");
+                return BadRequest(new { success = false, message = "state 校验失败，请重新发起登录" });
+            }
+            if (!hasState)
+            {
+                // 兼容尚未适配 state 的旧前端：放行但记录警告
+                _logger.LogWarning("OAuth 回调未携带 state，存在 CSRF 登录风险");
+            }
+
+            // 只记录授权码长度，绝不记录明文（授权码为一次性的敏感凭证）
+            _logger.LogInformation("收到 OAuth 回调请求，Code 长度: {CodeLength}", request.Code.Length);
 
             // 2. 用授权码换取 Token
             var tokenResponse = await _client.RequestAuthorizationCodeTokenAsync(
@@ -172,7 +213,7 @@ public class AuthController : ControllerBase
                 Username = casdoorUser.Name ?? casdoorUser.Email?.Split('@')[0] ?? "用户",
                 Email = casdoorUser.Email,
                 Avatar = casdoorUser.Avatar,
-                CasdoorId = casdoorUser.Id,
+                CasdoorId = casdoorUser.Id ?? string.Empty,
                 CreatedAt = DateTime.Now,
                 LastLoginAt = DateTime.Now
             };

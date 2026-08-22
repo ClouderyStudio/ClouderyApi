@@ -54,6 +54,9 @@ builder.Services.AddCors(c =>
     });
 });
 
+// CSRF 防护白名单（与 CORS 同源），供下方中间件使用
+var allowedOriginSet = allowedOrigins.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
 builder.Services.AddSwaggerGen(u =>
 {
     u.SwaggerDoc("v1", new OpenApiInfo
@@ -72,6 +75,34 @@ builder.Services.AddSwaggerGen(u =>
 var app = builder.Build();
 
 app.UseCors("AllowAllOrigins");
+
+// CSRF 防护中间件：
+// Cookie 会话为 SameSite=None，跨站请求会携带 Cookie，必须校验 Origin。
+// 对 POST/PUT/PATCH/DELETE：若请求带 Origin 头（浏览器必然携带），则必须在白名单内，
+// 否则拒绝；无 Origin（同源 curl/服务端调用）放行。
+app.Use(async (context, next) =>
+{
+    var method = context.Request.Method;
+    if (method == HttpMethods.Post || method == HttpMethods.Put ||
+        method == HttpMethods.Patch || method == HttpMethods.Delete)
+    {
+        if (context.Request.Headers.TryGetValue("Origin", out var originValues))
+        {
+            foreach (var originValue in originValues)
+            {
+                if (string.IsNullOrEmpty(originValue)) continue;
+                if (!allowedOriginSet.Contains(originValue))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { success = false, message = "跨站请求被拒绝" });
+                    return;
+                }
+            }
+        }
+    }
+
+    await next();
+});
 
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 

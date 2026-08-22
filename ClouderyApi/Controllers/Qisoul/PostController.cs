@@ -1,9 +1,10 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Qisoul;
 using ClouderyApi.Models.Qisoul.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 
 namespace ClouderyApi.Controllers.Qisoul;
@@ -25,9 +26,9 @@ public class PostController : ControllerBase
     private Guid GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim))
-            throw new UnauthorizedAccessException("用户未登录");
-        return Guid.Parse(userIdClaim);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            throw new UnauthorizedAccessException("用户未登录或标识无效");
+        return userId;
     }
 
     // ====== 获取帖子列表（公开） ======
@@ -40,6 +41,10 @@ public class PostController : ControllerBase
     {
         try
         {
+            // 参数校验：page >= 1，pageSize 限制在 1~50
+            if (page < 1) page = 1;
+            pageSize = Math.Clamp(pageSize, 1, 50);
+
             var query = _context.Posts
                 .Include(p => p.User)
                 .OrderByDescending(p => p.CreatedAt)
@@ -298,9 +303,19 @@ public class PostController : ControllerBase
     // DTO
     public class UpdatePostDto
     {
+        [Required]
+        [MaxLength(200)]
         public string Title { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(10000)]
         public string Content { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(50)]
         public string Category { get; set; } = string.Empty;
+
+        [MaxLength(50)]
         public string? Icon { get; set; }
     }
 }

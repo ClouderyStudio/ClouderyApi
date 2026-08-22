@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Data;
+using ClouderyApi.Data;
 using ClouderyApi.Models.Qisoul;
 using ClouderyApi.Models.Qisoul.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -25,9 +25,9 @@ public class StickyController : ControllerBase
     private Guid GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim))
-            throw new UnauthorizedAccessException("用户未登录");
-        return Guid.Parse(userIdClaim);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            throw new UnauthorizedAccessException("用户未登录或标识无效");
+        return userId;
     }
 
     // ====== 获取便签列表（公开） ======
