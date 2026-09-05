@@ -8,7 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddDbContext<ClouderyApiContext>(options =>
 {
@@ -106,8 +106,6 @@ if(!app.Environment.IsDevelopment())
         await next();
     });
 }
-
-if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 app.UseHttpsRedirection();
 
