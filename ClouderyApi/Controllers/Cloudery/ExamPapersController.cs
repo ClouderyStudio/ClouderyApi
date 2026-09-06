@@ -45,6 +45,16 @@ public class ExamPapersController(ClouderyApiContext context) : ControllerBase
         return ToView(paper);
     }
 
+    /// <summary>管理员读取全量（含答案/解析），供后台编辑；公开读不含答案</summary>
+    [HttpGet("{id}/full")]
+    [AdminOnly]
+    public async Task<ActionResult<ExamPaper>> GetExamPaperFull(string id)
+    {
+        var paper = await context.ExamPapers.FindAsync(id);
+        if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
+        return paper;
+    }
+
     /// <summary>服务端判分：接收作答，返回逐题对错 + 标准答案/解析（供交卷核对）</summary>
     [HttpPost("{id}/grade")]
     public async Task<ActionResult<ExamGradeResult>> Grade(string id, [FromBody] GradeRequest request)
