@@ -1,5 +1,7 @@
 using ClouderyApi.Data;
 using ClouderyApi.Models.Zhuxs;
+using ClouderyApi.Models.Zhuxs.DTOs;
+using ClouderyApi.Controllers.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,14 +10,17 @@ namespace ClouderyApi.Controllers.Zhuxs;
 
 [Route("zhuxs/[controller]")]
 [ApiController]
-[Authorize] // 写操作需登录；GET 保留匿名
+[Authorize]
 public class ApplicationsController(ClouderyApiContext context) : ControllerBase
 {
     [HttpGet]
     [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Application>>> GetZhuxsApplication()
     {
-        return await context.ZhuxsApplications.ToListAsync();
+        return await context.ZhuxsApplications
+            .OrderByDescending(a => a.SubmissionDate)
+            .Take(1000)
+            .ToListAsync();
     }
 
     [HttpGet("{id}")]
@@ -23,65 +28,66 @@ public class ApplicationsController(ClouderyApiContext context) : ControllerBase
     public async Task<ActionResult<Application>> GetZhuxsApplication(string id)
     {
         var zhuxsApplication = await context.ZhuxsApplications.FindAsync(id);
-
         if (zhuxsApplication == null) return NotFound();
-
         return zhuxsApplication;
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> PutZhuxsApplication(string id, Application zhuxsApplication)
+    [AdminOnly]
+    public async Task<IActionResult> PutZhuxsApplication(string id, [FromBody] ApplicationDto dto)
     {
-        if (id != zhuxsApplication.Id) return BadRequest();
+        if (!ModelState.IsValid)
+            return BadRequest(new { success = false, message = "参数校验失败" });
 
-        context.Entry(zhuxsApplication).State = EntityState.Modified;
+        var zhuxsApplication = await context.ZhuxsApplications.FindAsync(id);
+        if (zhuxsApplication == null) return NotFound();
 
-        try
-        {
-            await context.SaveChangesAsync();
-        }
+        zhuxsApplication.Sharables = dto.Sharables;
+        if (dto.Passed.HasValue)
+            zhuxsApplication.Passed = dto.Passed.Value;
+
+        try { await context.SaveChangesAsync(); }
         catch (DbUpdateConcurrencyException)
         {
-            if (!ZhuxsApplicationExists(id)) return NotFound();
-
-            throw;
+            if (await context.ZhuxsApplications.AnyAsync(e => e.Id == id)) throw;
+            return NotFound();
         }
-
         return NoContent();
     }
 
     [HttpPost]
-    public async Task<ActionResult<Application>> PostZhuxsApplication(Application zhuxsApplication)
+    [AdminOnly]
+    public async Task<ActionResult<Application>> PostZhuxsApplication([FromBody] ApplicationDto dto)
     {
-        context.ZhuxsApplications.Add(zhuxsApplication);
-        try
+        if (!ModelState.IsValid)
+            return BadRequest(new { success = false, message = "参数校验失败" });
+
+        // 主键服务端生成；Passed 恒为 false，需管理员在 PUT 阶段审核通过（防 over-posting 绕过审核）
+        var zhuxsApplication = new Application
         {
-            await context.SaveChangesAsync();
-        }
+            Id = Guid.NewGuid().ToString("N"),
+            Passed = false,
+            SubmissionDate = DateTime.UtcNow,
+            Sharables = dto.Sharables
+        };
+
+        context.ZhuxsApplications.Add(zhuxsApplication);
+        try { await context.SaveChangesAsync(); }
         catch (DbUpdateException)
         {
-            if (ZhuxsApplicationExists(zhuxsApplication.Id)) return Conflict();
-
-            throw;
+            return Conflict(new { success = false, message = "记录冲突" });
         }
-
         return CreatedAtAction("GetZhuxsApplication", new { id = zhuxsApplication.Id }, zhuxsApplication);
     }
 
     [HttpDelete("{id}")]
+    [AdminOnly]
     public async Task<IActionResult> DeleteZhuxsApplication(string id)
     {
         var zhuxsApplication = await context.ZhuxsApplications.FindAsync(id);
         if (zhuxsApplication == null) return NotFound();
-
         context.ZhuxsApplications.Remove(zhuxsApplication);
         await context.SaveChangesAsync();
-
         return NoContent();
-    }
-
-    private bool ZhuxsApplicationExists(string id)
-    {
-        return context.ZhuxsApplications.Any(e => e.Id == id);
     }
 }

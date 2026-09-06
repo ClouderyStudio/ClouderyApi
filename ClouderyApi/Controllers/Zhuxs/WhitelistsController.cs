@@ -1,37 +1,48 @@
 using ClouderyApi.Data;
 using ClouderyApi.Models.Zhuxs;
+using ClouderyApi.Models.Zhuxs.DTOs;
+using ClouderyApi.Controllers.Filters;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Controllers.Zhuxs;
 
+/// <summary>
+/// 白名单（邀请码）管理：邀请码属敏感数据，读取与写入均仅限管理员。
+/// </summary>
 [Route("zhuxs/[controller]")]
 [ApiController]
-[Authorize] // 写操作需登录；GET 保留匿名
+[Authorize]
+[AdminOnly]
 public class WhitelistsController(ClouderyApiContext context) : ControllerBase
 {
     [HttpGet]
-    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Whitelist>>> GetWhitelist()
     {
-        return await context.ZhuxsWhitelists.ToListAsync();
+        // 加排序与上限，避免无界返回全表
+        return await context.ZhuxsWhitelists
+            .OrderBy(w => w.Code)
+            .Take(1000)
+            .ToListAsync();
     }
 
     [HttpGet("{id}")]
-    [AllowAnonymous]
     public async Task<ActionResult<Whitelist>> GetWhitelist(string id)
     {
         var whitelist = await context.ZhuxsWhitelists.FindAsync(id);
-
         if (whitelist == null) return NotFound();
-
         return whitelist;
     }
 
     [HttpPost]
-    public async Task<ActionResult<Whitelist>> PostWhitelist(Whitelist whitelist)
+    public async Task<ActionResult<Whitelist>> PostWhitelist([FromBody] WhitelistDto dto)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(new { success = false, message = "参数校验失败" });
+
+        // 主键由服务端生成，客户端不可指定（防 over-posting）
+        var whitelist = new Whitelist { Id = Guid.NewGuid().ToString("N"), Code = dto.Code };
         context.ZhuxsWhitelists.Add(whitelist);
         try
         {
@@ -39,11 +50,8 @@ public class WhitelistsController(ClouderyApiContext context) : ControllerBase
         }
         catch (DbUpdateException)
         {
-            if (WhitelistExists(whitelist.Id)) return Conflict();
-
-            throw;
+            return Conflict(new { success = false, message = "记录冲突" });
         }
-
         return CreatedAtAction("GetWhitelist", new { id = whitelist.Id }, whitelist);
     }
 
@@ -52,15 +60,8 @@ public class WhitelistsController(ClouderyApiContext context) : ControllerBase
     {
         var whitelist = await context.ZhuxsWhitelists.FindAsync(id);
         if (whitelist == null) return NotFound();
-
         context.ZhuxsWhitelists.Remove(whitelist);
         await context.SaveChangesAsync();
-
         return NoContent();
-    }
-
-    private bool WhitelistExists(string id)
-    {
-        return context.ZhuxsWhitelists.Any(e => e.Id == id);
     }
 }
