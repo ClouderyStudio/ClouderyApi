@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ClouderyApi.Controllers.Auth;
 
@@ -14,32 +16,34 @@ namespace ClouderyApi.Controllers.Auth;
 [ApiController]
 public class AuthController : ControllerBase
 {
-    private static readonly IConfigurationRoot _config = new ConfigurationBuilder()
-        .SetBasePath(Directory.GetCurrentDirectory())
-        .AddJsonFile("appsettings.json")
-        .Build();
-
-    private static readonly CasdoorOptions _options = new CasdoorOptions
-    {
-#pragma warning disable CS8601 // 引用类型赋值可能为 null
-        Endpoint = _config["Casdoor:Endpoint"],
-        OrganizationName = _config["Casdoor:OrganizationName"],
-        ApplicationName = _config["Casdoor:ApplicationName"],
-        ApplicationType = _config["Casdoor:ApplicationType"],
-        ClientId = _config["Casdoor:ClientId"],
-        ClientSecret = _config["Casdoor:ClientSecret"],
-        CallbackPath = _config["Casdoor:CallbackPath"],
-#pragma warning restore CS8601
-    };
-
-    private static readonly CasdoorClient _client = new(new HttpClient(), _options);
+    private readonly CasdoorOptions _options;
+    private readonly CasdoorClient _client;
     private readonly ILogger<AuthController> _logger;
-    private readonly QisoulDbContext _context; // 添加 DbContext
+    private readonly QisoulDbContext _context;
 
-    public AuthController(ILogger<AuthController> logger, QisoulDbContext context)
+    public AuthController(
+        ILogger<AuthController> logger,
+        QisoulDbContext context,
+        IConfiguration configuration,
+        IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _context = context;
+
+#pragma warning disable CS8601 // 引用类型赋值可能为 null（来自配置）
+        _options = new CasdoorOptions
+        {
+            Endpoint = configuration["Casdoor:Endpoint"],
+            OrganizationName = configuration["Casdoor:OrganizationName"],
+            ApplicationName = configuration["Casdoor:ApplicationName"],
+            ApplicationType = configuration["Casdoor:ApplicationType"],
+            ClientId = configuration["Casdoor:ClientId"],
+            ClientSecret = configuration["Casdoor:ClientSecret"],
+            CallbackPath = configuration["Casdoor:CallbackPath"],
+        };
+#pragma warning restore CS8601
+
+        _client = new CasdoorClient(httpClientFactory.CreateClient("Casdoor"), _options);
     }
 
     /// <summary>
@@ -66,7 +70,7 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// OAuth2 回调接口 - 用 code 换取用户信息并建立会话
+    /// OAuth2 回调接口 - 用 code 换取用户信息并建立会话（强制校验 state 防 CSRF 登录）
     /// </summary>
     [HttpPost("callback")]
     public async Task<IActionResult> Callback([FromBody] OAuthCallbackRequest request)
@@ -79,20 +83,13 @@ public class AuthController : ControllerBase
                 return BadRequest(new { success = false, message = "授权码不能为空" });
             }
 
-            // 1.5 校验 OAuth state（防 CSRF 登录）
-            // 登录发起方应先用 GET /identity/auth/state 获取 state，并将该 state 带上，
-            // 回调时必须与服务器种下的 cookie 一致。
+            // 1.5 强制校验 OAuth state（防 CSRF 登录）：
+            // 回调必须携带 state，且与服务器种下的 oauth_state Cookie 完全一致，否则拒绝登录。
             var cookieState = Request.Cookies["oauth_state"];
-            var hasState = !string.IsNullOrEmpty(request.State);
-            if (hasState && (string.IsNullOrEmpty(cookieState) || cookieState != request.State))
+            if (string.IsNullOrEmpty(request.State) || string.IsNullOrEmpty(cookieState) || request.State != cookieState)
             {
-                _logger.LogWarning("OAuth state 校验失败，拒绝登录");
+                _logger.LogWarning("OAuth state 缺失或不匹配，拒绝登录（防 CSRF）");
                 return BadRequest(new { success = false, message = "state 校验失败，请重新发起登录" });
-            }
-            if (!hasState)
-            {
-                // 兼容尚未适配 state 的旧前端：放行但记录警告
-                _logger.LogWarning("OAuth 回调未携带 state，存在 CSRF 登录风险");
             }
 
             // 只记录授权码长度，绝不记录明文（授权码为一次性的敏感凭证）
@@ -154,7 +151,7 @@ public class AuthController : ControllerBase
                 new AuthenticationProperties
                 {
                     IsPersistent = true,
-                    ExpiresUtc = DateTimeOffset.Now.AddDays(7),
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7),
                     AllowRefresh = true,
                 }
             );
@@ -199,7 +196,7 @@ public class AuthController : ControllerBase
                 existingUser.Username = casdoorUser.Name ?? casdoorUser.Email?.Split('@')[0] ?? "用户";
                 existingUser.Email = casdoorUser.Email;
                 existingUser.Avatar = casdoorUser.Avatar;
-                existingUser.LastLoginAt = DateTime.Now;
+                existingUser.LastLoginAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
                 _logger.LogInformation("更新用户信息: {UserId}", existingUser.Id);
@@ -214,8 +211,8 @@ public class AuthController : ControllerBase
                 Email = casdoorUser.Email,
                 Avatar = casdoorUser.Avatar,
                 CasdoorId = casdoorUser.Id ?? string.Empty,
-                CreatedAt = DateTime.Now,
-                LastLoginAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow,
+                LastLoginAt = DateTime.UtcNow
             };
 
             _context.Users.Add(newUser);
@@ -283,12 +280,11 @@ public class AuthController : ControllerBase
 
             _logger.LogInformation("用户 {Username} 已登出", username);
 
-            // 构建响应
+            // 返回 Casdoor 登出地址；Casdoor 会话的清除需由前端跳转到该地址完成
             var response = new
             {
                 success = true,
                 message = "已成功登出",
-                // 如果需要跳转到 Casdoor 登出页面，可返回此 URL
                 casdoorLogoutUrl = $"{_options.Endpoint}/api/logout"
             };
 
@@ -339,7 +335,7 @@ public class AuthController : ControllerBase
     public class OAuthCallbackRequest
     {
         public required string Code { get; set; }
-        public string? State { get; set; }
+        public required string State { get; set; }
         public required string RedirectUri { get; set; }
     }
 
