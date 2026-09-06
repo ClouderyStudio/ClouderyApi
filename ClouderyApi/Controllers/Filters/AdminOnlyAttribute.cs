@@ -22,15 +22,15 @@ public class AdminOnlyAttribute : Attribute, IAuthorizationFilter
             return;
         }
 
-        var Id = user.FindFirst("Id")?.Value;
+        var casdoorId = user.FindFirst("CasdoorId")?.Value;
         var admins = context.HttpContext.RequestServices
             .GetService<IConfiguration>()?
             .GetSection("Authorization:Admins")
             .Get<string[]>()
             ?? System.Array.Empty<string>();
 
-        if (string.IsNullOrEmpty(Id) ||
-            !admins.Contains(Id, System.StringComparer.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(casdoorId) ||
+            !admins.Contains(casdoorId, System.StringComparer.OrdinalIgnoreCase))
         {
             context.Result = new ObjectResult(new { success = false, message = "无管理员权限，操作被拒绝" })
             {
