@@ -22,20 +22,16 @@ public class MoodController : ControllerBase
         _logger = logger;
     }
 
-    // ====== 获取用户 ID ======
     private Guid GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userIdClaim))
             throw new UnauthorizedAccessException("用户未登录");
-
         if (!Guid.TryParse(userIdClaim, out var userId))
             throw new UnauthorizedAccessException("用户标识无效");
-
         return userId;
     }
 
-    // ====== 获取心情记录列表 ======
     [HttpGet]
     public async Task<IActionResult> GetRecords(
         [FromQuery] int days = 30,
@@ -45,23 +41,15 @@ public class MoodController : ControllerBase
         try
         {
             var userId = GetUserId();
-
-            // 参数校验：days 限制在 1~3650
             days = Math.Clamp(days, 1, 3650);
+            var query = _context.MoodRecords.Where(m => m.UserId == userId) as IQueryable<MoodRecord>;
 
-            var query = _context.MoodRecords
-                .Where(m => m.UserId == userId) as IQueryable<MoodRecord>;
-
-            // 日期范围过滤：
-            // - 传了 startDate：只应用该下界（用于“某天之后”查询）
-            // - 传了 endDate：应用该上界
-            // - 两者都没传：默认回退到最近 days 天
             if (startDate.HasValue)
                 query = query.Where(m => m.RecordDate >= startDate.Value);
             if (endDate.HasValue)
                 query = query.Where(m => m.RecordDate <= endDate.Value);
             else if (!startDate.HasValue)
-                query = query.Where(m => m.RecordDate >= DateTime.Now.AddDays(-days));
+                query = query.Where(m => m.RecordDate >= DateTime.UtcNow.AddDays(-days));
 
             query = query.OrderByDescending(m => m.RecordDate);
 
@@ -83,18 +71,10 @@ public class MoodController : ControllerBase
 
             return Ok(new { success = true, data = records });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized(new { success = false, message = "请先登录" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取心情记录失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
-        }
+        catch (UnauthorizedAccessException) { return Unauthorized(new { success = false, message = "请先登录" }); }
+        catch (Exception ex) { _logger.LogError(ex, "获取心情记录失败"); return StatusCode(500, new { success = false, message = "服务器错误" }); }
     }
 
-    // ====== 获取单条心情记录 ======
     [HttpGet("{id}")]
     public async Task<IActionResult> GetRecord(Guid id)
     {
@@ -104,9 +84,7 @@ public class MoodController : ControllerBase
             var record = await _context.MoodRecords
                 .Include(m => m.User)
                 .FirstOrDefaultAsync(m => m.Id == id && m.UserId == userId);
-
-            if (record == null)
-                return NotFound(new { success = false, message = "记录不存在" });
+            if (record == null) return NotFound(new { success = false, message = "记录不存在" });
 
             return Ok(new
             {
@@ -126,23 +104,16 @@ public class MoodController : ControllerBase
                 }
             });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized(new { success = false, message = "请先登录" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "获取心情记录失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
-        }
+        catch (UnauthorizedAccessException) { return Unauthorized(new { success = false, message = "请先登录" }); }
+        catch (Exception ex) { _logger.LogError(ex, "获取心情记录失败"); return StatusCode(500, new { success = false, message = "服务器错误" }); }
     }
 
-    // ====== 创建心情记录 ======
     [HttpPost]
     public async Task<IActionResult> CreateRecord([FromBody] MoodRecordDto dto)
     {
         try
         {
+            if (!ModelState.IsValid) return BadRequest(new { success = false, message = "参数校验失败" });
             var userId = GetUserId();
 
             var record = new MoodRecord
@@ -155,13 +126,12 @@ public class MoodController : ControllerBase
                 Note = dto.Note,
                 Diary = dto.Diary,
                 Tags = dto.Tags,
-                RecordDate = dto.RecordDate ?? DateTime.Now,
-                CreatedAt = DateTime.Now
+                RecordDate = dto.RecordDate ?? DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
             };
 
             _context.MoodRecords.Add(record);
             await _context.SaveChangesAsync();
-
             _logger.LogInformation("用户 {UserId} 创建了心情记录 {RecordId}", userId, record.Id);
 
             return Ok(new
@@ -182,58 +152,37 @@ public class MoodController : ControllerBase
                 }
             });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized(new { success = false, message = "请先登录" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "创建心情记录失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
-        }
+        catch (UnauthorizedAccessException) { return Unauthorized(new { success = false, message = "请先登录" }); }
+        catch (Exception ex) { _logger.LogError(ex, "创建心情记录失败"); return StatusCode(500, new { success = false, message = "服务器错误" }); }
     }
 
-    // ====== 更新心情记录 ======
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateRecord(Guid id, [FromBody] MoodRecordDto dto)
     {
         try
         {
+            if (!ModelState.IsValid) return BadRequest(new { success = false, message = "参数校验失败" });
             var userId = GetUserId();
             var record = await _context.MoodRecords
                 .FirstOrDefaultAsync(m => m.Id == id && m.UserId == userId);
+            if (record == null) return NotFound(new { success = false, message = "记录不存在" });
 
-            if (record == null)
-                return NotFound(new { success = false, message = "记录不存在" });
-
-            // 更新字段
             record.MoodType = dto.MoodType;
             record.MoodLabel = dto.MoodLabel ?? GetMoodLabel(dto.MoodType);
             record.Intensity = dto.Intensity;
             record.Note = dto.Note;
             record.Diary = dto.Diary;
             record.Tags = dto.Tags;
-            if (dto.RecordDate.HasValue)
-                record.RecordDate = dto.RecordDate.Value;
+            if (dto.RecordDate.HasValue) record.RecordDate = dto.RecordDate.Value;
 
             await _context.SaveChangesAsync();
-
             _logger.LogInformation("用户 {UserId} 更新了心情记录 {RecordId}", userId, id);
-
             return Ok(new { success = true, message = "更新成功" });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized(new { success = false, message = "请先登录" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "更新心情记录失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
-        }
+        catch (UnauthorizedAccessException) { return Unauthorized(new { success = false, message = "请先登录" }); }
+        catch (Exception ex) { _logger.LogError(ex, "更新心情记录失败"); return StatusCode(500, new { success = false, message = "服务器错误" }); }
     }
 
-    // ====== 删除心情记录 ======
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteRecord(Guid id)
     {
@@ -242,29 +191,17 @@ public class MoodController : ControllerBase
             var userId = GetUserId();
             var record = await _context.MoodRecords
                 .FirstOrDefaultAsync(m => m.Id == id && m.UserId == userId);
-
-            if (record == null)
-                return NotFound(new { success = false, message = "记录不存在" });
+            if (record == null) return NotFound(new { success = false, message = "记录不存在" });
 
             _context.MoodRecords.Remove(record);
             await _context.SaveChangesAsync();
-
             _logger.LogInformation("用户 {UserId} 删除了心情记录 {RecordId}", userId, id);
-
             return Ok(new { success = true, message = "删除成功" });
         }
-        catch (UnauthorizedAccessException)
-        {
-            return Unauthorized(new { success = false, message = "请先登录" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "删除心情记录失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
-        }
+        catch (UnauthorizedAccessException) { return Unauthorized(new { success = false, message = "请先登录" }); }
+        catch (Exception ex) { _logger.LogError(ex, "删除心情记录失败"); return StatusCode(500, new { success = false, message = "服务器错误" }); }
     }
 
-    // ====== 辅助方法 ======
     private string GetMoodLabel(string moodType)
     {
         return moodType switch

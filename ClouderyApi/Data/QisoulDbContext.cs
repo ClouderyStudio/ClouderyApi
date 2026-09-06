@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Models.Qisoul;
+using ClouderyApi.Models.Qisoul;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Data;
@@ -15,6 +15,7 @@ public class QisoulDbContext : DbContext
     public DbSet<Post> Posts { get; set; }
     public DbSet<Sticky> Stickies { get; set; }
     public DbSet<Comment> Comments { get; set; }
+    public DbSet<UserLike> UserLikes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,5 +54,10 @@ public class QisoulDbContext : DbContext
 
         modelBuilder.Entity<Comment>()
             .HasIndex(c => c.UserId);
+
+        // 点赞去重：同一用户对同一目标仅一条
+        modelBuilder.Entity<UserLike>()
+            .HasIndex(l => new { l.UserId, l.TargetType, l.TargetId })
+            .IsUnique();
     }
 }

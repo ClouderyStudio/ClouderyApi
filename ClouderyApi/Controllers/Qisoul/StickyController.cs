@@ -30,13 +30,13 @@ public class StickyController : ControllerBase
         return userId;
     }
 
-    // ====== 获取便签列表（公开） ======
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> GetStickies([FromQuery] int limit = 20)
     {
         try
         {
+            limit = Math.Clamp(limit, 1, 200);
             var stickies = await _context.Stickies
                 .Include(s => s.User)
                 .OrderByDescending(s => s.CreatedAt)
@@ -63,12 +63,14 @@ public class StickyController : ControllerBase
         }
     }
 
-    // ====== 创建便签 ======
     [HttpPost]
     public async Task<IActionResult> CreateSticky([FromBody] StickyDto dto)
     {
         try
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, message = "参数校验失败" });
+
             var userId = GetUserId();
 
             var sticky = new Sticky
@@ -78,7 +80,7 @@ public class StickyController : ControllerBase
                 Content = dto.Content,
                 Icon = dto.Icon ?? "📌",
                 Color = dto.Color ?? "rgba(236, 227, 219, 0.45)",
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
 
             _context.Stickies.Add(sticky);
@@ -112,20 +114,44 @@ public class StickyController : ControllerBase
         }
     }
 
-    // ====== 点赞便签 ======
     [HttpPost("{id}/like")]
     public async Task<IActionResult> LikeSticky(Guid id)
     {
         try
         {
+            var userId = GetUserId();
             var sticky = await _context.Stickies.FindAsync(id);
             if (sticky == null)
                 return NotFound(new { success = false, message = "便签不存在" });
 
-            sticky.Likes++;
+            var existing = await _context.UserLikes.FirstOrDefaultAsync(l =>
+                l.UserId == userId && l.TargetType == "sticky" && l.TargetId == id);
+
+            if (existing == null)
+            {
+                _context.UserLikes.Add(new UserLike
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    TargetType = "sticky",
+                    TargetId = id,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                _context.UserLikes.Remove(existing);
+            }
             await _context.SaveChangesAsync();
 
-            return Ok(new { success = true, message = "点赞成功", likes = sticky.Likes });
+            sticky.Likes = await _context.UserLikes.CountAsync(l => l.TargetType == "sticky" && l.TargetId == id);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, liked = existing == null, likes = sticky.Likes });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new { success = false, message = "请先登录" });
         }
         catch (Exception ex)
         {
@@ -134,7 +160,6 @@ public class StickyController : ControllerBase
         }
     }
 
-    // ====== 删除便签 ======
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteSticky(Guid id)
     {

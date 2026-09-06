@@ -30,7 +30,6 @@ public class CommentController : ControllerBase
         return userId;
     }
 
-    // ====== 获取帖子的所有评论（支持嵌套） ======
     [HttpGet("post/{postId}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetCommentsByPost(Guid postId)
@@ -41,7 +40,7 @@ public class CommentController : ControllerBase
                 .Include(c => c.User)
                 .Include(c => c.Replies)
                     .ThenInclude(r => r.User)
-                .Where(c => c.PostId == postId && c.ParentId == null)  // 只取顶级评论
+                .Where(c => c.PostId == postId && c.ParentId == null)
                 .OrderByDescending(c => c.CreatedAt)
                 .Select(c => new CommentResponseDto
                 {
@@ -68,9 +67,6 @@ public class CommentController : ControllerBase
                 })
                 .ToListAsync();
 
-            // 说明：GET 请求不再写入数据库（原实现会在每次读取时更新帖子的冗余计数字段，
-            // 引发 GET 副作用与并发竞争）。评论数仅在创建/删除时维护。
-
             return Ok(new { success = true, data = comments });
         }
         catch (Exception ex)
@@ -80,7 +76,6 @@ public class CommentController : ControllerBase
         }
     }
 
-    // ====== 获取单条评论（含回复） ======
     [HttpGet("{id}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetComment(Guid id)
@@ -131,20 +126,20 @@ public class CommentController : ControllerBase
         }
     }
 
-    // ====== 创建评论 ======
     [HttpPost]
     public async Task<IActionResult> CreateComment([FromBody] CommentDto dto)
     {
         try
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, message = "参数校验失败" });
+
             var userId = GetUserId();
 
-            // 验证帖子是否存在
             var post = await _context.Posts.FindAsync(dto.PostId);
             if (post == null)
                 return NotFound(new { success = false, message = "帖子不存在" });
 
-            // 验证父评论是否存在（如果是回复）
             if (dto.ParentId.HasValue)
             {
                 var parent = await _context.Comments.FindAsync(dto.ParentId.Value);
@@ -165,15 +160,13 @@ public class CommentController : ControllerBase
             };
 
             _context.Comments.Add(comment);
+            await _context.SaveChangesAsync();
 
-            // 更新帖子的评论数
-            post.Comments = await _context.Comments.CountAsync(c => c.PostId == dto.PostId) + 1;
-
+            post.Comments = await _context.Comments.CountAsync(c => c.PostId == dto.PostId);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("用户 {UserId} 评论了帖子 {PostId}", userId, dto.PostId);
 
-            // 获取创建的用户信息
             var user = await _context.Users.FindAsync(userId);
 
             return Ok(new
@@ -203,20 +196,44 @@ public class CommentController : ControllerBase
         }
     }
 
-    // ====== 点赞评论 ======
     [HttpPost("{id}/like")]
     public async Task<IActionResult> LikeComment(Guid id)
     {
         try
         {
+            var userId = GetUserId();
             var comment = await _context.Comments.FindAsync(id);
             if (comment == null)
                 return NotFound(new { success = false, message = "评论不存在" });
 
-            comment.Likes++;
+            var existing = await _context.UserLikes.FirstOrDefaultAsync(l =>
+                l.UserId == userId && l.TargetType == "comment" && l.TargetId == id);
+
+            if (existing == null)
+            {
+                _context.UserLikes.Add(new UserLike
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    TargetType = "comment",
+                    TargetId = id,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                _context.UserLikes.Remove(existing);
+            }
             await _context.SaveChangesAsync();
 
-            return Ok(new { success = true, likes = comment.Likes });
+            comment.Likes = await _context.UserLikes.CountAsync(l => l.TargetType == "comment" && l.TargetId == id);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, liked = existing == null, likes = comment.Likes });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new { success = false, message = "请先登录" });
         }
         catch (Exception ex)
         {
@@ -225,7 +242,6 @@ public class CommentController : ControllerBase
         }
     }
 
-    // ====== 删除评论 ======
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteComment(Guid id)
     {
@@ -239,26 +255,22 @@ public class CommentController : ControllerBase
             if (comment == null)
                 return NotFound(new { success = false, message = "评论不存在" });
 
-            // 只有评论者本人可以删除
             if (comment.UserId != userId)
                 return Forbid();
 
-            // 如果有回复，级联删除
             if (comment.Replies.Any())
             {
                 _context.Comments.RemoveRange(comment.Replies);
             }
             _context.Comments.Remove(comment);
+            await _context.SaveChangesAsync();
 
-            // 更新帖子的评论数
             var post = await _context.Posts.FindAsync(comment.PostId);
             if (post != null)
             {
-                post.Comments = await _context.Comments.CountAsync(c => c.PostId == comment.PostId) - 1 - comment.Replies.Count;
-                if (post.Comments < 0) post.Comments = 0;
+                post.Comments = await _context.Comments.CountAsync(c => c.PostId == comment.PostId);
+                await _context.SaveChangesAsync();
             }
-
-            await _context.SaveChangesAsync();
 
             _logger.LogInformation("用户 {UserId} 删除了评论 {CommentId}", userId, id);
 

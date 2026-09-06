@@ -31,7 +31,6 @@ public class PostController : ControllerBase
         return userId;
     }
 
-    // ====== 获取帖子列表（公开） ======
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> GetPosts(
@@ -41,7 +40,6 @@ public class PostController : ControllerBase
     {
         try
         {
-            // 参数校验：page >= 1，pageSize 限制在 1~50
             if (page < 1) page = 1;
             pageSize = Math.Clamp(pageSize, 1, 50);
 
@@ -86,7 +84,6 @@ public class PostController : ControllerBase
         }
     }
 
-    // ====== 获取帖子分类列表 ======
     [HttpGet("categories")]
     [AllowAnonymous]
     public IActionResult GetCategories()
@@ -104,7 +101,6 @@ public class PostController : ControllerBase
         return Ok(new { success = true, data = categories });
     }
 
-    // ====== 获取单篇帖子 ======
     [HttpGet("{id}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetPost(Guid id)
@@ -143,12 +139,14 @@ public class PostController : ControllerBase
         }
     }
 
-    // ====== 创建帖子 ======
     [HttpPost]
     public async Task<IActionResult> CreatePost([FromBody] PostDto dto)
     {
         try
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, message = "参数校验失败" });
+
             var userId = GetUserId();
 
             var post = new Post
@@ -159,7 +157,7 @@ public class PostController : ControllerBase
                 Content = dto.Content,
                 Category = dto.Category,
                 Icon = dto.Icon ?? "📖",
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
 
             _context.Posts.Add(post);
@@ -195,20 +193,44 @@ public class PostController : ControllerBase
         }
     }
 
-    // ====== 点赞帖子 ======
     [HttpPost("{id}/like")]
     public async Task<IActionResult> LikePost(Guid id)
     {
         try
         {
+            var userId = GetUserId();
             var post = await _context.Posts.FindAsync(id);
             if (post == null)
                 return NotFound(new { success = false, message = "帖子不存在" });
 
-            post.Likes++;
+            var existing = await _context.UserLikes.FirstOrDefaultAsync(l =>
+                l.UserId == userId && l.TargetType == "post" && l.TargetId == id);
+
+            if (existing == null)
+            {
+                _context.UserLikes.Add(new UserLike
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    TargetType = "post",
+                    TargetId = id,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                _context.UserLikes.Remove(existing);
+            }
             await _context.SaveChangesAsync();
 
-            return Ok(new { success = true, message = "点赞成功", likes = post.Likes });
+            post.Likes = await _context.UserLikes.CountAsync(l => l.TargetType == "post" && l.TargetId == id);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, liked = existing == null, likes = post.Likes });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new { success = false, message = "请先登录" });
         }
         catch (Exception ex)
         {
@@ -217,7 +239,6 @@ public class PostController : ControllerBase
         }
     }
 
-    // ====== 删除帖子 ======
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeletePost(Guid id)
     {
@@ -247,11 +268,15 @@ public class PostController : ControllerBase
             return StatusCode(500, new { success = false, message = "服务器错误" });
         }
     }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdatePost(Guid id, [FromBody] UpdatePostDto dto)
     {
         try
         {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, message = "参数校验失败" });
+
             var userId = GetUserId();
             var post = await _context.Posts
                 .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
@@ -259,7 +284,6 @@ public class PostController : ControllerBase
             if (post == null)
                 return NotFound(new { success = false, message = "帖子不存在或无权限" });
 
-            // 更新字段
             post.Title = dto.Title;
             post.Content = dto.Content;
             post.Category = dto.Category;
@@ -300,7 +324,6 @@ public class PostController : ControllerBase
         }
     }
 
-    // DTO
     public class UpdatePostDto
     {
         [Required]

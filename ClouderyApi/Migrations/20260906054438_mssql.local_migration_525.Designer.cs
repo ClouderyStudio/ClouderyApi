@@ -3,6 +3,7 @@ using System;
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClouderyApi.Migrations
 {
     [DbContext(typeof(QisoulDbContext))]
-    partial class QisoulDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260906054438_mssql.local_migration_525")]
+    partial class mssqllocal_migration_525
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
