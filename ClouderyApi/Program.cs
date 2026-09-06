@@ -3,10 +3,13 @@ using ClouderyApi.Data;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+builder.Services.AddHttpClient("Casdoor"); // 供 AuthController 通过 IHttpClientFactory 使用
 
 builder.Services.AddOpenApi();
 
@@ -22,7 +25,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
     {
-        options.Cookie.HttpOnly = false;
+        options.Cookie.HttpOnly = true; // 安全：禁止前端 JS 读取会话 Cookie，防 XSS 窃取会话
         options.Cookie.SameSite = SameSiteMode.None;
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromDays(7);
@@ -73,6 +76,30 @@ builder.Services.AddSwaggerGen(u =>
 });
 
 var app = builder.Build();
+
+// ===== 基础限流（内存固定窗口，按客户端 IP） =====
+// 缓解登录/发布/点赞等接口被爆破或刷量；分布式场景可替换为 Redis 实现。
+var rateLimitStore = new ConcurrentDictionary<string, (int count, long windowStart)>();
+app.Use(async (context, next) =>
+{
+    const int maxRequests = 300;      // 每窗口内最大请求数
+    const int windowSeconds = 60;     // 窗口时长(秒)
+    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var entry = rateLimitStore.GetOrAdd(ip, _ => (count: 0, windowStart: now));
+    // 窗口滚动：距上次窗口起始超过 windowSeconds 则开新窗口
+    if (now - entry.windowStart >= windowSeconds)
+        entry = (count: 0, windowStart: now);
+    entry.count++;
+    rateLimitStore[ip] = entry;
+    if (entry.count > maxRequests)
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.Response.WriteAsJsonAsync(new { success = false, message = "请求过于频繁，请稍后再试" });
+        return;
+    }
+    await next();
+});
 
 app.UseCors("AllowAllOrigins");
 
