@@ -19,7 +19,6 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 周目 | `/zhuxs/terms` | 周目信息（名称、起止时间、版本、模组数、人数、模组文件） |
 | 服务器 | `/sc/server` | SurvivalCraft 服务器接口（转发 / 查询） |
 | 长链 | `/misc/longlink` | 将普通链接编码为 IPv6.arpa 长链，解码并安全跳转（仅允许 http/https） |
-| 马人语录 | `/misc/maren` | 趣味“骂人”语录 / 段子随机返回 |
 
 ## 技术栈
 
@@ -44,18 +43,19 @@ ClouderyApi/
 ├── Controllers/
 │   ├── Auth/AuthController.cs
 │   ├── Cloudery/MembersController.cs
+│   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器
 │   ├── Misc/LongLinkController.cs
-│   ├── Misc/MarenController.cs
 │   ├── Qisoul/                    # Mood / Post / Comment / Sticky / Stats
 │   ├── SurvivalCraft/ServerController.cs
 │   └── Zhuxs/                     # Applications / Terms / Whitelists
 ├── Data/
 │   ├── ClouderyApiContext.cs
 │   └── QisoulDbContext.cs
+├── Utilities/SecurityHelper.cs   # 输出 HTML 编码（防存储型 XSS）
 ├── Models/
-│   ├── Cloudery/Member.cs
-│   ├── Qisoul/                    # 实体 + DTOs
-│   └── Zhuxs/                     # Application / Term / Whitelist
+│   ├── Cloudery/                 # Member（实体）+ MemberDto
+│   ├── Qisoul/                   # 实体 + DTOs + UserLike（点赞去重表）
+│   └── Zhuxs/                    # 实体 + DTOs
 ├── Migrations/                    # QisoulDbContext 的 SQL Server 迁移与模型快照
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
@@ -84,6 +84,7 @@ cp ClouderyApi/appsettings.example.json ClouderyApi/appsettings.json
 | `Casdoor` | OAuth2 认证：Endpoint、组织名、应用名、ClientId、ClientSecret、回调路径等 |
 | `Cors:AllowedOrigins` | 允许跨域的来源白名单（默认含 localhost 及各站点域名） |
 | `Env:SCKEY_API_BASE`、`Env:SCKEY_BEARER_TOKEN` | Server 酱（SCKEY）推送配置 |
+| `Authorization:Admins` | 管理员 CasdoorId 列表，用于白名单/申请/周目/成员等敏感写操作 |
 
 > ⚠️ `appsettings.json` 包含数据库口令、Casdoor 客户端密钥等敏感信息，已被 `.gitignore` 排除，**请勿提交到仓库**。默认端口见 `Properties/launchSettings.json`（`http://localhost:5171`，HTTPS `https://localhost:7288`）。
 
@@ -110,7 +111,7 @@ dotnet ef database update --context QisoulDbContext
 
 ## 配置说明（Program.cs 要点）
 
-- **认证**：Casdoor 登录流程 + Cookie 认证，Cookie 设置 `HttpOnly=false`、`SameSite=None`、`Secure`，有效期 7 天（滑动续期），登录 / 登出路径为 `/identity/auth/login`、`/identity/auth/logout`。
+- **认证**：Casdoor 登录流程 + Cookie 认证，Cookie 设置 `HttpOnly=true`（防 XSS 窃取会话）、`SameSite=None`、`Secure`，有效期 7 天（滑动续期），登录 / 登出路径为 `/identity/auth/login`、`/identity/auth/logout`。
 - **CORS**：名为 `AllowAllOrigins` 的策略，限定 `Cors:AllowedOrigins` 白名单，允许携带凭据，任意方法与请求头。
 - **CSRF 防护**：非开发环境下启用自定义中间件，对跨站请求（Origin 不在白名单内）的写操作返回 403。
 - **仅开发环境**：映射 OpenAPI 与 Swagger UI。
@@ -122,7 +123,7 @@ dotnet ef database update --context QisoulDbContext
 3. 前端调用 `POST /identity/auth/callback` 携带 code 与 state，服务端校验 state（防登录 CSRF）、换取 Access Token、解析 JWT 用户信息并建立会话；
 4. 后续请求通过 Cookie 会话访问受限接口，`GET /identity/auth/me` 可获取当前用户。
 
-> 旧前端若不携带 state，服务端会放行但记录警告日志。
+> 回调必须携带与 `oauth_state` Cookie 一致的 `state`，否则拒绝登录（防 CSRF）。
 
 ## GitHub Actions
 
@@ -135,6 +136,11 @@ dotnet ef database update --context QisoulDbContext
 ## 安全注意事项
 
 - 所有需授权的写操作依赖 Cookie 会话与 CSRF 校验；请确保生产环境走 HTTPS（Cookie 为 `Secure`）。
+- 敏感数据（白名单/周目/申请/成员）的写操作由 `AdminOnlyAttribute` 限管理员（配置 `Authorization:Admins`），主键由服务端生成并校验 `ModelState`（防越权与 over-posting）。
+- 用户内容（帖子/评论/心情/便签）由前端渲染边界防御 XSS（markdown 经 DOMPurify 净化、纯文本经 Vue `{{}}` 转义），服务端保持原样返回；会话 Cookie 已设 `HttpOnly=true`。
+- 点赞基于 `UserLike` 去重表实现幂等切换，评论数在增删后重新统计，避免并发计数不一致。
+- 内置按 IP 的固定窗口限流（每 60 秒 300 次），缓解接口被刷与爆破。
+- 已按代码审查移除公开的骂人接口 `/misc/maren`。
 - 长链跳转接口严格校验目标为 http/https 绝对地址，防止 `javascript:`、`data:` 等危险协议。
 - 切勿将 `appsettings.json`（含真实密钥）提交至版本库。
 
