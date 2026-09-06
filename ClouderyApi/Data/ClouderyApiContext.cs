@@ -1,4 +1,4 @@
-﻿using ClouderyApi.Models.Cloudery;
+using ClouderyApi.Models.Cloudery;
 using ClouderyApi.Models.Zhuxs;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -13,6 +13,7 @@ public class ClouderyApiContext(DbContextOptions<ClouderyApiContext> options) : 
     public DbSet<Term> ZhuxsTerms { get; set; } = null!;
     public DbSet<Application> ZhuxsApplications { get; set; } = null!;
     public DbSet<Member> ClouderyMembers { get; set; } = null!;
+    public DbSet<ExamPaper> ExamPapers { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,5 +42,11 @@ public class ClouderyApiContext(DbContextOptions<ClouderyApiContext> options) : 
             .HasConversion(
                 v => JsonSerializer.Serialize(v, JsonSerializerOptions),
                 v => JsonSerializer.Deserialize<List<Social>>(v, JsonSerializerOptions));
+
+        modelBuilder.Entity<ExamPaper>()
+            .Property(e => e.Sections)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, JsonSerializerOptions),
+                v => JsonSerializer.Deserialize<List<ExamSection>>(v, JsonSerializerOptions));
     }
 }

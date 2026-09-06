@@ -47,6 +47,28 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// 供前端构造 Casdoor 授权登录地址所需的元数据（用于第三方站点登录本 API）
+    /// </summary>
+    [HttpGet("config")]
+    public IActionResult GetConfig()
+    {
+        var baseUrl = Request.Scheme + "://" + Request.Host.Host + (Request.Host.Port.HasValue ? ":" + Request.Host.Port.Value : "");
+        return Ok(new
+        {
+            success = true,
+            casdoor = new
+            {
+                endpoint = _options.Endpoint,
+                organizationName = _options.OrganizationName,
+                applicationName = _options.ApplicationName,
+                clientId = _options.ClientId,
+                scope = "openid profile email"
+            },
+            callbackUri = baseUrl + "/identity/auth/callback"
+        });
+    }
+
+    /// <summary>
     /// 生成 OAuth state（防 CSRF 登录）：前端跳转 Casdoor 登录前调用，
     /// 拿到 state 后随登录流程带回，回调时服务端校验与 cookie 一致。
     /// </summary>
