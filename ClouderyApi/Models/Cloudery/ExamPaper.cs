@@ -36,3 +36,25 @@ public class ExamPaper
     public required List<ExamSection> Sections { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+/// <summary>下发给测试端的试卷视图（故意不包含 Answer / Note，避免答案暴露在客户端网络层）</summary>
+public class ExamQuestionView
+{
+    public required string Text { get; set; }
+    public List<ExamOption>? Options { get; set; }
+    public string? Type { get; set; }
+}
+
+public class ExamSectionView
+{
+    public required string Title { get; set; }
+    public double? PointsPerQuestion { get; set; }
+    public required List<ExamQuestionView> Questions { get; set; }
+}
+
+public class ExamPaperView
+{
+    public required string Id { get; set; }
+    public required string Name { get; set; }
+    public required List<ExamSectionView> Sections { get; set; }
+}
