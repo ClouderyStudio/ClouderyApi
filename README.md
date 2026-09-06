@@ -7,8 +7,9 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 
 | 模块 | 路由前缀 | 说明 |
 | ---- | -------- | ---- |
-| 身份认证 | `/identity/auth` | 基于 **Casdoor** OAuth2 的登录 / 回调 / 登出 / 当前用户查询，Cookie 会话 + CSRF 防护 |
+| 身份认证 | `/identity/auth` | 基于 **Casdoor** OAuth2 的登录 / 回调 / 登出 / 当前用户查询，Cookie 会话 + CSRF 防护；另有 `GET /config` 供第三方站点取登录元数据 |
 | 团队成员 | `/cloudery/members` | 团队 / 组织成员信息（姓名、职位、简介、社交链接）增删改查 |
+| 内部试卷 | `/exam/ExamPapers` | 内部测试试卷（心理学项目）整卷 JSON 存于 `ExamPapers` 表，公开可读、写操作需管理员 |
 | 情绪记录 | `/qisoul/mood` | 情绪打卡（类型、标签、强度 1-5、情绪日记、备注、标签） |
 | 帖子 | `/qisoul/post` | 社区文章（分类、图标、点赞、评论数、编辑） |
 | 评论 | `/qisoul/comment` | 帖子评论，支持嵌套回复 |
@@ -42,7 +43,7 @@ ClouderyApi/
 ├── ClouderyApi.http               # HTTP 调试脚本（VS 使用）
 ├── Controllers/
 │   ├── Auth/AuthController.cs
-│   ├── Cloudery/MembersController.cs
+│   ├── Cloudery/           # Members / ExamPapers
 │   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器
 │   ├── Misc/LongLinkController.cs
 │   ├── Qisoul/                    # Mood / Post / Comment / Sticky / Stats
@@ -53,10 +54,10 @@ ClouderyApi/
 │   └── QisoulDbContext.cs
 ├── Utilities/SecurityHelper.cs   # 输出 HTML 编码（防存储型 XSS）
 ├── Models/
-│   ├── Cloudery/                 # Member（实体）+ MemberDto
+│   ├── Cloudery/                 # Member（实体）+ MemberDto、ExamPaper（含嵌套类型）
 │   ├── Qisoul/                   # 实体 + DTOs + UserLike（点赞去重表）
 │   └── Zhuxs/                    # 实体 + DTOs
-├── Migrations/                    # QisoulDbContext 的 SQL Server 迁移与模型快照
+├── Migrations/                    # QisoulDbContext（SQL Server）迁移；Migrations/ClouderyApi/ 为 ClouderyApiContext（MySQL，含 ExamPapers 迁移）
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
 
@@ -102,12 +103,17 @@ OpenAPI 描述文档（开发环境）：`http://localhost:5171/openapi/v1.json`
 
 ### 数据库迁移
 
-本仓库包含 QisoulDbContext 的 SQL Server 迁移（见 `Migrations/`）。若使用 MySQL，可基于对应提供程序重新生成迁移：
+两个 `DbContext` 各自维护迁移：`QisoulDbContext`（SQL Server）在 `Migrations/`，`ClouderyApiContext`（MySQL）在 `Migrations/ClouderyApi/`。生成并应用迁移：
 
 ```bash
-dotnet ef migrations add <MigrationName> --context QisoulDbContext
+dotnet ef migrations add <Name> --context QisoulDbContext
 dotnet ef database update --context QisoulDbContext
+
+dotnet ef migrations add <Name> --context ClouderyApiContext
+dotnet ef database update --context ClouderyApiContext
 ```
+
+> 内部试卷表迁移 `AddExamPapers` 仅新增 `ExamPapers` 表（整卷 JSON 存单列，兼容既有 schema）。存在多个 `DbContext` 时，`dotnet ef` 命令需显式指定 `--context`。
 
 ## 配置说明（Program.cs 要点）
 
@@ -118,12 +124,13 @@ dotnet ef database update --context QisoulDbContext
 
 ## 认证流程（Casdoor）
 
-1. 前端调用 `GET /identity/auth/state` 获取一次性 state（服务端种下 `oauth_state` Cookie）；
-2. 跳转 Casdoor 登录，回调参数带回 code 与 state；
-3. 前端调用 `POST /identity/auth/callback` 携带 code 与 state，服务端校验 state（防登录 CSRF）、换取 Access Token、解析 JWT 用户信息并建立会话；
-4. 后续请求通过 Cookie 会话访问受限接口，`GET /identity/auth/me` 可获取当前用户。
+1. 前端调用 `GET /identity/auth/config` 获取 Casdoor 元数据（Endpoint / clientId / scope）与本服务的回调地址；
+2. 前端调用 `GET /identity/auth/state` 获取一次性 state（服务端种下 `oauth_state` Cookie）；
+3. 前端以 `redirect_uri` 指向其本站回调页，跳转 Casdoor 登录，登录后浏览器携带 code 与 state 返回；
+4. 前端调用 `POST /identity/auth/callback`（JSON：code / state / redirectUri）完成换号与建会话，服务端校验 state（防登录 CSRF）；
+5. 后续请求通过 Cookie 会话访问受限接口，`GET /identity/auth/me` 可获取当前用户。
 
-> 回调必须携带与 `oauth_state` Cookie 一致的 `state`，否则拒绝登录（防 CSRF）。
+> 回调必须携带与 `oauth_state` Cookie 一致的 `state`，否则拒绝登录（防 CSRF）。回调端点为 `HttpPost`，需由前端发起，而非浏览器直接跳转到该地址。
 
 ## GitHub Actions
 
@@ -136,7 +143,7 @@ dotnet ef database update --context QisoulDbContext
 ## 安全注意事项
 
 - 所有需授权的写操作依赖 Cookie 会话与 CSRF 校验；请确保生产环境走 HTTPS（Cookie 为 `Secure`）。
-- 敏感数据（白名单/周目/申请/成员）的写操作由 `AdminOnlyAttribute` 限管理员（配置 `Authorization:Admins`），主键由服务端生成并校验 `ModelState`（防越权与 over-posting）。
+- 敏感数据（白名单/周目/申请/成员/内部试卷）的写操作由 `AdminOnlyAttribute` 限管理员（配置 `Authorization:Admins`），主键由服务端生成并校验 `ModelState`（防越权与 over-posting）。
 - 用户内容（帖子/评论/心情/便签）由前端渲染边界防御 XSS（markdown 经 DOMPurify 净化、纯文本经 Vue `{{}}` 转义），服务端保持原样返回；会话 Cookie 已设 `HttpOnly=true`。
 - 点赞基于 `UserLike` 去重表实现幂等切换，评论数在增删后重新统计，避免并发计数不一致。
 - 内置按 IP 的固定窗口限流（每 60 秒 300 次），缓解接口被刷与爆破。
