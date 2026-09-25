@@ -44,6 +44,21 @@ public static class MhopSeeder
                 logger.LogInformation("MHOP 种子数据：内置管理员 admin 已升级为超级管理员");
         }
 
+        // 应急超管账号 root：原 admin 被停用时仍可进入后台。仅在不存在时创建，
+        // 已存在则绝不重置密码/状态，避免覆盖后续的改密操作。
+        if (!await db.MhopUsers.AnyAsync(u => u.Username == "root"))
+        {
+            db.MhopUsers.Add(new MhopUser
+            {
+                Username = "root",
+                PasswordHash = hasher.Hash("1234567"),
+                Role = "superadmin",
+                Status = "active",
+                CreatedAt = DateTime.UtcNow,
+            });
+            logger.LogInformation("MHOP 种子数据：已创建应急超级管理员 root（首次登录后请立即修改密码）");
+        }
+
         if (!await db.MhopPosts.AnyAsync())
         {
             var post = new MhopPost
