@@ -104,4 +104,32 @@ public sealed class MhopUploadService
             throw new MhopApiException(502, "图片存储服务暂时不可用，请稍后重试");
         }
     }
+
+    /// <summary>
+    /// 尽力删除一批图片对象（帖子 / 回复被删除，或编辑时移除了图片）。
+    /// 非本存储写入的地址直接跳过；单张失败只记日志，既不抛出也不影响主流程。
+    /// </summary>
+    public async Task DeleteAsync(IEnumerable<string> urls, CancellationToken cancellationToken = default)
+    {
+        var targets = urls.Where(u => !string.IsNullOrWhiteSpace(u))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (targets.Count == 0) return;
+
+        var deleted = 0;
+        foreach (var url in targets)
+        {
+            try
+            {
+                if (await _storage.DeleteAsync(url, cancellationToken)) deleted++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "删除图片对象失败，已跳过：{Url}", url);
+            }
+        }
+
+        _logger.LogInformation("图片清理完成：{Provider} 删除 {Deleted} / 请求 {Total} 张",
+            _storage.Provider, deleted, targets.Count);
+    }
 }

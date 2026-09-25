@@ -16,6 +16,12 @@ public interface IMhopObjectStorage
 
     /// <summary>写入对象并返回可直接访问的 URL。key 形如 `avatars/xxx.webp`。</summary>
     Task<string> PutAsync(string key, byte[] content, string contentType, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 删除此前由本存储写入的对象。传入入库时保存的访问地址（本地相对路径或 OSS 外链）。
+    /// 地址不属于本存储时返回 false 且不做任何操作；对象本就不存在不算失败。
+    /// </summary>
+    Task<bool> DeleteAsync(string url, CancellationToken cancellationToken = default);
 }
 
 /// <summary>上传路径辅助：本地静态托管根目录与请求前缀。</summary>
@@ -62,6 +68,28 @@ public sealed class MhopLocalObjectStorage : IMhopObjectStorage
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         await File.WriteAllBytesAsync(fullPath, content, cancellationToken);
         return MhopUploadPaths.RequestPath + "/" + relative;
+    }
+
+    public Task<bool> DeleteAsync(string url, CancellationToken cancellationToken = default)
+    {
+        var relative = ToRelativePath(url);
+        if (relative is null) return Task.FromResult(false);
+
+        var fullPath = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(fullPath)) return Task.FromResult(false);
+        File.Delete(fullPath);
+        return Task.FromResult(true);
+    }
+
+    /// <summary>把 /mhop/uploads/... 形式的地址还原为相对路径；非本存储地址返回 null。</summary>
+    private static string? ToRelativePath(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var marker = MhopUploadPaths.RequestPath + "/";
+        var index = url.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0) return null;
+        var relative = url[(index + marker.Length)..];
+        return relative.Length == 0 || relative.Contains("..", StringComparison.Ordinal) ? null : relative;
     }
 }
 
@@ -127,11 +155,32 @@ public sealed class MhopAliyunOssStorage : IMhopObjectStorage
         return PublicUrl(objectKey);
     }
 
-    /// <summary>拼接外链地址：优先自定义域名 / CDN，否则按 `&lt;bucket&gt;.&lt;endpoint&gt;` 推导。</summary>
-    private string PublicUrl(string objectKey)
+    public async Task<bool> DeleteAsync(string url, CancellationToken cancellationToken = default)
+    {
+        var objectKey = ToObjectKey(url);
+        if (objectKey is null) return false;
+
+        // 官方 SDK 为同步接口，放到线程池执行以免阻塞请求线程；对象不存在时 OSS 同样返回成功
+        await Task.Run(() => _client.DeleteObject(_options.Bucket, objectKey), cancellationToken);
+        return true;
+    }
+
+    /// <summary>把外链地址还原为对象键；未命中本存储的外链前缀时返回 null。</summary>
+    private string? ToObjectKey(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var value = url.Trim();
+        var baseUrl = PublicBase();
+        if (!value.StartsWith(baseUrl, StringComparison.OrdinalIgnoreCase)) return null;
+        var objectKey = value[baseUrl.Length..];
+        return objectKey.Length == 0 || objectKey.Contains("..", StringComparison.Ordinal) ? null : objectKey;
+    }
+
+    /// <summary>外链前缀：优先自定义域名 / CDN，否则按 `&lt;bucket&gt;.&lt;endpoint&gt;` 推导。</summary>
+    private string PublicBase()
     {
         if (!string.IsNullOrWhiteSpace(_options.PublicBaseUrl))
-            return _options.PublicBaseUrl.TrimEnd('/') + "/" + objectKey;
+            return _options.PublicBaseUrl.TrimEnd('/') + "/";
 
         var endpoint = _options.Endpoint.Trim().TrimEnd('/');
         var scheme = "https";
@@ -141,6 +190,8 @@ public sealed class MhopAliyunOssStorage : IMhopObjectStorage
             scheme = endpoint[..separator];
             endpoint = endpoint[(separator + 3)..];
         }
-        return scheme + "://" + _options.Bucket + "." + endpoint + "/" + objectKey;
+        return scheme + "://" + _options.Bucket + "." + endpoint + "/";
     }
+
+    private string PublicUrl(string objectKey) => PublicBase() + objectKey;
 }

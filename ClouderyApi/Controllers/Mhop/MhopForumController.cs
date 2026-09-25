@@ -20,15 +20,18 @@ public class MhopForumController : MhopControllerBase
     private readonly MhopDbContext _db;
     private readonly MhopCurrentUserAccessor _current;
     private readonly MhopOnlineTracker _online;
+    private readonly MhopUploadService _uploads;
 
     public MhopForumController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
-        MhopOnlineTracker online)
+        MhopOnlineTracker online,
+        MhopUploadService uploads)
     {
         _db = db;
         _current = current;
         _online = online;
+        _uploads = uploads;
     }
 
     // ---------------- 读取接口 ----------------
@@ -459,12 +462,15 @@ public class MhopForumController : MhopControllerBase
         post.Board = body.Board;
         post.IsAnonymous = body.IsAnonymous;
         var images = NormalizeImages(body.Images);
+        // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
+        var removedImages = ParseImages(post.Images).Except(images, StringComparer.Ordinal).ToList();
         post.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
         post.Crisis = MhopModeration.DetectCrisis(content);
         post.ReviewNote = string.Empty;
 
         await _db.SaveChangesAsync();
         // AI 自动回复只随审核通过产生：待审核 / 草稿阶段无论编辑多少次都不会生成回复
+        await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
 
         return MhopOk(new { ok = true, status = post.Status, crisis = post.Crisis });
     }
@@ -513,10 +519,17 @@ public class MhopForumController : MhopControllerBase
             (l.TargetType == "post" && l.TargetId == post.Id)
             || (l.TargetType == "reply" && replyIds.Contains(l.TargetId))).ToListAsync();
 
+        // 帖子与它全部回复的图片一起收集，先落库再清理存储对象，避免删库失败时丢图
+        var images = ParseImages(post.Images)
+            .Concat(replies.SelectMany(r => ParseImages(r.Images)))
+            .ToList();
+
         if (likes.Count > 0) _db.MhopLikes.RemoveRange(likes);
         if (replies.Count > 0) _db.MhopReplies.RemoveRange(replies);
         _db.MhopPosts.Remove(post);
         await _db.SaveChangesAsync();
+
+        await _uploads.DeleteAsync(images, HttpContext.RequestAborted);
         return MhopOk(new { ok = true });
     }
 
@@ -537,6 +550,8 @@ public class MhopForumController : MhopControllerBase
         reply.Content = content;
         reply.IsAnonymous = body.IsAnonymous;
         var images = NormalizeImages(body.Images);
+        // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
+        var removedImages = ParseImages(reply.Images).Except(images, StringComparer.Ordinal).ToList();
         reply.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
         reply.Crisis = MhopModeration.DetectCrisis(content);
 
@@ -550,6 +565,7 @@ public class MhopForumController : MhopControllerBase
         }
 
         await _db.SaveChangesAsync();
+        await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
         return MhopOk(new { ok = true, status = reply.Status });
     }
 
@@ -591,10 +607,14 @@ public class MhopForumController : MhopControllerBase
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
 
+        var images = ParseImages(reply.Images);
+
         _db.MhopLikes.RemoveRange(await _db.MhopLikes
             .Where(l => l.TargetType == "reply" && l.TargetId == reply.Id).ToListAsync());
         _db.MhopReplies.Remove(reply);
         await _db.SaveChangesAsync();
+
+        await _uploads.DeleteAsync(images, HttpContext.RequestAborted);
         return MhopOk(new { ok = true });
     }
 

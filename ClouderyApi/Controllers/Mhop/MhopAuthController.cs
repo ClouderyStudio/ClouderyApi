@@ -23,6 +23,7 @@ public class MhopAuthController : MhopControllerBase
     private readonly MhopEmailCodeService _emailCodes;
     private readonly MhopCurrentUserAccessor _current;
     private readonly ILogger<MhopAuthController> _logger;
+    private readonly MhopUploadService _uploads;
 
     public MhopAuthController(
         MhopDbContext db,
@@ -30,7 +31,8 @@ public class MhopAuthController : MhopControllerBase
         IMhopJwtService jwt,
         MhopEmailCodeService emailCodes,
         MhopCurrentUserAccessor current,
-        ILogger<MhopAuthController> logger)
+        ILogger<MhopAuthController> logger,
+        MhopUploadService uploads)
     {
         _db = db;
         _hasher = hasher;
@@ -38,6 +40,7 @@ public class MhopAuthController : MhopControllerBase
         _emailCodes = emailCodes;
         _current = current;
         _logger = logger;
+        _uploads = uploads;
     }
 
     [HttpPost("register")]
@@ -196,8 +199,14 @@ public class MhopAuthController : MhopControllerBase
             throw new MhopApiException(400, "用户名已被占用");
 
         user.Username = username;
+        var previousAvatar = user.Avatar;
         user.Avatar = body.Avatar ?? string.Empty;
         await _db.SaveChangesAsync();
+
+        // 头像被替换或清空后旧文件不再被引用；外部地址会被存储层自动跳过
+        if (!string.Equals(previousAvatar, user.Avatar, StringComparison.Ordinal))
+            await _uploads.DeleteAsync([previousAvatar], HttpContext.RequestAborted);
+
         return MhopOk(UserOut.FromEntity(user));
     }
 
