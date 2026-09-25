@@ -82,6 +82,7 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
         "http://localhost:5175",
         "https://localhost:5174",
         "https://qisoul.cldery.com",
+        "https://mhop.cldery.com",
         "https://cldery.com",
         "https://www.cldery.com"
     };
