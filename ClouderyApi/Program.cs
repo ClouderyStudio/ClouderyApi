@@ -1,13 +1,15 @@
 using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
+using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi;
 using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<MhopApiExceptionFilter>());
 
 builder.Services.AddHttpClient("Casdoor"); // 供 AuthController 通过 IHttpClientFactory 使用
 
@@ -20,6 +22,38 @@ builder.Services.AddDbContext<ClouderyApiContext>(options =>
 
 builder.Services.AddDbContext<QisoulDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
+
+// ===== MHOP 公益心理辅助平台模块（从 Python FastAPI 后端迁移） =====
+builder.Services.Configure<MhopOptions>(builder.Configuration.GetSection(MhopOptions.SectionName));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddDbContext<MhopDbContext>(options =>
+    options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
+builder.Services.AddSingleton<MhopPasswordHasher>();
+builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();
+builder.Services.AddSingleton<MhopOnlineTracker>();
+builder.Services.AddSingleton<MhopSmtpClient>();
+builder.Services.AddSingleton<MhopEmailCodeService>();
+builder.Services.AddSingleton<MhopCasdoorService>();
+builder.Services.AddSingleton<MhopAiService>();
+builder.Services.AddScoped<MhopCurrentUserAccessor>();
+
+// 图片对象存储：local = 本机磁盘（由 /mhop/uploads 静态托管）；oss = 远端阿里云 OSS
+builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var provider = (configuration["Mhop:Storage:Provider"] ?? "local").Trim();
+    if (provider.Equals("oss", StringComparison.OrdinalIgnoreCase)
+        || provider.Equals("aliyun", StringComparison.OrdinalIgnoreCase))
+    {
+        var ossOptions = new MhopOssOptions();
+        configuration.GetSection("Mhop:Storage:Oss").Bind(ossOptions);
+        return new MhopAliyunOssStorage(ossOptions, sp.GetRequiredService<ILogger<MhopAliyunOssStorage>>());
+    }
+
+    var contentRoot = sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
+    return new MhopLocalObjectStorage(MhopUploadPaths.ResolveLocalRoot(configuration["Mhop:UploadDir"], contentRoot));
+});
+builder.Services.AddScoped<MhopUploadService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
@@ -76,6 +110,37 @@ builder.Services.AddSwaggerGen(u =>
 });
 
 var app = builder.Build();
+
+// ===== MHOP：数据库自动迁移 + 种子数据 =====
+// 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
+if (app.Configuration.GetValue("Mhop:AutoMigrate", app.Environment.IsDevelopment()))
+{
+    try
+    {
+        using var mhopScope = app.Services.CreateScope();
+        mhopScope.ServiceProvider.GetRequiredService<MhopDbContext>().Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "MHOP 数据库自动迁移失败，可执行 dotnet ef database update --context MhopDbContext 手动迁移");
+    }
+}
+
+if (app.Configuration.GetValue("Mhop:Seed", true))
+{
+    try
+    {
+        using var mhopScope = app.Services.CreateScope();
+        await MhopSeeder.SeedAsync(
+            mhopScope.ServiceProvider.GetRequiredService<MhopDbContext>(),
+            mhopScope.ServiceProvider.GetRequiredService<MhopPasswordHasher>(),
+            app.Logger);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "MHOP 种子数据初始化失败");
+    }
+}
 
 // ===== 基础限流（内存固定窗口，按客户端 IP） =====
 // 缓解登录/发布/点赞等接口被爆破或刷量；分布式场景可替换为 Redis 实现。
@@ -137,6 +202,21 @@ if(!app.Environment.IsDevelopment())
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 app.UseHttpsRedirection();
+
+// ===== MHOP 图片本地静态托管：/mhop/uploads/* =====
+// 即使已切到远端 OSS，也保留本地托管，让迁移前的历史图片继续可访问。
+var mhopStorage = app.Services.GetRequiredService<IMhopObjectStorage>();
+var mhopUploadRoot = mhopStorage is MhopLocalObjectStorage localStorage
+    ? localStorage.Root
+    : MhopUploadPaths.ResolveLocalRoot(app.Configuration["Mhop:UploadDir"], app.Environment.ContentRootPath);
+Directory.CreateDirectory(Path.Combine(mhopUploadRoot, "avatars"));
+Directory.CreateDirectory(Path.Combine(mhopUploadRoot, "posts"));
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(mhopUploadRoot),
+    RequestPath = MhopUploadPaths.RequestPath,
+});
+app.Logger.LogInformation("MHOP 图片存储：{Provider}（本地兼容目录 {Root}）", mhopStorage.Provider, mhopUploadRoot);
 
 app.UseAuthentication();
 

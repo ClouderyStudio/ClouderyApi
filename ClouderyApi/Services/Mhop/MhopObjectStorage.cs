@@ -1,0 +1,146 @@
+using Aliyun.OSS;
+
+namespace ClouderyApi.Services.Mhop;
+
+/// <summary>
+/// MHOP 图片对象存储抽象：本地磁盘或远端阿里云 OSS。
+/// 由 `Mhop:Storage:Provider` 决定具体实现（local / oss），上传成功后返回可直接访问的 URL。
+/// </summary>
+public interface IMhopObjectStorage
+{
+    /// <summary>是否为远端对象存储。</summary>
+    bool IsRemote { get; }
+
+    /// <summary>实现名称（local / aliyun-oss），用于健康检查与日志。</summary>
+    string Provider { get; }
+
+    /// <summary>写入对象并返回可直接访问的 URL。key 形如 `avatars/xxx.webp`。</summary>
+    Task<string> PutAsync(string key, byte[] content, string contentType, CancellationToken cancellationToken = default);
+}
+
+/// <summary>上传路径辅助：本地静态托管根目录与请求前缀。</summary>
+public static class MhopUploadPaths
+{
+    /// <summary>本地静态托管前缀（Program.cs 与本地存储共用）。</summary>
+    public const string RequestPath = "/mhop/uploads";
+
+    /// <summary>解析本地存储根目录；配置为空时取 `&lt;内容根&gt;/uploads`。</summary>
+    public static string ResolveLocalRoot(string? configuredDir, string contentRootPath)
+        => string.IsNullOrWhiteSpace(configuredDir)
+            ? Path.Combine(contentRootPath, "uploads")
+            : Path.GetFullPath(Path.IsPathRooted(configuredDir)
+                ? configuredDir
+                : Path.Combine(contentRootPath, configuredDir));
+
+    /// <summary>规范化对象键：统一分隔符、去掉首部斜杠、拒绝路径穿越。</summary>
+    public static string NormalizeKey(string key)
+    {
+        var normalized = (key ?? string.Empty).Replace('\\', '/').TrimStart('/');
+        if (normalized.Length == 0 || normalized.Contains("..", StringComparison.Ordinal))
+            throw new MhopApiException(400, "非法的文件名");
+        return normalized;
+    }
+}
+
+/// <summary>本地磁盘存储：写入 `&lt;UploadDir&gt;/&lt;key&gt;`，URL 前缀 /mhop/uploads。</summary>
+public sealed class MhopLocalObjectStorage : IMhopObjectStorage
+{
+    public MhopLocalObjectStorage(string root) => Root = root;
+
+    /// <summary>本地存储根目录（供静态文件中间件复用）。</summary>
+    public string Root { get; }
+
+    public bool IsRemote => false;
+
+    public string Provider => "local";
+
+    public async Task<string> PutAsync(string key, byte[] content, string contentType, CancellationToken cancellationToken = default)
+    {
+        var relative = MhopUploadPaths.NormalizeKey(key);
+        var fullPath = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(fullPath, content, cancellationToken);
+        return MhopUploadPaths.RequestPath + "/" + relative;
+    }
+}
+
+/// <summary>
+/// 阿里云 OSS 存储：使用官方 SDK 的 PutObject（OSS 自有签名协议，非 S3）。
+/// 对象键会加上 `Mhop:Storage:Prefix` 前缀，便于与同一 Bucket 内其它业务隔离。
+/// </summary>
+public sealed class MhopAliyunOssStorage : IMhopObjectStorage
+{
+    private readonly OssClient _client;
+    private readonly MhopOssOptions _options;
+    private readonly ILogger<MhopAliyunOssStorage> _logger;
+
+    public MhopAliyunOssStorage(MhopOssOptions options, ILogger<MhopAliyunOssStorage> logger)
+    {
+        _options = options;
+        _logger = logger;
+
+        if (string.IsNullOrWhiteSpace(options.Endpoint)
+            || string.IsNullOrWhiteSpace(options.Bucket)
+            || string.IsNullOrWhiteSpace(options.AccessKeyId)
+            || string.IsNullOrWhiteSpace(options.AccessKeySecret))
+        {
+            throw new InvalidOperationException(
+                "Mhop:Storage:Provider=oss 需要在 Mhop:Storage:Oss 中配置 Endpoint / Bucket / AccessKeyId / AccessKeySecret。");
+        }
+
+        _client = string.IsNullOrWhiteSpace(options.SecurityToken)
+            ? new OssClient(options.Endpoint, options.AccessKeyId, options.AccessKeySecret)
+            : new OssClient(options.Endpoint, options.AccessKeyId, options.AccessKeySecret, options.SecurityToken);
+    }
+
+    public bool IsRemote => true;
+
+    public string Provider => "aliyun-oss";
+
+    public async Task<string> PutAsync(string key, byte[] content, string contentType, CancellationToken cancellationToken = default)
+    {
+        var relative = MhopUploadPaths.NormalizeKey(key);
+        var objectKey = string.IsNullOrWhiteSpace(_options.Prefix) ? relative : _options.Prefix.Trim('/') + "/" + relative;
+        var metadata = new ObjectMetadata { ContentType = contentType };
+
+        // 官方 SDK 为同步接口，放到线程池执行以免阻塞请求线程
+        await Task.Run(() =>
+        {
+            using var stream = new MemoryStream(content, writable: false);
+            _client.PutObject(_options.Bucket, objectKey, stream, metadata);
+        }, cancellationToken);
+
+        if (_options.PublicRead)
+        {
+            try
+            {
+                await Task.Run(() => _client.SetObjectAcl(_options.Bucket, objectKey, CannedAccessControlList.PublicRead), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Bucket 已为公共读、或使用 CDN 回源时无需对象级 ACL，失败不影响访问
+                _logger.LogWarning(ex, "设置 OSS 对象公共读失败（Bucket 已公共读时可忽略）：{ObjectKey}", objectKey);
+            }
+        }
+
+        return PublicUrl(objectKey);
+    }
+
+    /// <summary>拼接外链地址：优先自定义域名 / CDN，否则按 `&lt;bucket&gt;.&lt;endpoint&gt;` 推导。</summary>
+    private string PublicUrl(string objectKey)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.PublicBaseUrl))
+            return _options.PublicBaseUrl.TrimEnd('/') + "/" + objectKey;
+
+        var endpoint = _options.Endpoint.Trim().TrimEnd('/');
+        var scheme = "https";
+        var separator = endpoint.IndexOf("://", StringComparison.Ordinal);
+        if (separator > 0)
+        {
+            scheme = endpoint[..separator];
+            endpoint = endpoint[(separator + 3)..];
+        }
+        return scheme + "://" + _options.Bucket + "." + endpoint + "/" + objectKey;
+    }
+}
