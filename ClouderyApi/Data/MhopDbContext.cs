@@ -29,6 +29,7 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             // Casdoor 统一身份：一个 Casdoor 账号只绑定一个 MHOP 账号（本地账号可为 NULL）
             e.HasIndex(u => u.CasdoorId).IsUnique();
             e.Property(u => u.Role).HasDefaultValue("user");
+            e.Property(u => u.Permissions).HasDefaultValue(string.Empty);
             e.Property(u => u.Status).HasDefaultValue("active");
             e.Property(u => u.Avatar).HasDefaultValue(string.Empty);
             e.Property(u => u.Badge).HasDefaultValue(string.Empty);

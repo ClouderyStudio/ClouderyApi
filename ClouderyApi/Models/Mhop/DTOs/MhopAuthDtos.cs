@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ClouderyApi.Services.Mhop;
 
 namespace ClouderyApi.Models.Mhop.DTOs;
 
@@ -62,9 +63,12 @@ public class UserOut
 
     public string Badge { get; set; } = string.Empty;
 
+    /// <summary>有效权限码列表（superadmin 为全量），用于前端菜单/按钮/路由控制；后端接口另有强校验。</summary>
+    public List<string> Permissions { get; set; } = [];
+
     public DateTime CreatedAt { get; set; }
 
-    public static UserOut FromEntity(MhopUser user, bool maskPhone = false) => new()
+    public static UserOut FromEntity(MhopUser user, bool maskPhone = false, bool exposePermissions = true) => new()
     {
         Id = user.Id,
         Username = user.Username,
@@ -74,6 +78,8 @@ public class UserOut
         Status = user.Status,
         Avatar = user.Avatar ?? string.Empty,
         Badge = user.Badge ?? string.Empty,
+        // 对外公开资料不下发后台权限，避免泄露管理能力
+        Permissions = exposePermissions ? MhopAdminPermissions.Effective(user) : [],
         CreatedAt = user.CreatedAt,
     };
 }

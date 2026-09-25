@@ -29,8 +29,17 @@ public class BadgeIn
 
 public class RoleIn
 {
-    /// <summary>promote / demote</summary>
+    /// <summary>promote / demote / promote_super / demote_super</summary>
     [JsonPropertyName("action")] public string? Action { get; set; }
+
+    /// <summary>提升为管理员时一并授予的模块权限码（仅 superadmin 调用时生效）。</summary>
+    [JsonPropertyName("permissions")] public List<string>? Permissions { get; set; }
+}
+
+public class PermissionsIn
+{
+    /// <summary>模块权限码数组，如 ["dashboard","review"]</summary>
+    [JsonPropertyName("permissions")] public List<string>? Permissions { get; set; }
 }
 
 public class ResetPasswordIn

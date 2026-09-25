@@ -33,10 +33,18 @@ public class MhopUser
     [MaxLength(100)]
     public string? CasdoorId { get; set; }
 
-    /// <summary>admin / user</summary>
+    /// <summary>admin / superadmin / user</summary>
     [Required]
     [MaxLength(16)]
     public string Role { get; set; } = "user";
+
+    /// <summary>
+    /// 普通管理员被授予的后台模块权限码 JSON 数组，如 ["dashboard","review"]；
+    /// 仅 role=admin 有意义，superadmin 隐式拥有全部权限。空字符串表示未授权。
+    /// </summary>
+    [Required]
+    [MaxLength(512)]
+    public string Permissions { get; set; } = string.Empty;
 
     /// <summary>active / disabled</summary>
     [Required]

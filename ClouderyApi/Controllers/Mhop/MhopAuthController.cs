@@ -231,7 +231,7 @@ public class MhopAuthController : MhopControllerBase
         var user = await _db.MhopUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null)
             throw new MhopApiException(404, "用户不存在");
-        // 手机号仅本人与后台可见，公开资料脱敏
-        return MhopOk(UserOut.FromEntity(user, maskPhone: true));
+        // 手机号与后台权限仅本人与后台可见，公开资料脱敏
+        return MhopOk(UserOut.FromEntity(user, maskPhone: true, exposePermissions: false));
     }
 }

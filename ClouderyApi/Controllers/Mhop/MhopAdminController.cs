@@ -62,6 +62,7 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpGet("posts")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> ListPosts([FromQuery] int? status = null)
     {
         // 草稿不对后台展示（作者主动取消审核后的私有内容）
@@ -101,6 +102,7 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpPost("posts/{postId:int}/moderate")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> ModeratePost(int postId, [FromBody] ModerateIn body)
     {
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
@@ -125,6 +127,7 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>强制重新生成某帖的 AI 自动回复：先清理旧回复，再调用大模型生成一条新的。</summary>
     [HttpPost("posts/{postId:int}/ai-reply/regenerate")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> RegenerateAiReply(int postId)
     {
         var post = await _db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
@@ -137,6 +140,7 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>管理员删除帖子：不限作者与状态，连同其全部回复、点赞、AI 日志与图片一并清理。</summary>
     [HttpDelete("posts/{postId:int}")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> DeletePost(int postId)
     {
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
@@ -147,6 +151,7 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpGet("replies")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> ListReplies([FromQuery] int? status = null)
     {
         var query = _db.MhopReplies.Where(r => r.Status != 3);
@@ -186,6 +191,7 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpPost("replies/{replyId:int}/moderate")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> ModerateReply(int replyId, [FromBody] ModerateIn body)
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
@@ -204,6 +210,7 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>撤回 AI 回复：对所有用户即时隐藏正文，保留内容与原因以备审计，可恢复。</summary>
     [HttpPost("replies/{replyId:int}/recall")]
+    [MhopPerm(MhopAdminPermissions.Review, MhopAdminPermissions.AiLogs)]
     public async Task<IActionResult> RecallReply(int replyId, [FromBody] RecallIn body)
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
@@ -221,6 +228,7 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>恢复被撤回的 AI 回复，重新公开展示。</summary>
     [HttpPost("replies/{replyId:int}/restore")]
+    [MhopPerm(MhopAdminPermissions.Review, MhopAdminPermissions.AiLogs)]
     public async Task<IActionResult> RestoreReply(int replyId)
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
@@ -235,6 +243,7 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>管理员删除回复：不限作者与状态，连同其点赞、AI 日志与图片一并清理。</summary>
     [HttpDelete("replies/{replyId:int}")]
+    [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> DeleteReply(int replyId)
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
@@ -245,6 +254,7 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpGet("users")]
+    [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> ListUsers()
     {
         var users = await _db.MhopUsers.AsNoTracking()
@@ -272,6 +282,9 @@ public class MhopAdminController : MhopControllerBase
                 item.Status,
                 item.Avatar,
                 item.Badge,
+                // 超管隐式全权限，列表中用空数组 + is_super 表达，与独立后端版本保持一致
+                permissions = MhopAdminPermissions.IsSuper(u.Role) ? new List<string>() : item.Permissions,
+                is_super = MhopAdminPermissions.IsSuper(u.Role),
                 item.CreatedAt,
                 post_count = postCounts.GetValueOrDefault(u.Id),
                 reply_count = replyCounts.GetValueOrDefault(u.Id),
@@ -280,16 +293,21 @@ public class MhopAdminController : MhopControllerBase
     }
 
     [HttpPost("users/{userId:int}/status")]
+    [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> SetUserStatus(int userId, [FromBody] StatusIn body)
     {
         if (body.Status is not ("active" or "disabled"))
             throw new MhopApiException(400, "非法状态");
 
-        var admin = await _current.RequireAdminAsync();
+        var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
+        GuardStaffTarget(admin, user);
         if (user.Id == admin.Id && body.Status == "disabled")
             throw new MhopApiException(400, "不能停用当前登录的管理员");
+        if (body.Status == "disabled" && MhopAdminPermissions.IsSuper(user.Role)
+            && await CountSuperAdminsAsync() <= 1)
+            throw new MhopApiException(400, "系统至少需要保留一个可用的超级管理员");
 
         user.Status = body.Status;
         await _db.SaveChangesAsync();
@@ -298,10 +316,13 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>设置用户标识。badge 为空字符串表示清除标识。</summary>
     [HttpPost("users/{userId:int}/badge")]
+    [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> SetUserBadge(int userId, [FromBody] BadgeIn body)
     {
+        var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
+        GuardStaffTarget(admin, user);
 
         var badge = Truncate((body.Badge ?? string.Empty).Trim(), 64);
         user.Badge = badge;
@@ -309,41 +330,73 @@ public class MhopAdminController : MhopControllerBase
         return MhopOk(new { ok = true, badge });
     }
 
-    /// <summary>设置/取消管理员角色。action: promote / demote</summary>
+    /// <summary>
+    /// 角色管理（仅超级管理员）：
+    /// promote 普通用户→普通管理员（可同时带模块权限）；demote 普通管理员→普通用户；
+    /// promote_super 指定超级管理员；demote_super 超管降为普通管理员（保留其模块授权记录）。
+    /// </summary>
     [HttpPost("users/{userId:int}/role")]
+    [MhopSuper]
     public async Task<IActionResult> SetUserRole(int userId, [FromBody] RoleIn body)
     {
-        var admin = await _current.RequireAdminAsync();
+        var admin = await _current.RequireSuperAsync();
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
 
         switch (body.Action)
         {
             case "promote":
-                if (user.Role == "admin") throw new MhopApiException(400, "该用户已是管理员");
+                if (MhopAdminPermissions.IsStaff(user.Role)) throw new MhopApiException(400, "该用户已是管理员");
                 user.Role = "admin";
-                break;
+                user.Permissions = MhopAdminPermissions.Serialize(body.Permissions ?? []);
+                await _db.SaveChangesAsync();
+                return MhopOk(new
+                {
+                    ok = true,
+                    role = "admin",
+                    permissions = MhopAdminPermissions.Parse(user.Permissions),
+                });
+
             case "demote":
-                if (user.Role != "admin") throw new MhopApiException(400, "该用户不是管理员");
+                if (user.Role != "admin")
+                    throw new MhopApiException(400, "该用户不是可降级的管理员（超级管理员请使用「取消超管」）");
                 if (user.Id == admin.Id) throw new MhopApiException(400, "不能取消自己的管理员权限");
-                var adminCount = await _db.MhopUsers.CountAsync(u => u.Role == "admin");
-                if (adminCount <= 1) throw new MhopApiException(400, "系统至少需要保留一个管理员");
                 user.Role = "user";
-                break;
+                user.Permissions = string.Empty;
+                await _db.SaveChangesAsync();
+                return MhopOk(new { ok = true, role = "user", permissions = new List<string>() });
+
+            case "promote_super":
+                if (MhopAdminPermissions.IsSuper(user.Role)) throw new MhopApiException(400, "该用户已是超级管理员");
+                // 保留其 permissions 列，便于日后取消超管时恢复原来的模块授权
+                user.Role = "superadmin";
+                await _db.SaveChangesAsync();
+                return MhopOk(new { ok = true, role = "superadmin" });
+
+            case "demote_super":
+                if (!MhopAdminPermissions.IsSuper(user.Role)) throw new MhopApiException(400, "该用户不是超级管理员");
+                if (user.Id == admin.Id) throw new MhopApiException(400, "不能取消自己的超级管理员身份");
+                if (await CountSuperAdminsAsync() <= 1)
+                    throw new MhopApiException(400, "系统至少需要保留一个超级管理员");
+                var restoredPerms = MhopAdminPermissions.Parse(user.Permissions);
+                user.Role = "admin";
+                await _db.SaveChangesAsync();
+                return MhopOk(new { ok = true, role = "admin", permissions = restoredPerms });
+
             default:
                 throw new MhopApiException(400, "非法操作");
         }
-
-        await _db.SaveChangesAsync();
-        return MhopOk(new { ok = true, role = user.Role });
     }
 
     /// <summary>管理员重置用户密码。</summary>
     [HttpPost("users/{userId:int}/reset-password")]
+    [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> ResetUserPassword(int userId, [FromBody] ResetPasswordIn body)
     {
+        var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
+        GuardStaffTarget(admin, user);
 
         var newPassword = (body.Password ?? string.Empty).Trim();
         if (newPassword.Length < 6) throw new MhopApiException(400, "密码至少 6 位");
@@ -355,20 +408,55 @@ public class MhopAdminController : MhopControllerBase
 
     /// <summary>管理员删除用户：连同其名下帖子、回复、点赞、AI 日志与图片一并清理，不可恢复。</summary>
     [HttpDelete("users/{userId:int}")]
+    [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> DeleteUser(int userId)
     {
-        var admin = await _current.RequireAdminAsync();
+        var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
         if (user.Id == admin.Id) throw new MhopApiException(400, "不能删除当前登录的账号");
-        if (user.Role == "admin" && await _db.MhopUsers.CountAsync(u => u.Role == "admin") <= 1)
-            throw new MhopApiException(400, "系统至少需要保留一个管理员");
+        if (MhopAdminPermissions.IsSuper(user.Role))
+            throw new MhopApiException(400, "超级管理员账号不可删除");
+        GuardStaffTarget(admin, user);
 
         var (posts, replies) = await _content.DeleteUserAsync(user, HttpContext.RequestAborted);
         return MhopOk(new { ok = true, deleted_posts = posts, deleted_replies = replies });
     }
 
+    // ---------------- 模块权限分配（超级管理员） ----------------
+
+    [HttpGet("users/{userId:int}/permissions")]
+    [MhopSuper]
+    public async Task<IActionResult> GetPermissions(int userId)
+    {
+        var user = await _db.MhopUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        if (user is null) throw new MhopApiException(404, "用户不存在");
+        return MhopOk(new
+        {
+            user_id = user.Id,
+            role = user.Role,
+            permissions = MhopAdminPermissions.Parse(user.Permissions),
+            all_permissions = MhopAdminPermissions.All
+                .Select(code => new { code, name = MhopAdminPermissions.Labels[code] }),
+        });
+    }
+
+    [HttpPut("users/{userId:int}/permissions")]
+    [MhopSuper]
+    public async Task<IActionResult> SetPermissions(int userId, [FromBody] PermissionsIn body)
+    {
+        var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
+        if (user is null) throw new MhopApiException(404, "用户不存在");
+        if (user.Role != "admin")
+            throw new MhopApiException(400, "仅普通管理员可分配模块权限（超级管理员隐式拥有全部权限）");
+
+        user.Permissions = MhopAdminPermissions.Serialize(body.Permissions ?? []);
+        await _db.SaveChangesAsync();
+        return MhopOk(new { ok = true, permissions = MhopAdminPermissions.Parse(user.Permissions) });
+    }
+
     [HttpGet("ai-logs")]
+    [MhopPerm(MhopAdminPermissions.AiLogs)]
     public async Task<IActionResult> ListAiLogs()
     {
         var logs = await _db.MhopAiLogs.OrderByDescending(l => l.CreatedAt).Take(200).ToListAsync();
@@ -419,4 +507,14 @@ public class MhopAdminController : MhopControllerBase
 
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
+
+    /// <summary>对管理员/超管目标的敏感操作（停用/改密/标识/删除）仅超管可执行；操作自己另有校验。</summary>
+    private static void GuardStaffTarget(MhopUser operatorUser, MhopUser target)
+    {
+        if (MhopAdminPermissions.IsStaff(target.Role) && !MhopAdminPermissions.IsSuper(operatorUser.Role))
+            throw new MhopApiException(403, "仅超级管理员可操作管理员账号");
+    }
+
+    private Task<int> CountSuperAdminsAsync()
+        => _db.MhopUsers.CountAsync(u => u.Role == "superadmin" && u.Status == "active");
 }

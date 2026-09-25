@@ -27,11 +27,21 @@ public static class MhopSeeder
             {
                 Username = "admin",
                 PasswordHash = hasher.Hash("admin123"),
-                Role = "admin",
+                Role = "superadmin",
                 Status = "active",
                 CreatedAt = DateTime.UtcNow,
             });
-            logger.LogInformation("MHOP 种子数据：已创建默认管理员 admin（首次登录后请立即修改密码）");
+            logger.LogInformation("MHOP 种子数据：已创建默认超级管理员 admin（首次登录后请立即修改密码）");
+        }
+        else
+        {
+            // 老库升级：内置 admin 账号升级为超级管理员（幂等）。
+            // 其他存量管理员保持 admin 角色但权限为空，需超管在后台逐个重新授权。
+            var upgraded = await db.MhopUsers
+                .Where(u => u.Username == "admin" && u.Role == "admin")
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.Role, "superadmin"));
+            if (upgraded > 0)
+                logger.LogInformation("MHOP 种子数据：内置管理员 admin 已升级为超级管理员");
         }
 
         if (!await db.MhopPosts.AnyAsync())
