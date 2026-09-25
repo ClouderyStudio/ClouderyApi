@@ -21,17 +21,20 @@ public class MhopForumController : MhopControllerBase
     private readonly MhopCurrentUserAccessor _current;
     private readonly MhopOnlineTracker _online;
     private readonly MhopUploadService _uploads;
+    private readonly MhopContentService _content;
 
     public MhopForumController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
         MhopOnlineTracker online,
-        MhopUploadService uploads)
+        MhopUploadService uploads,
+        MhopContentService content)
     {
         _db = db;
         _current = current;
         _online = online;
         _uploads = uploads;
+        _content = content;
     }
 
     // ---------------- 读取接口 ----------------
@@ -505,7 +508,7 @@ public class MhopForumController : MhopControllerBase
         return MhopOk(new { ok = true, status = post.Status });
     }
 
-    /// <summary>删除自己的帖子：任意状态均可，连同其回复与点赞一并清理。</summary>
+    /// <summary>删除自己的帖子：任意状态均可，连同其回复、点赞、AI 日志与图片一并清理。</summary>
     [HttpDelete("posts/{postId:int}")]
     public async Task<IActionResult> DeletePost(int postId)
     {
@@ -513,23 +516,7 @@ public class MhopForumController : MhopControllerBase
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null || post.UserId != current.Id) throw new MhopApiException(404, "帖子不存在");
 
-        var replies = await _db.MhopReplies.Where(r => r.PostId == post.Id).ToListAsync();
-        var replyIds = replies.Select(r => r.Id).ToList();
-        var likes = await _db.MhopLikes.Where(l =>
-            (l.TargetType == "post" && l.TargetId == post.Id)
-            || (l.TargetType == "reply" && replyIds.Contains(l.TargetId))).ToListAsync();
-
-        // 帖子与它全部回复的图片一起收集，先落库再清理存储对象，避免删库失败时丢图
-        var images = ParseImages(post.Images)
-            .Concat(replies.SelectMany(r => ParseImages(r.Images)))
-            .ToList();
-
-        if (likes.Count > 0) _db.MhopLikes.RemoveRange(likes);
-        if (replies.Count > 0) _db.MhopReplies.RemoveRange(replies);
-        _db.MhopPosts.Remove(post);
-        await _db.SaveChangesAsync();
-
-        await _uploads.DeleteAsync(images, HttpContext.RequestAborted);
+        await _content.DeletePostAsync(post, HttpContext.RequestAborted);
         return MhopOk(new { ok = true });
     }
 
@@ -599,7 +586,7 @@ public class MhopForumController : MhopControllerBase
         return MhopOk(new { ok = true, status = reply.Status });
     }
 
-    /// <summary>删除自己的回复：任意状态均可，连同其点赞一并清理。</summary>
+    /// <summary>删除自己的回复：任意状态均可，连同其点赞、AI 日志与图片一并清理。</summary>
     [HttpDelete("replies/{replyId:int}")]
     public async Task<IActionResult> DeleteReply(int replyId)
     {
@@ -607,14 +594,7 @@ public class MhopForumController : MhopControllerBase
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
 
-        var images = ParseImages(reply.Images);
-
-        _db.MhopLikes.RemoveRange(await _db.MhopLikes
-            .Where(l => l.TargetType == "reply" && l.TargetId == reply.Id).ToListAsync());
-        _db.MhopReplies.Remove(reply);
-        await _db.SaveChangesAsync();
-
-        await _uploads.DeleteAsync(images, HttpContext.RequestAborted);
+        await _content.DeleteReplyAsync(reply, HttpContext.RequestAborted);
         return MhopOk(new { ok = true });
     }
 

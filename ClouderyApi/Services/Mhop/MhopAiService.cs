@@ -213,7 +213,46 @@ public sealed class MhopAiService
     }
 
     /// <summary>
-    /// 审核通过后刷新某帖子的 AI 自动回复：先清掉该帖历史的 AI 回复
+    /// 审核通过后确保该帖子有一条 AI 自动回复。已有回复时**保持现状、不重新调用大模型**——
+    /// 隐藏后重新展示不应再产生一次调用；只有完全没有回复时才排队生成。
+    /// 历史遗留的多余回复会在此收敛为最新的一条（不调用大模型）。
+    /// </summary>
+    public async Task EnsureForumReplyAsync(int postId, string content, bool crisis)
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
+            var existing = await db.MhopReplies
+                .Where(r => r.PostId == postId && r.IsAi)
+                .OrderByDescending(r => r.Id)
+                .ToListAsync();
+
+            if (existing.Count > 0)
+            {
+                // 保留最新一条（最贴近当前正文），清掉历史遗留的多余回复及其日志 / 点赞
+                var extra = existing.Skip(1).ToList();
+                if (extra.Count > 0)
+                {
+                    var extraIds = extra.Select(r => r.Id).ToList();
+                    db.MhopAiLogs.RemoveRange(await db.MhopAiLogs
+                        .Where(l => l.ReplyId.HasValue && extraIds.Contains(l.ReplyId.Value)).ToListAsync());
+                    db.MhopLikes.RemoveRange(await db.MhopLikes
+                        .Where(l => l.TargetType == "reply" && extraIds.Contains(l.TargetId)).ToListAsync());
+                    db.MhopReplies.RemoveRange(extra);
+                    await db.SaveChangesAsync();
+                    _logger.LogInformation("帖子 {PostId} 清理历史重复 AI 回复 {Count} 条", postId, extra.Count);
+                }
+
+                _logger.LogInformation("帖子 {PostId} 已有 AI 回复，保持现状不重新生成", postId);
+                return;
+            }
+        }
+
+        QueueForumReply(postId, content, crisis);
+    }
+
+    /// <summary>
+    /// 强制刷新某帖子的 AI 自动回复：先清掉该帖历史的 AI 回复
     /// （重复生成、正文变更等遗留），再排队生成一条新的，保证公开页面上的
     /// AI 解读与当前正文一致，且一条帖子只有一条 AI 回复。
     /// </summary>

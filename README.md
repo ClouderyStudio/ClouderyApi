@@ -24,7 +24,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料与手机号绑定（登录后统一签发 **JWT Bearer**） |
 | MHOP 论坛 | `/mhop/forum` | 板块、帖子、回复（先审后发）、**审核通过后**的 AI 自动回复、点赞；`/mine/*` 与作者自助编辑 / 撤回审核 / 重新提交 / 删除 |
 | MHOP 量表 | `/mhop/assessments` | PHQ-9 / GAD-7 / 自由倾诉：服务端计分 + AI 解读 |
-| MHOP 后台 | `/mhop/admin` | 数据看板、帖子巡检、回复审核、AI 回复撤回/恢复、用户管理、AI 日志（需管理员） |
+| MHOP 后台 | `/mhop/admin` | 数据看板、帖子巡检与**删除**、回复审核与**删除**、AI 回复撤回/恢复/重新生成、用户管理与**删除**、AI 日志（需管理员） |
 | MHOP 上传 | `/mhop/upload` | 头像 / 帖子图片上传；存储可切换本地磁盘（`/mhop/uploads/*`）或**远端阿里云 OSS** |
 
 ## 技术栈
@@ -172,9 +172,10 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
   请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致）。
 - **AI**：`Services/Mhop/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
   未配置或调用失败时降级为内置共情式规则回复；任何引擎下检测到危机信号都会强制前置援助热线。
-- **后台任务**：帖子**审核通过后**，通过独立 DI 作用域异步生成一条 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
-  待审核 / 草稿期间反复编辑不会产生任何 AI 回复；审核通过时会先清理该帖的历史 AI 回复再生成，
-  保证一条帖子始终只有一条与当前正文一致的解读。
+- **后台任务**：帖子**首次审核通过**时，通过独立 DI 作用域异步生成一条 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
+  待审核 / 草稿期间反复编辑不会产生任何 AI 回复；**隐藏后重新展示会沿用已有回复，不会重复调用大模型**，
+  历史遗留的重复回复也会在此时收敛为最新的一条。需要换一份解读时用
+  `POST /mhop/admin/posts/{id}/ai-reply/regenerate` 强制重新生成。
 - **生产部署**：MHOP 站点若与 API 不同源，需把其来源加入 `Cors:AllowedOrigins`；非开发环境的 CSRF 中间件会校验写请求的 `Origin`。
 
 ### 统一身份认证（Casdoor / OAuth2 + OIDC）
@@ -229,10 +230,27 @@ mhop_ai_logs     AI 调用审计日志
 | `PUT /mhop/forum/posts/{id}`、`PUT /mhop/forum/replies/{id}` | 编辑本人内容，仅待审核 / 草稿可改；编辑不触发 AI 回复（AI 回复只在审核通过时生成） |
 | `POST /mhop/forum/posts/{id}/withdraw`、`.../replies/{id}/withdraw` | 取消审核：待审核 → 草稿 |
 | `POST /mhop/forum/posts/{id}/submit`、`.../replies/{id}/submit` | 重新提交审核：草稿 → 待审核 |
-| `DELETE /mhop/forum/posts/{id}`、`DELETE /mhop/forum/replies/{id}` | 删除本人内容（任意状态）；删帖会一并清理其回复与点赞 |
+| `DELETE /mhop/forum/posts/{id}`、`DELETE /mhop/forum/replies/{id}` | 删除本人内容（任意状态）；会一并清理其回复、点赞、AI 日志与图片 |
 
 - 仅作者本人可操作，他人调用一律 404；草稿不进入公开列表、不计入后台统计，也不能被他人回复或点赞。
 - 对已通过 / 已驳回内容调用编辑接口会返回 400「已通过审核的内容不可修改，仅可删除」。
+
+### 后台管理接口（`/mhop/admin/*`，需 `role=admin`）
+
+| 接口 | 说明 |
+| ---- | ---- |
+| `GET /mhop/admin/posts`、`GET /mhop/admin/replies` | 帖子巡检 / 回复审核列表（可按 `status` 过滤；匿名内容会带出真实作者与手机号） |
+| `POST /mhop/admin/posts/{id}/moderate`、`.../replies/{id}/moderate` | 通过 / 驳回；帖子**首次**通过时生成 AI 自动回复 |
+| `DELETE /mhop/admin/posts/{id}` | 删除任意帖子：连同其全部回复、点赞、AI 日志与图片一并清理 |
+| `DELETE /mhop/admin/replies/{id}` | 删除任意回复：连同其点赞、AI 日志与图片一并清理 |
+| `DELETE /mhop/admin/users/{id}` | 删除用户：连同其名下帖子（含他人对这些帖子的回复）、回复、点赞、AI 日志、头像与图片一并清理，不可恢复 |
+| `POST /mhop/admin/posts/{id}/ai-reply/regenerate` | 强制重新生成 AI 自动回复（先清理旧回复，再调用一次大模型） |
+| `POST /mhop/admin/replies/{id}/recall`、`.../restore` | 撤回 / 恢复 AI 回复 |
+| `GET /mhop/admin/users` | 用户列表，附带 `post_count` / `reply_count`，便于删除前确认影响范围 |
+
+- 删除类接口统一走 `MhopContentService`（作者自助删除与管理员删除共用同一实现），避免两处逻辑漂移漏清数据；
+  顺序一律先落库、再尽力清理对象存储，删库失败时不会先把图片删掉。
+- 删除当前登录账号、或删除系统最后一个管理员会被拒绝（400）。
 
 ### 图片存储（本地磁盘 / 远端阿里云 OSS）
 

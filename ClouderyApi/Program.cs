@@ -59,6 +59,7 @@ builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
     return new MhopLocalObjectStorage(MhopUploadPaths.ResolveLocalRoot(configuration["Mhop:UploadDir"], contentRoot));
 });
 builder.Services.AddScoped<MhopUploadService>();
+builder.Services.AddScoped<MhopContentService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))

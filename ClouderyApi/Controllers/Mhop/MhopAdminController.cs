@@ -21,19 +21,22 @@ public class MhopAdminController : MhopControllerBase
     private readonly MhopOnlineTracker _online;
     private readonly MhopPasswordHasher _hasher;
     private readonly MhopAiService _ai;
+    private readonly MhopContentService _content;
 
     public MhopAdminController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
         MhopOnlineTracker online,
         MhopPasswordHasher hasher,
-        MhopAiService ai)
+        MhopAiService ai,
+        MhopContentService content)
     {
         _db = db;
         _current = current;
         _online = online;
         _hasher = hasher;
         _ai = ai;
+        _content = content;
     }
 
     [HttpGet("stats")]
@@ -113,11 +116,34 @@ public class MhopAdminController : MhopControllerBase
         post.ReviewNote = Truncate(body.Note ?? string.Empty, 255);
         await _db.SaveChangesAsync();
 
-        // AI 自动回复只在审核通过时生成：待审核期间正文可反复编辑，
-        // 提前生成会留下多条与最终正文脱节的回复；通过时先清理历史回复再重新生成
-        if (approved) await _ai.RegenerateForumReplyAsync(post.Id, post.Content, post.Crisis);
+        // AI 自动回复只在「首次通过审核」时生成；隐藏后重新展示沿用已有回复，不重复调用大模型。
+        // 需要强制刷新时用 POST posts/{id}/ai-reply/regenerate。
+        if (approved) await _ai.EnsureForumReplyAsync(post.Id, post.Content, post.Crisis);
 
         return MhopOk(new { ok = true });
+    }
+
+    /// <summary>强制重新生成某帖的 AI 自动回复：先清理旧回复，再调用大模型生成一条新的。</summary>
+    [HttpPost("posts/{postId:int}/ai-reply/regenerate")]
+    public async Task<IActionResult> RegenerateAiReply(int postId)
+    {
+        var post = await _db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
+        if (post is null) throw new MhopApiException(404, "帖子不存在");
+        if (post.Status != 1) throw new MhopApiException(400, "仅公开中的帖子可以生成 AI 自动回复");
+
+        await _ai.RegenerateForumReplyAsync(post.Id, post.Content, post.Crisis);
+        return MhopOk(new { ok = true });
+    }
+
+    /// <summary>管理员删除帖子：不限作者与状态，连同其全部回复、点赞、AI 日志与图片一并清理。</summary>
+    [HttpDelete("posts/{postId:int}")]
+    public async Task<IActionResult> DeletePost(int postId)
+    {
+        var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
+        if (post is null) throw new MhopApiException(404, "帖子不存在");
+
+        var deletedReplies = await _content.DeletePostAsync(post, HttpContext.RequestAborted);
+        return MhopOk(new { ok = true, deleted_replies = deletedReplies });
     }
 
     [HttpGet("replies")]
@@ -207,13 +233,50 @@ public class MhopAdminController : MhopControllerBase
         return MhopOk(new { ok = true });
     }
 
+    /// <summary>管理员删除回复：不限作者与状态，连同其点赞、AI 日志与图片一并清理。</summary>
+    [HttpDelete("replies/{replyId:int}")]
+    public async Task<IActionResult> DeleteReply(int replyId)
+    {
+        var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
+        if (reply is null) throw new MhopApiException(404, "回复不存在");
+
+        await _content.DeleteReplyAsync(reply, HttpContext.RequestAborted);
+        return MhopOk(new { ok = true });
+    }
+
     [HttpGet("users")]
     public async Task<IActionResult> ListUsers()
     {
         var users = await _db.MhopUsers.AsNoTracking()
             .OrderByDescending(u => u.CreatedAt)
             .ToListAsync();
-        return MhopOk(users.Select(u => UserOut.FromEntity(u)).ToList());
+
+        // 附带内容数量：后台可在删除用户前明确提示将连带删除多少内容
+        var postCounts = (await _db.MhopPosts.Where(p => p.UserId != null)
+                .Select(p => p.UserId!.Value).ToListAsync())
+            .GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
+        var replyCounts = (await _db.MhopReplies.Where(r => r.UserId != null)
+                .Select(r => r.UserId!.Value).ToListAsync())
+            .GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
+
+        return MhopOk(users.Select(u =>
+        {
+            var item = UserOut.FromEntity(u);
+            return new
+            {
+                item.Id,
+                item.Username,
+                item.Email,
+                item.Phone,
+                item.Role,
+                item.Status,
+                item.Avatar,
+                item.Badge,
+                item.CreatedAt,
+                post_count = postCounts.GetValueOrDefault(u.Id),
+                reply_count = replyCounts.GetValueOrDefault(u.Id),
+            };
+        }).ToList());
     }
 
     [HttpPost("users/{userId:int}/status")]
@@ -288,6 +351,21 @@ public class MhopAdminController : MhopControllerBase
         user.PasswordHash = _hasher.Hash(newPassword);
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true });
+    }
+
+    /// <summary>管理员删除用户：连同其名下帖子、回复、点赞、AI 日志与图片一并清理，不可恢复。</summary>
+    [HttpDelete("users/{userId:int}")]
+    public async Task<IActionResult> DeleteUser(int userId)
+    {
+        var admin = await _current.RequireAdminAsync();
+        var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
+        if (user is null) throw new MhopApiException(404, "用户不存在");
+        if (user.Id == admin.Id) throw new MhopApiException(400, "不能删除当前登录的账号");
+        if (user.Role == "admin" && await _db.MhopUsers.CountAsync(u => u.Role == "admin") <= 1)
+            throw new MhopApiException(400, "系统至少需要保留一个管理员");
+
+        var (posts, replies) = await _content.DeleteUserAsync(user, HttpContext.RequestAborted);
+        return MhopOk(new { ok = true, deleted_posts = posts, deleted_replies = replies });
     }
 
     [HttpGet("ai-logs")]
