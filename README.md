@@ -38,7 +38,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 - 自定义 **CSRF 防护**中间件：对 POST/PUT/PATCH/DELETE 请求校验 Origin 头是否在 CORS 白名单内
 - **Swagger / OpenAPI**（开发环境启用）
 - **Costura.Fody** 将依赖程序集嵌入，便于单文件分发
-- GitHub Actions 自动化构建（`.github/workflows/dotnet.yml`）
+- GitHub Actions 自动化构建，推送 `master` 自动部署到 1Panel（见 [DEPLOY.md](DEPLOY.md)）
 
 ## 目录结构
 
@@ -311,11 +311,12 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 
 ## GitHub Actions
 
-`master` 分支创建构建工作流（`.github/workflows/dotnet.yml`）：
+| 工作流 | 触发 | 作用 |
+| ------ | ---- | ---- |
+| `.github/workflows/dotnet.yml` | Pull Request → `master` | `dotnet-version: 10.0.x` → `restore` → `build --configuration Release` → `test`，并上传构建产物到 Artifacts |
+| `.github/workflows/deploy.yml` | Push → `master`（也可手动触发） | 构建 + 测试 + 发布 → 上传到 1Panel 应用目录 → 重启容器 → 健康检查 |
 
-- 使用 `dotnet-version: 10.0.x`
-- `dotnet restore` → `dotnet build --configuration Release ClouderyApi` → `dotnet test`
-- 上传构建产物到 Artifacts
+推送 `master` 即自动部署。服务器容器配置、GitHub Secrets 清单、回滚方式与常见坑见 **[DEPLOY.md](DEPLOY.md)**。
 
 ## 安全注意事项
 

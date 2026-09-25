@@ -1,10 +1,10 @@
 name: Build
 
+# 推送 master 由 deploy.yml 负责（它会先构建 + 测试再部署），这里只做 PR 检查，避免重复构建
 on:
-  push:
-    branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,10 +22,8 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release ClouderyApi
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --no-build --configuration Release --verbosity normal
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         path: ./ClouderyApi/bin/Release/net10.0/*
-    
-

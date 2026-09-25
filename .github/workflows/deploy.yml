@@ -1,0 +1,97 @@
+name: Deploy to 1Panel
+
+# 推送到 master 即自动构建并部署到 1Panel 的 .NET 容器
+# 也可在 Actions 页面手动触发（可选择历史提交用于回滚）
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+# 同一分支不并发部署，避免两次推送互相覆盖服务器上的文件
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: 10.0.x
+  PROJECT: ClouderyApi/ClouderyApi.csproj
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release ClouderyApi
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT }} --configuration Release --output publish
+
+      - name: 清理不应上服务器的文件
+        run: |
+          # appsettings.json 含数据库 / OSS 密钥且不入库，服务器上那份必须保留，绝不能覆盖
+          rm -f publish/appsettings.json
+          rm -f publish/ClouderyApi.pdb publish/ClouderyApi.exe publish/web.config
+          rm -rf publish/uploads
+          echo "本次将上传的文件数：$(find publish -type f | wc -l)"
+          du -sh publish
+
+      - name: 上传到服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "publish/*"
+          target: ${{ secrets.DEPLOY_TARGET }}
+          # 去掉 tar 里的 publish/ 前缀，让文件直接落在应用目录
+          strip_components: 1
+          overwrite: true
+          # 关键：不删除目标目录中的其它文件，保留 appsettings.json 与 uploads/
+          rm: false
+
+      - name: 重启容器并检查
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -e
+            CONTAINER="${{ secrets.DEPLOY_CONTAINER }}"
+            echo "重启容器 $CONTAINER ..."
+            docker restart "$CONTAINER"
+            sleep 5
+
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER")" != "true" ]; then
+              echo "::error::容器未在运行，下面是最近 100 行日志"
+              docker logs --tail 100 "$CONTAINER" || true
+              exit 1
+            fi
+
+            docker ps --filter "name=$CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+            HEALTH="${{ secrets.DEPLOY_HEALTH_URL }}"
+            if [ -n "$HEALTH" ]; then
+              echo "健康检查 $HEALTH ..."
+              curl -fsS --max-time 15 "$HEALTH"
+              echo ""
+            fi
+
+            echo "部署完成 $(date -u +%FT%TZ)"
