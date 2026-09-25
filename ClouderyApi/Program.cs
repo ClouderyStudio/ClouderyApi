@@ -7,7 +7,12 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi;
 using System.Collections.Concurrent;
 
-var builder = WebApplication.CreateBuilder(args);
+// 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
+var sweepOrphans = args.Any(a => a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase));
+var sweepOrphansDelete = args.Any(a => a.Equals("--delete-orphans", StringComparison.OrdinalIgnoreCase));
+var builder = WebApplication.CreateBuilder(
+    args.Where(a => !a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase)
+                    && !a.Equals("--delete-orphans", StringComparison.OrdinalIgnoreCase)).ToArray());
 
 builder.Services.AddControllers(options => options.Filters.Add<MhopApiExceptionFilter>());
 
@@ -110,6 +115,15 @@ builder.Services.AddSwaggerGen(u =>
 });
 
 var app = builder.Build();
+
+// ===== 维护工具：清理对象存储中的历史孤儿图片 =====
+// 用法：dotnet ClouderyApi.dll --sweep-orphans [--delete-orphans]
+// 放在迁移 / 种子之前，一次性维护动作不应触发数据库变更。
+if (sweepOrphans)
+{
+    using var sweepScope = app.Services.CreateScope();
+    return await MhopOrphanSweeper.RunAsync(sweepScope.ServiceProvider, sweepOrphansDelete);
+}
 
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
@@ -232,3 +246,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+// 使用了 return 值，顶层语句必须显式给出正常启动时的返回码
+return 0;

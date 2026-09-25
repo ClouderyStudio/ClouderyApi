@@ -22,6 +22,9 @@ public interface IMhopObjectStorage
     /// 地址不属于本存储时返回 false 且不做任何操作；对象本就不存在不算失败。
     /// </summary>
     Task<bool> DeleteAsync(string url, CancellationToken cancellationToken = default);
+
+    /// <summary>列出本存储命名空间下的全部对象，返回可直接访问的 URL，供维护工具比对孤儿文件。</summary>
+    Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>上传路径辅助：本地静态托管根目录与请求前缀。</summary>
@@ -79,6 +82,20 @@ public sealed class MhopLocalObjectStorage : IMhopObjectStorage
         if (!File.Exists(fullPath)) return Task.FromResult(false);
         File.Delete(fullPath);
         return Task.FromResult(true);
+    }
+
+    public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        var urls = new List<string>();
+        if (Directory.Exists(Root))
+        {
+            foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(Root, file).Replace('\\', '/');
+                urls.Add(MhopUploadPaths.RequestPath + "/" + relative);
+            }
+        }
+        return Task.FromResult<IReadOnlyList<string>>(urls);
     }
 
     /// <summary>把 /mhop/uploads/... 形式的地址还原为相对路径；非本存储地址返回 null。</summary>
@@ -194,4 +211,26 @@ public sealed class MhopAliyunOssStorage : IMhopObjectStorage
     }
 
     private string PublicUrl(string objectKey) => PublicBase() + objectKey;
+
+    public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+        => Task.Run<IReadOnlyList<string>>(() =>
+        {
+            var prefix = string.IsNullOrWhiteSpace(_options.Prefix) ? string.Empty : _options.Prefix.Trim('/') + "/";
+            var urls = new List<string>();
+            string? marker = null;
+            do
+            {
+                var request = new ListObjectsRequest(_options.Bucket)
+                {
+                    Prefix = prefix,
+                    Marker = marker,
+                    MaxKeys = 200,
+                };
+                var result = _client.ListObjects(request);
+                foreach (var summary in result.ObjectSummaries) urls.Add(PublicUrl(summary.Key));
+                marker = result.IsTruncated ? result.NextMarker : null;
+            } while (!string.IsNullOrEmpty(marker));
+
+            return urls;
+        }, cancellationToken);
 }

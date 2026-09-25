@@ -263,8 +263,19 @@ mhop_ai_logs     AI 调用审计日志
 
 **图片回收**：内容真正落库删除后，`IMhopObjectStorage.DeleteAsync` 会清理对应对象——删除帖子（连同其全部回复）、
 删除回复、编辑时移除的图片、更换 / 清空头像。清理是**尽力而为**的：地址不属于当前存储（历史遗留、域名变更、
-外部图片）会被跳过，单张失败只记 `Warning` 日志并继续，不影响删除接口本身。本次改动之前已经遗留的孤儿对象需另行用
-`ossutil` 或 OSS 控制台清理（可按 `Prefix + /posts/` 前缀列出对象，再与 `mhop_posts.images` / `mhop_replies.images` 比对找出未被引用者）。
+外部图片）会被跳过，单张失败只记 `Warning` 日志并继续，不影响删除接口本身。
+
+**历史孤儿清理**：`--sweep-orphans` 会把对象存储里的对象与 `mhop_posts.images` / `mhop_replies.images` /
+`mhop_users.avatar` 比对，列出无人引用的图片。默认**只预览不删除**：
+
+```bash
+dotnet ClouderyApi.dll --sweep-orphans                   # 预览：只打印孤儿列表
+dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际删除
+```
+
+比对按「子目录 + 文件名」进行，因此更换自定义域名 / CDN / Bucket 前缀不会把正常图片误判为孤儿；
+也只处理 `posts/` 与 `avatars/` 两个子目录，不会触碰同一 Bucket 内其它业务的对象。
+该命令在数据库迁移与种子数据之前返回，不会触发任何数据库变更。
 
 ### 与 Python 版的实现说明
 

@@ -631,19 +631,7 @@ public class MhopForumController : MhopControllerBase
             ? []
             : images.Where(u => !string.IsNullOrWhiteSpace(u)).Take(9).ToList();
 
-    private static List<string> ParseImages(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return [];
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<List<string>>(raw);
-            return parsed is null ? [] : parsed.Where(u => !string.IsNullOrEmpty(u)).Take(9).ToList();
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
+    private static List<string> ParseImages(string? raw) => MhopImageRefs.Parse(raw);
 
     private static string Truncate(string value, int maxLength)
         => value.Length <= maxLength ? value : value[..maxLength];
