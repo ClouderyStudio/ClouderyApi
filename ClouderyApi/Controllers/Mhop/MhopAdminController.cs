@@ -20,17 +20,20 @@ public class MhopAdminController : MhopControllerBase
     private readonly MhopCurrentUserAccessor _current;
     private readonly MhopOnlineTracker _online;
     private readonly MhopPasswordHasher _hasher;
+    private readonly MhopAiService _ai;
 
     public MhopAdminController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
         MhopOnlineTracker online,
-        MhopPasswordHasher hasher)
+        MhopPasswordHasher hasher,
+        MhopAiService ai)
     {
         _db = db;
         _current = current;
         _online = online;
         _hasher = hasher;
+        _ai = ai;
     }
 
     [HttpGet("stats")]
@@ -100,14 +103,20 @@ public class MhopAdminController : MhopControllerBase
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null) throw new MhopApiException(404, "帖子不存在");
 
-        post.Status = body.Action switch
+        var approved = body.Action switch
         {
-            "approve" => 1,
-            "reject" => 2,
+            "approve" => true,
+            "reject" => false,
             _ => throw new MhopApiException(400, "非法操作"),
         };
+        post.Status = approved ? 1 : 2;
         post.ReviewNote = Truncate(body.Note ?? string.Empty, 255);
         await _db.SaveChangesAsync();
+
+        // AI 自动回复只在审核通过时生成：待审核期间正文可反复编辑，
+        // 提前生成会留下多条与最终正文脱节的回复；通过时先清理历史回复再重新生成
+        if (approved) await _ai.RegenerateForumReplyAsync(post.Id, post.Content, post.Crisis);
+
         return MhopOk(new { ok = true });
     }
 

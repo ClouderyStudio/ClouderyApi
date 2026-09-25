@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace ClouderyApi.Controllers.Mhop;
 
 /// <summary>
-/// 论坛互助：板块、发帖、AI 异步自动回复、人类回复先审后发、点赞。
+/// 论坛互助：板块、发帖、人类回复先审后发、点赞。
+/// AI 自动回复不在发帖/编辑时生成，统一由管理员审核通过后触发（见 MhopAdminController.ModeratePost）。
 /// 对应 Python 后端 routers/forum.py。
 /// </summary>
 [ApiController]
@@ -19,18 +20,15 @@ public class MhopForumController : MhopControllerBase
     private readonly MhopDbContext _db;
     private readonly MhopCurrentUserAccessor _current;
     private readonly MhopOnlineTracker _online;
-    private readonly MhopAiService _ai;
 
     public MhopForumController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
-        MhopOnlineTracker online,
-        MhopAiService ai)
+        MhopOnlineTracker online)
     {
         _db = db;
         _current = current;
         _online = online;
-        _ai = ai;
     }
 
     // ---------------- 读取接口 ----------------
@@ -194,9 +192,8 @@ public class MhopForumController : MhopControllerBase
         _db.MhopPosts.Add(post);
         await _db.SaveChangesAsync();
 
-        // 异步触发 AI 自动回复，不阻塞发帖请求
-        _ai.QueueForumReply(post.Id, content, crisis);
-
+        // 这里不生成 AI 自动回复：待审核期间正文可能被反复修改，
+        // 统一等管理员审核通过后再生成，避免堆积多条与最终正文脱节的回复
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopStatus(201, ToPostOut(post, users, [], current.Id, null, null));
     }
@@ -466,21 +463,8 @@ public class MhopForumController : MhopControllerBase
         post.Crisis = MhopModeration.DetectCrisis(content);
         post.ReviewNote = string.Empty;
 
-        // 正文已变：丢弃旧的 AI 回复与其交互日志，重新生成，避免解读与正文脱节
-        var oldAiReplies = await _db.MhopReplies.Where(r => r.PostId == post.Id && r.IsAi).ToListAsync();
-        if (oldAiReplies.Count > 0)
-        {
-            var oldIds = oldAiReplies.Select(r => r.Id).ToList();
-            _db.MhopAiLogs.RemoveRange(await _db.MhopAiLogs
-                .Where(l => l.ReplyId.HasValue && oldIds.Contains(l.ReplyId.Value)).ToListAsync());
-            _db.MhopLikes.RemoveRange(await _db.MhopLikes
-                .Where(l => l.TargetType == "reply" && oldIds.Contains(l.TargetId)).ToListAsync());
-            _db.MhopReplies.RemoveRange(oldAiReplies);
-        }
-
         await _db.SaveChangesAsync();
-        // 待审核内容重新编辑后重新排队；草稿保持草稿，等待作者主动提交
-        if (post.Status == StatusPending) _ai.QueueForumReply(post.Id, content, post.Crisis);
+        // AI 自动回复只随审核通过产生：待审核 / 草稿阶段无论编辑多少次都不会生成回复
 
         return MhopOk(new { ok = true, status = post.Status, crisis = post.Crisis });
     }

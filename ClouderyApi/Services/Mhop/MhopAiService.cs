@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -212,8 +213,36 @@ public sealed class MhopAiService
     }
 
     /// <summary>
-    /// 后台任务：独立 DI 作用域调用 AI 并把回复以「审核通过」状态入库，
-    /// 同时写入 AI 调用日志（关联 reply_id，供后台日志页撤回/恢复）。不阻塞发帖请求。
+    /// 审核通过后刷新某帖子的 AI 自动回复：先清掉该帖历史的 AI 回复
+    /// （重复生成、正文变更等遗留），再排队生成一条新的，保证公开页面上的
+    /// AI 解读与当前正文一致，且一条帖子只有一条 AI 回复。
+    /// </summary>
+    public async Task RegenerateForumReplyAsync(int postId, string content, bool crisis)
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
+            var stale = await db.MhopReplies.Where(r => r.PostId == postId && r.IsAi).ToListAsync();
+            if (stale.Count > 0)
+            {
+                var ids = stale.Select(r => r.Id).ToList();
+                db.MhopAiLogs.RemoveRange(await db.MhopAiLogs
+                    .Where(l => l.ReplyId.HasValue && ids.Contains(l.ReplyId.Value)).ToListAsync());
+                db.MhopLikes.RemoveRange(await db.MhopLikes
+                    .Where(l => l.TargetType == "reply" && ids.Contains(l.TargetId)).ToListAsync());
+                db.MhopReplies.RemoveRange(stale);
+                await db.SaveChangesAsync();
+                _logger.LogInformation("清理帖子 {PostId} 的历史 AI 回复 {Count} 条后重新生成", postId, stale.Count);
+            }
+        }
+
+        QueueForumReply(postId, content, crisis);
+    }
+
+    /// <summary>
+    /// 后台任务：独立 DI 作用域调用 AI 并把回复以「已通过」状态入库，
+    /// 同时写入 AI 调用日志（关联 reply_id，供后台日志页撤回/恢复）。不阻塞审核请求。
+    /// 写入前复核帖子仍公开且尚无 AI 回复，避免出现重复或与正文脱节的解读。
     /// </summary>
     public void QueueForumReply(int postId, string content, bool crisis)
     {
@@ -224,6 +253,20 @@ public sealed class MhopAiService
                 var (text, engine) = await ForumReplyAsync(content, crisis);
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
+
+                // 生成期间帖子可能已被驳回或删除，或已存在回复：放弃写入
+                var post = await db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
+                if (post is null || post.Status != 1)
+                {
+                    _logger.LogInformation("帖子 {PostId} 已不在公开状态，跳过 AI 自动回复", postId);
+                    return;
+                }
+                if (await db.MhopReplies.AnyAsync(r => r.PostId == postId && r.IsAi))
+                {
+                    _logger.LogInformation("帖子 {PostId} 已有 AI 自动回复，跳过重复生成", postId);
+                    return;
+                }
+
                 var reply = new MhopReply
                 {
                     PostId = postId,

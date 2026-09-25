@@ -22,7 +22,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 长链 | `/misc/longlink` | 将普通链接编码为 IPv6.arpa 长链，解码并安全跳转（仅允许 http/https） |
 | MHOP 公共 | `/mhop` | 健康检查、援助热线、在线人数心跳（匿名） |
 | MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料与手机号绑定（登录后统一签发 **JWT Bearer**） |
-| MHOP 论坛 | `/mhop/forum` | 板块、帖子、回复（先审后发）、AI 自动回复、点赞；`/mine/*` 与作者自助编辑 / 撤回审核 / 重新提交 / 删除 |
+| MHOP 论坛 | `/mhop/forum` | 板块、帖子、回复（先审后发）、**审核通过后**的 AI 自动回复、点赞；`/mine/*` 与作者自助编辑 / 撤回审核 / 重新提交 / 删除 |
 | MHOP 量表 | `/mhop/assessments` | PHQ-9 / GAD-7 / 自由倾诉：服务端计分 + AI 解读 |
 | MHOP 后台 | `/mhop/admin` | 数据看板、帖子巡检、回复审核、AI 回复撤回/恢复、用户管理、AI 日志（需管理员） |
 | MHOP 上传 | `/mhop/upload` | 头像 / 帖子图片上传；存储可切换本地磁盘（`/mhop/uploads/*`）或**远端阿里云 OSS** |
@@ -172,7 +172,9 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
   请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致）。
 - **AI**：`Services/Mhop/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
   未配置或调用失败时降级为内置共情式规则回复；任何引擎下检测到危机信号都会强制前置援助热线。
-- **后台任务**：发帖后通过独立 DI 作用域异步生成 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
+- **后台任务**：帖子**审核通过后**，通过独立 DI 作用域异步生成一条 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
+  待审核 / 草稿期间反复编辑不会产生任何 AI 回复；审核通过时会先清理该帖的历史 AI 回复再生成，
+  保证一条帖子始终只有一条与当前正文一致的解读。
 - **生产部署**：MHOP 站点若与 API 不同源，需把其来源加入 `Cors:AllowedOrigins`；非开发环境的 CSRF 中间件会校验写请求的 `Origin`。
 
 ### 统一身份认证（Casdoor / OAuth2 + OIDC）
@@ -224,7 +226,7 @@ mhop_ai_logs     AI 调用审计日志
 | `GET /mhop/forum/mine/summary` | 我的帖子 / 回复按状态汇总数量 |
 | `GET /mhop/forum/mine/posts?status=` | 我的帖子分页列表（含 `editable` / `can_withdraw` / `can_submit` / `review_note`） |
 | `GET /mhop/forum/mine/replies?status=` | 我的回复分页列表（附所属帖子摘要与帖子状态） |
-| `PUT /mhop/forum/posts/{id}`、`PUT /mhop/forum/replies/{id}` | 编辑本人内容，仅待审核 / 草稿可改；帖子编辑后会丢弃并重新生成 AI 回复 |
+| `PUT /mhop/forum/posts/{id}`、`PUT /mhop/forum/replies/{id}` | 编辑本人内容，仅待审核 / 草稿可改；编辑不触发 AI 回复（AI 回复只在审核通过时生成） |
 | `POST /mhop/forum/posts/{id}/withdraw`、`.../replies/{id}/withdraw` | 取消审核：待审核 → 草稿 |
 | `POST /mhop/forum/posts/{id}/submit`、`.../replies/{id}/submit` | 重新提交审核：草稿 → 待审核 |
 | `DELETE /mhop/forum/posts/{id}`、`DELETE /mhop/forum/replies/{id}` | 删除本人内容（任意状态）；删帖会一并清理其回复与点赞 |
