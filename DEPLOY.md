@@ -83,6 +83,10 @@ cat deploy_key.pub >> ~/.ssh/authorized_keys
 私钥 `deploy_key` 的**全部内容**（含 `-----BEGIN` / `-----END` 行）填进下面的 Secret。
 建议给这个密钥单独开一个受限用户，而不是长期用 root。
 
+> **`-N ""` 不能省。** 带密码短语的私钥会让流水线报
+> `ssh: this private key is passphrase protected` → `unable to authenticate, attempted methods [none]`。
+> 要么生成时留空密码短语（推荐），要么把密码短语填进 `DEPLOY_PASSPHRASE`。
+
 ### 2. 配置 Secrets
 
 仓库 → **Settings → Secrets and variables → Actions → New repository secret**：
@@ -93,6 +97,7 @@ cat deploy_key.pub >> ~/.ssh/authorized_keys
 | `DEPLOY_PORT` | ⬜ | SSH 端口，留空按 22 | `22` |
 | `DEPLOY_USER` | ✅ | SSH 用户名 | `root` |
 | `DEPLOY_SSH_KEY` | ✅ | 部署私钥全文 | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+| `DEPLOY_PASSPHRASE` | ⬜ | 私钥的密码短语；**推荐用无密码短语的部署密钥并留空** | （留空） |
 | `DEPLOY_TARGET` | ✅ | 宿主应用目录（容器挂载源），**必须绝对路径** | `/opt/1panel/apps/clouderyapi/app` |
 | `DEPLOY_CONTAINER` | ✅ | 容器名 | `clouderyapi` |
 | `DEPLOY_HEALTH_URL` | ⬜ | 健康检查地址，留空则跳过 | `https://api.example.com/mhop/health` |
