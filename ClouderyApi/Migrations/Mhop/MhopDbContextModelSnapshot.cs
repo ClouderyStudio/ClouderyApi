@@ -325,13 +325,6 @@ namespace ClouderyApi.Migrations.Mhop
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("");
-
                     b.Property<int?>("UserId")
                         .HasColumnType("int");
 

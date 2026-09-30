@@ -4,8 +4,6 @@ namespace ClouderyApi.Models.Mhop.DTOs;
 
 public class PostIn
 {
-    [JsonPropertyName("title")] public string Title { get; set; } = string.Empty;
-
     [JsonPropertyName("content")] public string Content { get; set; } = string.Empty;
 
     [JsonPropertyName("is_anonymous")] public bool IsAnonymous { get; set; } = true;
@@ -69,8 +67,6 @@ public class ReplyOut
 public class PostOut
 {
     public int Id { get; set; }
-
-    public string Title { get; set; } = string.Empty;
 
     public string Content { get; set; } = string.Empty;
 

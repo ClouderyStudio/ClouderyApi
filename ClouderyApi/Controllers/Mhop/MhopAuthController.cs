@@ -49,9 +49,8 @@ public class MhopAuthController : MhopControllerBase
         var username = (body.Username ?? string.Empty).Trim();
         if (username.Length < 2 || username.Length > 32)
             throw new MhopApiException(400, "用户名长度需为 2-32 个字符");
-        var passwordError = MhopPasswordPolicy.Validate(body.Password);
-        if (passwordError is not null)
-            throw new MhopApiException(400, passwordError);
+        if (string.IsNullOrEmpty(body.Password) || body.Password.Length < 6 || body.Password.Length > 64)
+            throw new MhopApiException(400, "密码长度需为 6-64 位");
         if (await _db.MhopUsers.AnyAsync(u => u.Username == username))
             throw new MhopApiException(400, "用户名已存在");
 

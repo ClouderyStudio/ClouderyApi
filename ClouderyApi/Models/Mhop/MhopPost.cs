@@ -10,11 +10,6 @@ public class MhopPost
     [Key]
     public int Id { get; set; }
 
-    /// <summary>帖子标题（1-50 字）。历史存量帖子可能为空串，由客户端取正文首行回填。</summary>
-    [Required]
-    [MaxLength(50)]
-    public string Title { get; set; } = string.Empty;
-
     /// <summary>NULL = 纯匿名（历史数据）；匿名仅对前台脱敏，后台仍可追责。</summary>
     public int? UserId { get; set; }
 
