@@ -39,6 +39,7 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
 
         modelBuilder.Entity<MhopPost>(e =>
         {
+            e.Property(p => p.Title).HasMaxLength(50).HasDefaultValue(string.Empty);
             e.Property(p => p.Content).HasColumnType("text");
             e.Property(p => p.Images).HasColumnType("text");
             e.Property(p => p.Status).HasDefaultValue(0);

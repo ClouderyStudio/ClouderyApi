@@ -175,6 +175,12 @@ public class MhopForumController : MhopControllerBase
     public async Task<IActionResult> CreatePost([FromBody] PostIn body)
     {
         var current = await _current.RequirePhoneVerifiedAsync();
+
+        // 标题：1-50 字必填；历史存量帖子空标题由客户端取正文首行回填
+        var title = (body.Title ?? string.Empty).Trim();
+        if (title.Length == 0) throw new MhopApiException(400, "请填写标题");
+        if (title.Length > 50) throw new MhopApiException(400, "标题不能超过 50 字");
+
         var content = (body.Content ?? string.Empty).Trim();
         if (content.Length == 0) throw new MhopApiException(400, "内容不能为空");
         if (content.Length > 2000) throw new MhopApiException(400, "内容不能超过 2000 字");
@@ -188,6 +194,7 @@ public class MhopForumController : MhopControllerBase
             // 匿名仅对前台脱敏；user_id 始终留存，供后台审核与追责
             UserId = current.Id,
             IsAnonymous = body.IsAnonymous,
+            Title = title,
             Content = content,
             Board = body.Board,
             Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty,
@@ -372,6 +379,7 @@ public class MhopForumController : MhopControllerBase
             return new
             {
                 id = p.Id,
+                title = p.Title,
                 content = p.Content,
                 board = p.Board,
                 status = p.Status,
@@ -455,12 +463,17 @@ public class MhopForumController : MhopControllerBase
         if (post.Status is not (StatusPending or StatusDraft))
             throw new MhopApiException(400, "已通过审核的内容不可修改，仅可删除");
 
+        var title = (body.Title ?? string.Empty).Trim();
+        if (title.Length == 0) throw new MhopApiException(400, "请填写标题");
+        if (title.Length > 50) throw new MhopApiException(400, "标题不能超过 50 字");
+
         var content = (body.Content ?? string.Empty).Trim();
         if (content.Length == 0) throw new MhopApiException(400, "内容不能为空");
         if (content.Length > 2000) throw new MhopApiException(400, "内容不能超过 2000 字");
         if (string.IsNullOrWhiteSpace(body.Board) || !MhopBoards.Slugs.Contains(body.Board))
             throw new MhopApiException(400, "请选择板块");
 
+        post.Title = title;
         post.Content = content;
         post.Board = body.Board;
         post.IsAnonymous = body.IsAnonymous;
@@ -722,6 +735,7 @@ public class MhopForumController : MhopControllerBase
         return new PostOut
         {
             Id = post.Id,
+            Title = post.Title,
             Content = post.Content,
             Board = post.Board,
             Status = post.Status,
@@ -746,6 +760,7 @@ public class MhopForumController : MhopControllerBase
     private static void CopyPostFields(PostOut target, PostOut source)
     {
         target.Id = source.Id;
+        target.Title = source.Title;
         target.Content = source.Content;
         target.Board = source.Board;
         target.Status = source.Status;

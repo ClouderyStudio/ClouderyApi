@@ -399,7 +399,9 @@ public class MhopAdminController : MhopControllerBase
         GuardStaffTarget(admin, user);
 
         var newPassword = (body.Password ?? string.Empty).Trim();
-        if (newPassword.Length < 6) throw new MhopApiException(400, "密码至少 6 位");
+        var policyErr = MhopPasswordPolicy.Validate(newPassword);
+        if (policyErr is not null)
+            throw new MhopApiException(400, policyErr);
 
         user.PasswordHash = _hasher.Hash(newPassword);
         await _db.SaveChangesAsync();
