@@ -3,6 +3,7 @@ using System;
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClouderyApi.Migrations.Mhop
 {
     [DbContext(typeof(MhopDbContext))]
-    partial class MhopDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930124306_MhopBottles")]
+    partial class MhopBottles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

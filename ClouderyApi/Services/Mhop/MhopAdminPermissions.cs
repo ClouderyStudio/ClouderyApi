@@ -4,7 +4,7 @@ using ClouderyApi.Models.Mhop;
 namespace ClouderyApi.Services.Mhop;
 
 /// <summary>
-/// 后台模块级权限：与前端后台四个菜单一一对应。
+/// 后台模块级权限：与前端后台菜单一一对应。
 /// superadmin 隐式拥有全部权限且可分配权限；普通 admin 仅拥有 Permissions 字段中显式授予的模块。
 /// </summary>
 public static class MhopAdminPermissions
@@ -13,8 +13,9 @@ public static class MhopAdminPermissions
     public const string Review = "review";       // 内容审核（帖子/回复/AI 回复管理）
     public const string Users = "users";         // 用户管理
     public const string AiLogs = "ai_logs";      // AI 交互日志
+    public const string Bottles = "bottles";     // 漂流瓶审核（瓶子与匿名对话）
 
-    public static readonly string[] All = [Dashboard, Review, Users, AiLogs];
+    public static readonly string[] All = [Dashboard, Review, Users, AiLogs, Bottles];
 
     public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
     {
@@ -22,6 +23,7 @@ public static class MhopAdminPermissions
         [Review] = "内容审核",
         [Users] = "用户管理",
         [AiLogs] = "AI 交互日志",
+        [Bottles] = "漂流瓶审核",
     };
 
     public static bool IsStaff(string? role) => role is "admin" or "superadmin";

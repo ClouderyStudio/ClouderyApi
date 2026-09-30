@@ -15,6 +15,8 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
     public DbSet<MhopLike> MhopLikes => Set<MhopLike>();
     public DbSet<MhopAssessment> MhopAssessments => Set<MhopAssessment>();
     public DbSet<MhopAiLog> MhopAiLogs => Set<MhopAiLog>();
+    public DbSet<MhopBottle> MhopBottles => Set<MhopBottle>();
+    public DbSet<MhopBottleMessage> MhopBottleMessages => Set<MhopBottleMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +89,40 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.HasIndex(l => l.UserId);
             e.HasIndex(l => l.SessionId);
             e.HasIndex(l => l.ReplyId);
+        });
+
+        modelBuilder.Entity<MhopBottle>(e =>
+        {
+            e.Property(b => b.Content).HasColumnType("text");
+            e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting);
+            e.Property(b => b.Crisis).HasDefaultValue(false);
+            e.Property(b => b.AiFlag).HasDefaultValue(string.Empty);
+            e.Property(b => b.ReviewNote).HasDefaultValue(string.Empty);
+            e.Property(b => b.ReportedCount).HasDefaultValue(0);
+            e.Property(b => b.ReportedBy).HasColumnType("text").HasDefaultValue("[]");
+            e.Property(b => b.ReportReason).HasDefaultValue(string.Empty);
+            // 扔瓶人 / 捞瓶人只存 Id 不建外键（与 MhopPost 约定一致，避免账号删除级联）
+            e.HasIndex(b => b.UserId);
+            e.HasIndex(b => b.PickerUserId);
+            // 捞瓶随机选取与队列筛选的核心索引
+            e.HasIndex(b => new { b.Status, b.CreatedAt });
+            e.HasIndex(b => b.LastMessageAt);
+            e.HasMany(b => b.Messages)
+                .WithOne(m => m.Bottle)
+                .HasForeignKey(m => m.BottleId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<MhopBottleMessage>(e =>
+        {
+            e.Property(m => m.Content).HasColumnType("varchar(1000)");
+            e.Property(m => m.Status).HasDefaultValue(1);
+            e.Property(m => m.Crisis).HasDefaultValue(false);
+            e.Property(m => m.AiFlag).HasDefaultValue(string.Empty);
+            // after_id 增量拉取：按瓶子聚合且按 Id 顺序扫描
+            e.HasIndex(m => new { m.BottleId, m.Id });
+            e.HasIndex(m => m.SenderUserId);
+            e.HasIndex(m => m.CreatedAt);
         });
     }
 }

@@ -60,6 +60,8 @@ builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
 });
 builder.Services.AddScoped<MhopUploadService>();
 builder.Services.AddScoped<MhopContentService>();
+builder.Services.AddScoped<MhopBottleService>();
+builder.Services.AddHostedService<MhopBottleTimeoutService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))

@@ -58,6 +58,13 @@ public sealed class MhopAiService
         "如果这些困扰已经持续两周以上、明显影响睡眠、饮食或日常功能，建议到正规医院心理科/精神科做一次评估——" +
         "寻求专业帮助是力量，而不是软弱。";
 
+    private const string ModerationSystemPrompt =
+        "你是公益心理平台的内容安全审核员。判断用户文本，只输出一个标签，不要输出任何解释：\n" +
+        "safe：正常倾诉、情绪表达或普通对话；\n" +
+        "suspect：有自伤/自杀情绪危机、或疑似骚扰/广告/性暗示/不适内容，需要人工复核；\n" +
+        "violation：明确违法或严重违规（色情、毒品、暴恐、自杀方法指导、诈骗引流等）。\n" +
+        "注意：单纯表达痛苦、求助、抑郁情绪必须判 safe 或 suspect，绝不允许判 violation。";
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MhopOptions _options;
@@ -118,6 +125,26 @@ public sealed class MhopAiService
             }
         }
         return (string.Empty, "local");
+    }
+
+    /// <summary>
+    /// AI 文本初筛：返回 violation（明确违规）/ suspect（疑似风险，转人工）/ ""（安全或服务不可用）。
+    /// LLM 未配置或调用失败时返回空串（静默降级，不阻断业务）。
+    /// </summary>
+    public async Task<string> ModerateTextAsync(string text, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var messages = new List<Dictionary<string, string>>
+        {
+            new() { ["role"] = "system", ["content"] = ModerationSystemPrompt },
+            new() { ["role"] = "user", ["content"] = text.Length > 1000 ? text[..1000] : text },
+        };
+        var (reply, _) = await ChatAsync(messages, cancellationToken);
+        if (string.IsNullOrWhiteSpace(reply)) return string.Empty;
+        var label = reply.Trim().ToLowerInvariant();
+        if (label.StartsWith("violation")) return "violation";
+        if (label.StartsWith("suspect")) return "suspect";
+        return string.Empty;
     }
 
     public async Task<(string Text, string Engine)> ForumReplyAsync(string userContent, bool crisis)
