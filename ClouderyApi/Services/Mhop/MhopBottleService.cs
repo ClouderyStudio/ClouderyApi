@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
@@ -26,6 +27,17 @@ public sealed class MhopBottleService
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<MhopBottleService> _logger;
 
+    // 频控防并发闸门：单实例部署下把同一用户的投瓶/捞瓶/发消息、同一瓶子的举报计数串行化，
+    // 杜绝「先 count 后写」被同批并发请求打穿。多实例水平扩展时需改为分布式锁或数据库原子计数。
+    private static readonly ConcurrentDictionary<int, SemaphoreSlim> UserGates = new();
+    private static readonly ConcurrentDictionary<int, SemaphoreSlim> BottleGates = new();
+
+    private static SemaphoreSlim UserGate(int userId)
+        => UserGates.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+
+    private static SemaphoreSlim BottleGate(int bottleId)
+        => BottleGates.GetOrAdd(bottleId, _ => new SemaphoreSlim(1, 1));
+
     public MhopBottleService(
         MhopDbContext db,
         MhopAiService ai,
@@ -49,30 +61,39 @@ public sealed class MhopBottleService
         if (MhopModeration.HitSensitive(content) is { Count: > 0 })
             throw new MhopApiException(422, "内容可能包含不当或违规信息，请修改后再扔出");
 
-        var today = DateTime.UtcNow.Date;
-        var thrownToday = await _db.MhopBottles
-            .CountAsync(b => b.UserId == user.Id && b.CreatedAt >= today);
-        if (thrownToday >= ThrowDailyLimit)
-            throw new MhopApiException(429, $"今天已经扔了 {ThrowDailyLimit} 个瓶子，明天再来吧");
-
-        var now = DateTime.UtcNow;
-        var crisis = MhopModeration.DetectCrisis(content);
-        var bottle = new MhopBottle
+        var gate = UserGate(user.Id);
+        await gate.WaitAsync();
+        try
         {
-            UserId = user.Id,
-            Content = content,
-            Status = MhopBottleStatus.Drifting,
-            Crisis = crisis,
-            LastMessageAt = now,
-            CreatedAt = now,
-            ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
-        };
-        _db.MhopBottles.Add(bottle);
-        await _db.SaveChangesAsync();
-        _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, crisis);
+            var today = DateTime.UtcNow.Date;
+            var thrownToday = await _db.MhopBottles
+                .CountAsync(b => b.UserId == user.Id && b.CreatedAt >= today);
+            if (thrownToday >= ThrowDailyLimit)
+                throw new MhopApiException(429, $"今天已经扔了 {ThrowDailyLimit} 个瓶子，明天再来吧");
 
-        QueueAiScreen(bottle.Id, null);
-        return bottle;
+            var now = DateTime.UtcNow;
+            var crisis = MhopModeration.DetectCrisis(content);
+            var bottle = new MhopBottle
+            {
+                UserId = user.Id,
+                Content = content,
+                Status = MhopBottleStatus.Drifting,
+                Crisis = crisis,
+                LastMessageAt = now,
+                CreatedAt = now,
+                ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
+            };
+            _db.MhopBottles.Add(bottle);
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, crisis);
+
+            QueueAiScreen(bottle.Id, null);
+            return bottle;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     // ---------------- 捞瓶 ----------------
@@ -80,35 +101,63 @@ public sealed class MhopBottleService
     /// <summary>随机捞起一个他人的漂流瓶（独占）。海里没有可捞瓶时返回 null。</summary>
     public async Task<MhopBottle?> PickAsync(MhopUser user)
     {
-        var today = DateTime.UtcNow.Date;
-        var pickedToday = await _db.MhopBottles
-            .CountAsync(b => b.PickerUserId == user.Id && b.PickedAt >= today);
-        if (pickedToday >= PickDailyLimit)
-            throw new MhopApiException(429, $"今天已经捞了 {PickDailyLimit} 个瓶子，明天再来吧");
+        var gate = UserGate(user.Id);
+        await gate.WaitAsync();
+        try
+        {
+            var today = DateTime.UtcNow.Date;
+            var pickedToday = await _db.MhopBottles
+                .CountAsync(b => b.PickerUserId == user.Id && b.PickedAt >= today);
+            if (pickedToday >= PickDailyLimit)
+                throw new MhopApiException(429, $"今天已经捞了 {PickDailyLimit} 个瓶子，明天再来吧");
 
-        var now = DateTime.UtcNow;
-        // 条件更新抢占：子查询 RAND() 随机选一个他人的漂流瓶，JOIN 后只更新仍是 Drifting 的行。
-        // 高并发下两个请求不会同时改到同一行，行锁保证一瓶仅有一个捞瓶人。
-        var affected = await _db.Database.ExecuteSqlInterpolatedAsync($@"
-UPDATE mhop_bottles AS b
-JOIN (
-    SELECT Id FROM mhop_bottles
-    WHERE Status = 1 AND UserId <> {user.Id}
-    ORDER BY RAND() LIMIT 1
-) AS c ON b.Id = c.Id
-SET b.Status = 2, b.PickerUserId = {user.Id}, b.PickedAt = {now}
-WHERE b.Status = 1");
-        if (affected == 0) return null;
+            var now = DateTime.UtcNow;
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                // 先随机选一个候选，再按 Id + Status=1 条件更新抢占。
+                // 与其他捞瓶请求撞同一瓶时，InnoDB 行锁串行化两条 UPDATE，
+                // 后到者 WHERE Status=1 匹配 0 行 → 换候选重试，保证一瓶不会被两人捞走。
+                // 不能按「我捞过的最大 Id」反查：那可能取到历史会话而非本次捞到的瓶子。
+                for (var attempt = 0; attempt < 3; attempt++)
+                {
+                    var candidateId = await _db.Database
+                        .SqlQuery<int>($"""
+                            SELECT Id FROM mhop_bottles
+                            WHERE Status = 1 AND UserId <> {user.Id}
+                            ORDER BY RAND() LIMIT 1
+                            """)
+                        .FirstOrDefaultAsync();
+                    if (candidateId == 0) break; // 海里没有可捞瓶
 
-        var bottle = await _db.MhopBottles
-            .Where(b => b.PickerUserId == user.Id)
-            .OrderByDescending(b => b.Id)
-            .FirstAsync();
-        // 捞起即视为已读瓶身
-        bottle.PickerLastReadAt = now;
-        await _db.SaveChangesAsync();
-        _logger.LogInformation("漂流瓶 {BottleId} 被用户 {UserId} 捞起", bottle.Id, user.Id);
-        return bottle;
+                    var affected = await _db.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE mhop_bottles
+                        SET Status = 2, PickerUserId = {user.Id}, PickedAt = {now}
+                        WHERE Id = {candidateId} AND Status = 1
+                        """);
+                    if (affected != 1) continue; // 被别人抢先，换一个
+
+                    var bottle = await _db.MhopBottles.FirstAsync(b => b.Id == candidateId);
+                    bottle.PickerLastReadAt = now; // 捞起即视为已读瓶身
+                    await _db.SaveChangesAsync();
+                    await tx.CommitAsync();
+                    _logger.LogInformation("漂流瓶 {BottleId} 被用户 {UserId} 捞起", bottle.Id, user.Id);
+                    return bottle;
+                }
+
+                await tx.RollbackAsync();
+                return null;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public Task<int> SeaCountAsync()
@@ -188,27 +237,36 @@ WHERE b.Status = 1");
         if (MhopModeration.HitSensitive(content) is { Count: > 0 })
             throw new MhopApiException(422, "消息可能包含不当或违规信息，请修改后再发送");
 
-        var since = DateTime.UtcNow.AddMinutes(-1);
-        var recentCount = await _db.MhopBottleMessages
-            .CountAsync(m => m.SenderUserId == user.Id && m.CreatedAt >= since);
-        if (recentCount >= MessagePerMinuteLimit)
-            throw new MhopApiException(429, "发送太频繁了，稍后再试");
-
-        var now = DateTime.UtcNow;
-        var message = new MhopBottleMessage
+        var gate = UserGate(user.Id);
+        await gate.WaitAsync();
+        try
         {
-            BottleId = bottle.Id,
-            SenderUserId = user.Id,
-            Content = content,
-            Crisis = MhopModeration.DetectCrisis(content),
-            CreatedAt = now,
-        };
-        _db.MhopBottleMessages.Add(message);
-        bottle.LastMessageAt = now;
-        await _db.SaveChangesAsync();
+            var since = DateTime.UtcNow.AddMinutes(-1);
+            var recentCount = await _db.MhopBottleMessages
+                .CountAsync(m => m.SenderUserId == user.Id && m.CreatedAt >= since);
+            if (recentCount >= MessagePerMinuteLimit)
+                throw new MhopApiException(429, "发送太频繁了，稍后再试");
 
-        QueueAiScreen(bottle.Id, message.Id);
-        return message;
+            var now = DateTime.UtcNow;
+            var message = new MhopBottleMessage
+            {
+                BottleId = bottle.Id,
+                SenderUserId = user.Id,
+                Content = content,
+                Crisis = MhopModeration.DetectCrisis(content),
+                CreatedAt = now,
+            };
+            _db.MhopBottleMessages.Add(message);
+            bottle.LastMessageAt = now;
+            await _db.SaveChangesAsync();
+
+            QueueAiScreen(bottle.Id, message.Id);
+            return message;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     // ---------------- 结束 / 举报 ----------------
@@ -236,19 +294,28 @@ WHERE b.Status = 1");
         if (reason.Length > ReportReasonMaxLength)
             throw new MhopApiException(422, $"举报理由不超过 {ReportReasonMaxLength} 字");
 
-        var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
-        if (bottle is null || !IsParty(bottle, userId))
-            throw new MhopApiException(404, "会话不存在");
-
-        var reporterIds = ParseIdList(bottle.ReportedBy);
-        if (reporterIds.Add(userId))
+        var gate = BottleGate(bottleId);
+        await gate.WaitAsync();
+        try
         {
-            bottle.ReportedBy = JsonSerializer.Serialize(reporterIds);
-            bottle.ReportedCount = reporterIds.Count;
-            bottle.LastReportedAt = DateTime.UtcNow;
-            bottle.ReportReason = reason;
-            await _db.SaveChangesAsync();
-            _logger.LogWarning("漂流瓶 {BottleId} 被用户 {UserId} 举报：{Reason}", bottleId, userId, reason);
+            var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
+            if (bottle is null || !IsParty(bottle, userId))
+                throw new MhopApiException(404, "会话不存在");
+
+            var reporterIds = ParseIdList(bottle.ReportedBy);
+            if (reporterIds.Add(userId))
+            {
+                bottle.ReportedBy = JsonSerializer.Serialize(reporterIds);
+                bottle.ReportedCount = reporterIds.Count;
+                bottle.LastReportedAt = DateTime.UtcNow;
+                bottle.ReportReason = reason;
+                await _db.SaveChangesAsync();
+                _logger.LogWarning("漂流瓶 {BottleId} 被用户 {UserId} 举报：{Reason}", bottleId, userId, reason);
+            }
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -286,9 +353,10 @@ WHERE b.Status = 1");
         var crisis = await _db.MhopBottles.CountAsync(b =>
             b.Crisis && (b.Status == MhopBottleStatus.Drifting || b.Status == MhopBottleStatus.Picked));
         var suspectBottles = await _db.MhopBottles.CountAsync(b =>
-            b.AiFlag == "suspect" && b.Status != MhopBottleStatus.Removed);
+            (b.AiFlag == "suspect" || b.AiFlag == "violation")
+            && b.Status != MhopBottleStatus.Removed);
         var suspectMessages = await _db.MhopBottleMessages.CountAsync(m =>
-            m.AiFlag == "suspect" && m.Status == 1);
+            (m.AiFlag == "suspect" || m.AiFlag == "violation") && m.Status == 1);
         var reported = await _db.MhopBottles.CountAsync(b =>
             b.ReportedCount > 0 && b.Status != MhopBottleStatus.Removed);
         return (crisis, suspectBottles + suspectMessages, reported);
