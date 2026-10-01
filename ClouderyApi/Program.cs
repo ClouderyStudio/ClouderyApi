@@ -47,6 +47,9 @@ builder.Services.AddSingleton<ILlmClient, LlmClient>();
 // 心理学站点的测评结果 AI 解读（公开接口，按 IP 单独限流，见 IpRateLimitAttribute）
 builder.Services.AddSingleton<ResultAnalysisService>();
 
+// 心理学站点的测评结果云端存档（登录用户的多平台共享，见 ExamResultsController）
+builder.Services.AddScoped<ExamResultService>();
+
 // ===== MHOP 公益心理辅助平台模块（从 Python FastAPI 后端迁移） =====
 builder.Services.Configure<MhopOptions>(builder.Configuration.GetSection(MhopOptions.SectionName));
 builder.Services.AddHttpContextAccessor();

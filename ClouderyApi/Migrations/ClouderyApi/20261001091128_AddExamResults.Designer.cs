@@ -3,6 +3,7 @@ using System;
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClouderyApi.Migrations.ClouderyApi
 {
     [DbContext(typeof(ClouderyApiContext))]
-    partial class ClouderyApiContextModelSnapshot : ModelSnapshot
+    [Migration("20261001091128_AddExamResults")]
+    partial class AddExamResults
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

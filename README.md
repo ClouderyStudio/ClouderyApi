@@ -11,6 +11,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 团队成员 | `/cloudery/members` | 团队 / 组织成员信息（姓名、职位、简介、社交链接）增删改查 |
 | 内部试卷 | `/exam/ExamPapers` | 内部测试试卷（心理学项目）整卷 JSON 存于 `ExamPapers` 表；公开读（**不含答案/解析**）+ `POST /{id}/grade` 服务端判分，写操作需管理员；`/exam/ExamPapers/{id}/full`（管理员）读取含答案全量 |
 | 结果解读 | `/exam/result-analysis` | 量表结果的 AI 解读（按量表类型分流提示词），模型不可用时回退本地文本；公开接口，按 IP 限流 8 次 / 300 秒 |
+| 云端结果 | `/exam/results` | 登录用户的测评结果云端存档（多平台共享）：列表 / 单条上传 / 批量同步 / 按 Id 或 clientKey 删除 / 清空，按 Casdoor 用户隔离；未登录返回 401 |
 | 情绪记录 | `/qisoul/mood` | 情绪打卡（类型、标签、强度 1-5、情绪日记、备注、标签） |
 | 帖子 | `/qisoul/post` | 社区文章（分类、图标、点赞、评论数、编辑） |
 | 评论 | `/qisoul/comment` | 帖子评论，支持嵌套回复 |
@@ -53,7 +54,7 @@ ClouderyApi/
 ├── ClouderyApi.http               # HTTP 调试脚本（VS 使用）
 ├── Controllers/
 │   ├── Auth/AuthController.cs
-│   ├── Cloudery/           # Members / ExamPapers / ResultAnalysis
+│   ├── Cloudery/           # Members / ExamPapers / ResultAnalysis / ExamResults
 │   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器（另有按 IP 限流的 IpRateLimitAttribute）
 │   ├── MHOP/                      # 见下方「MHOP 模块」：Common / Auth / Forum / Assessment / Admin / Upload
 │   ├── Misc/LongLinkController.cs
@@ -66,15 +67,15 @@ ClouderyApi/
 │   ├── MhopDbContext.cs          # MHOP 域（表名 mhop_ 前缀）
 │   └── MhopDbContextFactory.cs   # MHOP 设计时工厂（dotnet ef）
 ├── Models/
-│   ├── Cloudery/                 # Member（实体）+ MemberDto、ExamPaper（含嵌套类型）
+│   ├── Cloudery/                 # Member（实体）+ MemberDto、ExamPaper（含嵌套类型）、ExamResult（测评结果云端存档）
 │   ├── Mhop/                     # MHOP 实体（MhopUser/Post/Reply/Like/Assessment/AiLog）+ DTOs
 │   ├── Qisoul/                   # 实体 + DTOs + UserLike（点赞去重表）
 │   └── Zhuxs/                    # 实体 + DTOs
 ├── Services/
 │   ├── Ai/                         # 共享大模型客户端与危机文本（LlmOptions / ILlmClient / LlmClient / CrisisSupport）
-│   ├── Cloudery/                   # ResultAnalysisService：量表结果的 AI 解读
+│   ├── Cloudery/                   # ResultAnalysisService（量表结果 AI 解读）/ ExamResultService（云端结果同步）
 │   └── Mhop/                       # MHOP 业务：AI 服务、内容审核、对象存储等
-├── Migrations/                    # QisoulDbContext（SQL Server）迁移；Migrations/ClouderyApi/ 为 ClouderyApiContext（MySQL，含 ExamPapers 迁移）；Migrations/Mhop/ 为 MhopDbContext（MySQL）
+├── Migrations/                    # QisoulDbContext（SQL Server）迁移；Migrations/ClouderyApi/ 为 ClouderyApiContext（MySQL，含 ExamPapers、ExamResults 迁移）；Migrations/Mhop/ 为 MhopDbContext（MySQL）
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
 
@@ -139,6 +140,8 @@ dotnet ef database update --context MhopDbContext
 
 > 内部试卷表迁移 `AddExamPapers` 仅新增 `ExamPapers` 表（整卷 JSON 存单列，兼容既有 schema）。存在多个 `DbContext` 时，`dotnet ef` 命令需显式指定 `--context`。
 
+> 云端测评结果迁移 `AddExamResults` 仅新增 `ExamResults` 表与索引 `IX_ExamResults_UserId_ClientKey`（唯一）、`IX_ExamResults_UserId_SavedAt`，兼容既有 schema。
+
 ## 配置说明（Program.cs 要点）
 
 - **认证**：Casdoor 登录流程 + Cookie 认证，Cookie 设置 `HttpOnly=true`（防 XSS 窃取会话）、`SameSite=None`、`Secure`，有效期 7 天（滑动续期），登录 / 登出路径为 `/identity/auth/login`、`/identity/auth/logout`。
@@ -198,6 +201,53 @@ dotnet ef database update --context MhopDbContext
 | `Controllers/Filters/IpRateLimitAttribute.cs` | 按 IP + 路径的固定窗口限流过滤器 |
 
 > 根级 `Llm` 留空时会**逐项回退**到旧配置 `Mhop:Llm`；两者都空则结果解读一律走本地兜底（`engine = "local"`）。MHOP 的 AI 回复与审核也改用同一个 `ILlmClient`，`MhopAiService.ChatAsync` 的签名与 `Engine` 标记保持不变。
+
+## 云端测评结果同步（`/exam/results`）
+
+`psychology` 站点登录后的测评结果云端存档，支撑「多平台共享测试结果数据」：站点本机（localStorage）记录与云端按 `clientKey` 一一对应，换设备登录后即可把历史补齐。接口要求 **Casdoor Cookie 会话**（同 `/identity/auth`），用户身份取自 `ClaimTypes.NameIdentifier`，不同用户的记录互相隔离。
+
+| 方法 | 路由 | 说明 |
+| ---- | ---- | ---- |
+| `GET` | `/exam/results` | 当前用户全部记录，返回 `{ success, total, results }` |
+| `POST` | `/exam/results` | 上传单条记录（upsert） |
+| `POST` | `/exam/results/sync` | 批量上传并回传云端全量；`records` 为空即「只取回」 |
+| `DELETE` | `/exam/results/{id}` | 按记录 Id **或** `clientKey` 删除；不存在返回 404 |
+| `DELETE` | `/exam/results` | 清空当前用户全部云端记录，返回 `{ success, deleted }` |
+
+### 请求与响应
+
+```json
+// POST /exam/results/sync
+{ "records": [ { "clientKey": "test_phq9_result_1759300000000", "testId": "phq9",
+                 "testTitle": "PHQ-9", "savedAt": "2026-10-01T09:46:40.000Z",
+                 "payload": { "testId": "phq9", "totalScore": 12 } } ] }
+
+// 200
+{ "success": true, "uploaded": 1, "total": 3,
+  "results": [ { "id": "…", "clientKey": "…", "testId": "phq9", "testTitle": "PHQ-9",
+                 "savedAt": "…", "updatedAt": "…", "payload": { … } } ] }
+```
+
+### 行为
+
+- **幂等 upsert**：同一用户下 `clientKey` 唯一（唯一索引 `IX_ExamResults_UserId_ClientKey`，MySQL 允许多个 NULL），重复同步不会产生重复记录；`clientKey` 缺省时以 `testId@<savedAt ISO>` 兜底。
+- **防旧设备回灌**：已存在的记录只有在新 `savedAt` **不早于**已存 `savedAt` 时才覆盖，晚到的旧设备不会把新结果改回旧数据。
+- **配额**：单次最多 200 条、单用户只保留最新 200 条（超量自动裁剪）、单条 `payload` 上限 256 KB；超限返回 400 裸对象（如 `{ "success": false, "message": "一次最多同步 200 条记录，请分批上传" }`）。
+- **时间**：`savedAt` / `updatedAt` 一律归一化为 UTC 后入库（MySQL `datetime` 不保留时区），返回 ISO 8601。
+- **错误**：未登录 `401 { "success": false, "message": "未登录，无法使用云端同步" }`；`payload` 缺失或记录超限 `400`；目标记录不存在 `404`。Cloudery 模块风格，返回**裸对象**（不经 `MhopOk`）。
+- 路由**未挂** `[Authorize]`：为统一返回中文 401 体，鉴权在控制器内手动完成（`TryGetUserId`）。
+
+### 相关代码与配置
+
+| 位置 | 说明 |
+| ---- | ---- |
+| `Models/Cloudery/ExamResult.cs` | 实体：`UserId` / `ClientKey` / `TestId` / `TestTitle` / `SavedAt` / `Payload`（`longtext`）/ `CreatedAt` / `UpdatedAt` |
+| `Models/Cloudery/DTOs/ExamResultDtos.cs` | `ExamResultIn` / `ExamResultSyncIn` / `ExamResultOut` / `ExamResultSyncOut` |
+| `Services/Cloudery/ExamResultService.cs` | 列表 / 同步 / 删除 / 清空，含配额校验与时间归一化 |
+| `Controllers/Cloudery/ExamResultsController.cs` | 路由 `exam/results` |
+| `Migrations/ClouderyApi/20261001091128_AddExamResults.cs` | 仅新增 `ExamResults` 表与两个索引，兼容既有 schema |
+
+> 部署前执行 `dotnet ef database update --context ClouderyApiContext`。`ClouderyApiContext` **不会**随启动自动迁移（只有 `MhopDbContext` 会自动迁移）。
 
 ## MHOP 模块（从 Python FastAPI 后端迁移）
 
