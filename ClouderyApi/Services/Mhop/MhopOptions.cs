@@ -11,6 +11,11 @@ public sealed class MhopOptions
 
     public MhopJwtOptions Jwt { get; set; } = new();
 
+    /// <summary>
+    /// MHOP 自带的模型配置。模型调用已抽到 Services/Ai/ILlmClient，读取根级 Llm 节；
+    /// 根级留空时会回退到这里（见 Program.cs 的 PostConfigure），所以本节点保留、
+    /// 但代码里不再直接读取——改配置请优先改根级 Llm。
+    /// </summary>
     public MhopLlmOptions Llm { get; set; } = new();
 
     public MhopSmtpOptions Smtp { get; set; } = new();

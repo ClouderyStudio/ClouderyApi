@@ -1,3 +1,5 @@
+using ClouderyApi.Services.Ai;
+
 namespace ClouderyApi.Services.Mhop;
 
 /// <summary>
@@ -6,14 +8,8 @@ namespace ClouderyApi.Services.Mhop;
 /// </summary>
 public static class MhopModeration
 {
-    /// <summary>自伤 / 自杀危机信号。</summary>
-    public static readonly string[] CrisisWords =
-    [
-        "自杀", "自尽", "轻生", "想死", "不想活", "活着没意思", "活不下去", "活够了",
-        "结束生命", "离开这个世界", "一了百了", "找死", "寻死", "同归于尽",
-        "自残", "割腕", "割自己", "跳楼", "上吊", "烧炭", "安眠药", "伤害自己",
-        "毁掉自己", "撑不下去了", "解脱",
-    ];
+    /// <summary>自伤 / 自杀危机信号（词表与 Cloudery 结果解读共用，见 Services/Ai/CrisisSupport）。</summary>
+    public static readonly string[] CrisisWords = CrisisSupport.CrisisWords;
 
     /// <summary>基础违规词（演示词库；正式上线请替换为专业敏感词库 / 云审核 API）。</summary>
     public static readonly string[] SensitiveWords =
@@ -23,8 +19,7 @@ public static class MhopModeration
         "加微信领", "点击链接", "六合彩", "代考",
     ];
 
-    public static bool DetectCrisis(string? text)
-        => !string.IsNullOrEmpty(text) && CrisisWords.Any(text.Contains);
+    public static bool DetectCrisis(string? text) => CrisisSupport.DetectCrisis(text);
 
     public static List<string> HitSensitive(string? text)
         => string.IsNullOrEmpty(text) ? [] : SensitiveWords.Where(text.Contains).ToList();

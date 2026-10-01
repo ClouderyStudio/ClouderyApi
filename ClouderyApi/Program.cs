@@ -1,5 +1,7 @@
 using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
+using ClouderyApi.Services.Ai;
+using ClouderyApi.Services.Cloudery;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +29,23 @@ builder.Services.AddDbContext<ClouderyApiContext>(options =>
 
 builder.Services.AddDbContext<QisoulDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
+
+// ===== 通用大模型（OpenAI 兼容）配置 =====
+// 读根级 Llm 节；某项留空时回退到既有的 Mhop:Llm，因此只为 MHOP 配过模型的现网无需改动。
+builder.Services.AddOptions<LlmOptions>()
+    .Bind(builder.Configuration.GetSection(LlmOptions.SectionName))
+    .PostConfigure(options =>
+    {
+        var legacy = builder.Configuration.GetSection("Mhop:Llm");
+        if (string.IsNullOrWhiteSpace(options.BaseUrl)) options.BaseUrl = legacy["BaseUrl"] ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(options.ApiKey)) options.ApiKey = legacy["ApiKey"] ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(options.Model)) options.Model = legacy["Model"] ?? "glm-4-flash";
+        if (options.TimeoutSeconds <= 0) options.TimeoutSeconds = 30;
+    });
+builder.Services.AddSingleton<ILlmClient, LlmClient>();
+
+// 心理学站点的测评结果 AI 解读（公开接口，按 IP 单独限流，见 IpRateLimitAttribute）
+builder.Services.AddSingleton<ResultAnalysisService>();
 
 // ===== MHOP 公益心理辅助平台模块（从 Python FastAPI 后端迁移） =====
 builder.Services.Configure<MhopOptions>(builder.Configuration.GetSection(MhopOptions.SectionName));

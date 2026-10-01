@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
+using ClouderyApi.Services.Ai;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -17,14 +18,7 @@ namespace ClouderyApi.Services.Mhop;
 /// </summary>
 public sealed class MhopAiService
 {
-    private const string CrisisPrefix =
-        "我注意到你正经历非常痛苦、甚至可能想伤害自己的时刻，我很担心你的安全。" +
-        "请不要独自硬撑：\n" +
-        "1）立即拨打全国心理援助热线 12356（24小时、免费、保密），" +
-        "或北京心理危机研究与干预中心 010-82951332；\n" +
-        "2）如果你觉得自己可能马上做出伤害自己的事，请立刻拨打 110 或 120，" +
-        "或直接前往最近医院的急诊；\n" +
-        "3）现在就联系一位你信任的家人或朋友，告诉他/她你的感受，并尽量和人待在一起，远离危险物品。\n\n";
+    private const string CrisisPrefix = CrisisSupport.Prefix;
 
     /// <summary>
     /// 社区回帖提示词。两个实测要点，改动前请先复测：
@@ -99,70 +93,30 @@ public sealed class MhopAiService
             "\n本次场景：论坛公开内容，所有人可见。请特别留意广告营销、人身攻击、隐私泄露。",
     };
 
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly MhopOptions _options;
+    private readonly ILlmClient _llm;
     private readonly ILogger<MhopAiService> _logger;
 
     public MhopAiService(
-        IHttpClientFactory httpClientFactory,
         IServiceScopeFactory scopeFactory,
-        IOptions<MhopOptions> options,
+        ILlmClient llm,
         ILogger<MhopAiService> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _scopeFactory = scopeFactory;
-        _options = options.Value;
+        _llm = llm;
         _logger = logger;
     }
 
-    /// <summary>调用 OpenAI 兼容接口；返回 (回复文本, 引擎标识 llm/local)。</summary>
-    public async Task<(string Text, string Engine)> ChatAsync(
+    /// <summary>
+    /// 调用 OpenAI 兼容接口；返回 (回复文本, 引擎标识 llm/local)。
+    /// 实现已抽到 <see cref="ILlmClient"/>，与 Cloudery 结果解读共用同一份调用与降级逻辑。
+    /// </summary>
+    public Task<(string Text, string Engine)> ChatAsync(
         IReadOnlyList<Dictionary<string, string>> messages,
         CancellationToken cancellationToken = default,
         double temperature = 0.7,
         int maxTokens = 700)
-    {
-        var llm = _options.Llm;
-        if (!string.IsNullOrWhiteSpace(llm.BaseUrl) && !string.IsNullOrWhiteSpace(llm.ApiKey))
-        {
-            try
-            {
-                var client = _httpClientFactory.CreateClient();
-                using var request = new HttpRequestMessage(
-                    HttpMethod.Post, llm.BaseUrl.TrimEnd('/') + "/chat/completions");
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", llm.ApiKey);
-                request.Content = new StringContent(
-                    JsonSerializer.Serialize(new
-                    {
-                        model = llm.Model,
-                        messages,
-                        temperature,
-                        max_tokens = maxTokens,
-                    }),
-                    Encoding.UTF8,
-                    "application/json");
-
-                using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutSource.CancelAfter(TimeSpan.FromSeconds(30));
-
-                using var response = await client.SendAsync(request, timeoutSource.Token);
-                response.EnsureSuccessStatusCode();
-                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeoutSource.Token));
-                var text = document.RootElement
-                    .GetProperty("choices")[0]
-                    .GetProperty("message")
-                    .GetProperty("content")
-                    .GetString();
-                if (!string.IsNullOrWhiteSpace(text)) return (text.Trim(), "llm");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "LLM 调用失败，降级为本地共情引擎");
-            }
-        }
-        return (string.Empty, "local");
-    }
+        => _llm.ChatAsync(messages, cancellationToken, temperature, maxTokens);
 
     /// <summary>
     /// AI 文本审核：先本地规则预筛，再做语义判断，返回结论 + 理由。
