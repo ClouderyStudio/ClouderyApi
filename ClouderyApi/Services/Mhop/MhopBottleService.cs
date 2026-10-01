@@ -121,9 +121,11 @@ public sealed class MhopBottleService
                 // 不能按「我捞过的最大 Id」反查：那可能取到历史会话而非本次捞到的瓶子。
                 for (var attempt = 0; attempt < 3; attempt++)
                 {
+                    // 标量 SqlQuery<int> 的结果列必须命名为 Value：EF 执行时会包一层
+                    // SELECT s.`Value` FROM (<原 SQL>) AS s，否则报 Unknown column 's.Value'。
                     var candidateId = await _db.Database
                         .SqlQuery<int>($"""
-                            SELECT Id FROM mhop_bottles
+                            SELECT Id AS `Value` FROM mhop_bottles
                             WHERE Status = 1 AND UserId <> {user.Id}
                             ORDER BY RAND() LIMIT 1
                             """)
