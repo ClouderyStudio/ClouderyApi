@@ -10,6 +10,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 身份认证 | `/identity/auth` | 基于 **Casdoor** OAuth2 的登录 / 回调 / 登出 / 当前用户查询，Cookie 会话 + CSRF 防护；另有 `GET /config` 供第三方站点取登录元数据 |
 | 团队成员 | `/cloudery/members` | 团队 / 组织成员信息（姓名、职位、简介、社交链接）增删改查 |
 | 内部试卷 | `/exam/ExamPapers` | 内部测试试卷（心理学项目）整卷 JSON 存于 `ExamPapers` 表；公开读（**不含答案/解析**）+ `POST /{id}/grade` 服务端判分，写操作需管理员；`/exam/ExamPapers/{id}/full`（管理员）读取含答案全量 |
+| 结果解读 | `/exam/result-analysis` | 量表结果的 AI 解读（按量表类型分流提示词），模型不可用时回退本地文本；公开接口，按 IP 限流 8 次 / 300 秒 |
 | 情绪记录 | `/qisoul/mood` | 情绪打卡（类型、标签、强度 1-5、情绪日记、备注、标签） |
 | 帖子 | `/qisoul/post` | 社区文章（分类、图标、点赞、评论数、编辑） |
 | 评论 | `/qisoul/comment` | 帖子评论，支持嵌套回复 |
@@ -34,6 +35,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 - 三个 `DbContext`：`ClouderyApiContext`（云术 / 竹像素域，含 JSON 列转换）、`QisoulDbContext`（栖所域，含索引、默认值、导航属性配置）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
 - **Casdoor** OAuth2 认证（`Casdoor.AspNetCore` + `Casdoor.Client`），Cookie 会话，会话有效期 7 天且支持滚动续期
 - **MHOP 认证**：手写 HS256 JWT（`Authorization: Bearer`）+ PBKDF2-SHA256 密码哈希，兼容原有协议；并提供 **Casdoor 统一身份认证（OAuth2 授权码 / OIDC）** 登录，成功后同样签发 MHOP JWT
+- **共享大模型客户端**：`Services/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
 - **SixLabors.ImageSharp** 处理上传图片：头像方形裁剪、帖子图缩放、统一 WebP 编码（对应 Python 版的 Pillow）
 - 自定义 **CSRF 防护**中间件：对 POST/PUT/PATCH/DELETE 请求校验 Origin 头是否在 CORS 白名单内
 - **Swagger / OpenAPI**（开发环境启用）
@@ -51,8 +53,8 @@ ClouderyApi/
 ├── ClouderyApi.http               # HTTP 调试脚本（VS 使用）
 ├── Controllers/
 │   ├── Auth/AuthController.cs
-│   ├── Cloudery/           # Members / ExamPapers
-│   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器
+│   ├── Cloudery/           # Members / ExamPapers / ResultAnalysis
+│   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器（另有按 IP 限流的 IpRateLimitAttribute）
 │   ├── MHOP/                      # 见下方「MHOP 模块」：Common / Auth / Forum / Assessment / Admin / Upload
 │   ├── Misc/LongLinkController.cs
 │   ├── Qisoul/                    # Mood / Post / Comment / Sticky / Stats
@@ -68,6 +70,10 @@ ClouderyApi/
 │   ├── Mhop/                     # MHOP 实体（MhopUser/Post/Reply/Like/Assessment/AiLog）+ DTOs
 │   ├── Qisoul/                   # 实体 + DTOs + UserLike（点赞去重表）
 │   └── Zhuxs/                    # 实体 + DTOs
+├── Services/
+│   ├── Ai/                         # 共享大模型客户端与危机文本（LlmOptions / ILlmClient / LlmClient / CrisisSupport）
+│   ├── Cloudery/                   # ResultAnalysisService：量表结果的 AI 解读
+│   └── Mhop/                       # MHOP 业务：AI 服务、内容审核、对象存储等
 ├── Migrations/                    # QisoulDbContext（SQL Server）迁移；Migrations/ClouderyApi/ 为 ClouderyApiContext（MySQL，含 ExamPapers 迁移）；Migrations/Mhop/ 为 MhopDbContext（MySQL）
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
@@ -98,6 +104,7 @@ cp ClouderyApi/appsettings.example.json ClouderyApi/appsettings.json
 | `Env:SCKEY_API_BASE`、`Env:SCKEY_BEARER_TOKEN` | Server 酱（SCKEY）推送配置 |
 | `Authorization:Admins` | 管理员 CasdoorId 列表，用于白名单/申请/周目/成员等敏感写操作 |
 | `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`AutoMigrate` / `Seed` |
+| `Llm` | 结果解读与 MHOP 共用的大模型配置（OpenAI 兼容）：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30）；留空时逐项回退到旧配置 `Mhop:Llm` |
 
 > ⚠️ `appsettings.json` 包含数据库口令、Casdoor 客户端密钥等敏感信息，已被 `.gitignore` 排除，**请勿提交到仓库**。默认端口见 `Properties/launchSettings.json`（`http://localhost:5171`，HTTPS `https://localhost:7288`）。
 
@@ -148,6 +155,49 @@ dotnet ef database update --context MhopDbContext
 5. 后续请求通过 Cookie 会话访问受限接口，`GET /identity/auth/me` 可获取当前用户。
 
 > 回调必须携带与 `oauth_state` Cookie 一致的 `state`，否则拒绝登录（防 CSRF）。回调端点为 `HttpPost`，需由前端发起，而非浏览器直接跳转到该地址。
+
+## 测评结果 AI 解读（`/exam/result-analysis`）
+
+`psychology` 站点结果页调用的公开接口：把一次测评结果交给所配置的大模型，生成四段中文解读。匿名可用、无需登录，返回**裸对象**（Cloudery 模块风格，不用 `MhopOk` 的蛇形包装）：
+
+```json
+{ "analysis": "1) …2) …3) …4) …", "engine": "llm", "crisis": false, "generatedAt": "2026-01-01T00:00:00+00:00" }
+```
+
+### 请求体
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `testId` | **必填**，量表标识（如 `phq9`、`mbti`）；缺失返回 400 |
+| `testTitle` / `category` | 量表名称与类别（症状 / 人格 / 专项） |
+| `totalScore` / `maxScore` / `minScore` / `level` / `severity` / `scoreNote` | 本次得分口径与等级 |
+| `suggestion` | 站点自带的量表解读，仅作为参考依据拼进提示词，不作为结论照抄 |
+| `timeFrame` / `respondent` | 作答时间范围、作答人（本人自评 / 他人代答） |
+| `risk` | 站点侧的风险标记 |
+| `note` | 用户备注，**只有本人同意后才由站点下发**；服务端再截断 1200 字 |
+| `scoreKind` | `severity` / `trait` / `type`，量表类型；缺省时服务端按 `testId` 与 `category` 关键词自行判定 |
+| `profile` | 量表画像数据（名称 + 取值），如 MBTI 的四轴偏好 / 功能栈、七美德与七宗罪的指数、心理年龄双轴等 |
+| `dimensions` | 维度名 / 分值 / 满分 / 等级 / 说明，最多 16 项 |
+
+### 行为
+
+- **提示词按量表类型分流**（`ResultAnalysisService.KindInstruction`）：类型型直接给出类型与画像、不出现「得分为 X/Y 分」；特质型禁用「正常 / 异常」「严重 / 轻度」「需要治疗」等病理化措辞；计分型用总分与等级说明程度，并要求剖析 2-3 个相对突出的维度。硬性要求至少引用三个具体数据点、禁止空话与照抄量表自带解读，全文 600 字以内。
+- **危机处理**：`risk`、`level`、`scoreNote`、`note` 任一处命中危机词即前置援助热线文本（全国心理援助热线 12356、北京心理危机研究与干预中心 010-82951332，紧急情况 110/120），该文本与 MHOP 模块共用同一份 `CrisisSupport` 常量。
+- **降级**：模型未配置、调用失败或返回空文本时，改用服务端本地规则文本（`engine = "local"`），接口不会以 5xx 结束。
+- **限流**：`[IpRateLimit(MaxRequests = 8, WindowSeconds = 300)]`，按「IP + 路径」固定窗口计数，超限返回 429 与 `Retry-After`（响应体 `{ success, message, retryAfterSeconds }`）。
+
+### 相关代码与配置
+
+| 位置 | 说明 |
+| ---- | ---- |
+| `Services/Ai/LlmOptions.cs` | 根级 `Llm` 配置：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30） |
+| `Services/Ai/LlmClient.cs` | OpenAI 兼容 `/chat/completions` 调用；失败只记日志并返回 `engine = "local"`，不抛给调用方 |
+| `Services/Ai/CrisisSupport.cs` | 危机词、热线号码与热线前缀文本（与 MHOP 共用） |
+| `Services/Cloudery/ResultAnalysisService.cs` | 提示词组装（`BuildSystemPrompt` / `BuildUserPrompt`）与本地兜底文本 |
+| `Controllers/Cloudery/ResultAnalysisController.cs` | 路由 `POST /exam/result-analysis` |
+| `Controllers/Filters/IpRateLimitAttribute.cs` | 按 IP + 路径的固定窗口限流过滤器 |
+
+> 根级 `Llm` 留空时会**逐项回退**到旧配置 `Mhop:Llm`；两者都空则结果解读一律走本地兜底（`engine = "local"`）。MHOP 的 AI 回复与审核也改用同一个 `ILlmClient`，`MhopAiService.ChatAsync` 的签名与 `Engine` 标记保持不变。
 
 ## MHOP 模块（从 Python FastAPI 后端迁移）
 
