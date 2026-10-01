@@ -99,7 +99,7 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.Property(b => b.AiFlag).HasDefaultValue(string.Empty);
             e.Property(b => b.ReviewNote).HasDefaultValue(string.Empty);
             e.Property(b => b.ReportedCount).HasDefaultValue(0);
-            e.Property(b => b.ReportedBy).HasColumnType("text").HasDefaultValue("[]");
+            e.Property(b => b.ReportedBy).HasColumnType("text");
             e.Property(b => b.ReportReason).HasDefaultValue(string.Empty);
             // 扔瓶人 / 捞瓶人只存 Id 不建外键（与 MhopPost 约定一致，避免账号删除级联）
             e.HasIndex(b => b.UserId);

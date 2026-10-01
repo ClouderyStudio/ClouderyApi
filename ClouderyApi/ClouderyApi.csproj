@@ -4,21 +4,22 @@
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <NuGetAudit>false</NuGetAudit>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="Aliyun.OSS.SDK.NetCore" Version="2.14.1" />
         <PackageReference Include="Casdoor.AspNetCore" Version="1.16.0" />
         <PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.9" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.9">
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.10">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="10.0.2" ExcludeAssets="All" />
-        <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.7" />
+        <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.9" />
         <!-- 固定 3.1.x：4.x 起内置 SixLabors 许可证校验任务，Release 构建缺少 license key 会直接失败 -->
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
         <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />

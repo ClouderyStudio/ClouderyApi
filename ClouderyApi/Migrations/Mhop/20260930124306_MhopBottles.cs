@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using MySql.EntityFrameworkCore.Metadata;
 
@@ -30,7 +30,7 @@ namespace ClouderyApi.Migrations.Mhop
                     EndReason = table.Column<int>(type: "int", nullable: true),
                     ReportedCount = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
                     LastReportedAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
-                    ReportedBy = table.Column<string>(type: "text", nullable: false, defaultValue: "[]"),
+                    ReportedBy = table.Column<string>(type: "text", nullable: false),
                     ReportReason = table.Column<string>(type: "varchar(500)", maxLength: 500, nullable: false, defaultValue: ""),
                     ThrowerLastReadAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     PickerLastReadAt = table.Column<DateTime>(type: "datetime(6)", nullable: true),

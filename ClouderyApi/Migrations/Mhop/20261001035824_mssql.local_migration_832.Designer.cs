@@ -11,15 +11,15 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClouderyApi.Migrations.Mhop
 {
     [DbContext(typeof(MhopDbContext))]
-    [Migration("20260930124306_MhopBottles")]
-    partial class MhopBottles
+    [Migration("20261001035824_mssql.local_migration_832")]
+    partial class mssqllocal_migration_832
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopAiLog", b =>
