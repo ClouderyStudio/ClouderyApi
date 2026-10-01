@@ -58,18 +58,29 @@ public sealed class MhopAiService
         "如果这些困扰已经持续两周以上、明显影响睡眠、饮食或日常功能，建议到正规医院心理科/精神科做一次评估——" +
         "寻求专业帮助是力量，而不是软弱。";
 
-    private const string ModerationSystemPrompt =
-        "你是公益心理平台的内容安全审核员。判断用户文本，只输出一行结果，" +
-        "不要输出任何解释、引号或多余标点：\n" +
+    /// <summary>
+    /// 审核提示词。刻意写得中性：服务商的内容策略会拦截「提示词里枚举敏感类目」的请求并直接返回 5xx，
+    /// 一旦命中，整条审核链路都会退化成「AI 不可用」。具体类目判定交给规则预筛（MhopContentPolicy），
+    /// 这里只让模型做「是否适合公开展示」的语义判断。
+    /// </summary>
+    private const string ModerationBaseRules =
+        "你是社区内容安全审核员。判断下面这条用户文本是否适合在公开的心理互助社区发布，只输出一行，不要解释、不要引号：\n" +
         "safe\n" +
         "suspect|理由\n" +
         "violation|理由\n" +
-        "含义：\n" +
-        "safe：正常倾诉、情绪表达或普通对话；\n" +
-        "suspect：有自伤/自杀情绪危机、或疑似骚扰/广告/性暗示/不适内容，需要人工复核；\n" +
-        "violation：明确违法或严重违规（色情、毒品、暴恐、自杀方法指导、诈骗引流等）。\n" +
-        "理由不超过30字，用于告知人工审核人员；输出 safe 时不写理由。\n" +
-        "注意：单纯表达痛苦、求助、抑郁情绪必须判 safe 或 suspect，绝不允许判 violation。";
+        "规则：safe 表示正常表达、倾诉或求助；suspect 表示需要人工复核；violation 表示明显违法或严重不当、绝不适合公开展示。\n" +
+        "理由不超过30字，写给人审看。拿不准就输出 suspect。";
+
+    /// <summary>按内容类型拼接审核提示词：不同场景的风险点不同。</summary>
+    private static string ModerationSystemPrompt(string kind) => kind switch
+    {
+        MhopContentKind.Bottle => ModerationBaseRules +
+            "\n本次场景：陌生人漂流瓶的开场内容，将展示给一名随机陌生人。请特别留意营销推广、索要联系方式、诱导线下接触或金钱往来。",
+        MhopContentKind.Message => ModerationBaseRules +
+            "\n本次场景：匿名一对一聊天中的一条消息，收件人是同样的陌生人。请特别留意骚扰辱骂、索要联系方式、诱导转账或线下邀约。",
+        _ => ModerationBaseRules +
+            "\n本次场景：论坛公开内容，所有人可见。请特别留意广告营销、人身攻击、隐私泄露。",
+    };
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -90,7 +101,10 @@ public sealed class MhopAiService
 
     /// <summary>调用 OpenAI 兼容接口；返回 (回复文本, 引擎标识 llm/local)。</summary>
     public async Task<(string Text, string Engine)> ChatAsync(
-        IReadOnlyList<Dictionary<string, string>> messages, CancellationToken cancellationToken = default)
+        IReadOnlyList<Dictionary<string, string>> messages,
+        CancellationToken cancellationToken = default,
+        double temperature = 0.7,
+        int maxTokens = 700)
     {
         var llm = _options.Llm;
         if (!string.IsNullOrWhiteSpace(llm.BaseUrl) && !string.IsNullOrWhiteSpace(llm.ApiKey))
@@ -106,8 +120,8 @@ public sealed class MhopAiService
                     {
                         model = llm.Model,
                         messages,
-                        temperature = 0.7,
-                        max_tokens = 700,
+                        temperature,
+                        max_tokens = maxTokens,
                     }),
                     Encoding.UTF8,
                     "application/json");
@@ -134,24 +148,50 @@ public sealed class MhopAiService
     }
 
     /// <summary>
-    /// AI 文本审核：返回结论 + 理由。
+    /// AI 文本审核：先本地规则预筛，再做语义判断，返回结论 + 理由。
     /// safe（通过，可自动公开）/ suspect（疑似，转人工）/ violation（违规，转人工）/
     /// unavailable（LLM 未配置或调用失败，无法判断，转人工）。
     /// </summary>
-    public async Task<MhopModerationOutcome> ModerateAsync(string text, CancellationToken cancellationToken = default)
+    /// <param name="kind">见 <see cref="MhopContentKind"/>，决定提示词与规则口径。</param>
+    public async Task<MhopModerationOutcome> ModerateAsync(
+        string text, string kind = MhopContentKind.Post, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
             return new MhopModerationOutcome(MhopModerationOutcome.Safe, string.Empty);
 
+        // 规则预筛：确定性结论优先，命中即短路——不让大模型有机会把明显违规「翻案」成安全
+        var rule = MhopContentPolicy.Screen(text);
+        switch (rule.Verdict)
+        {
+            case MhopPolicyVerdict.Violation:
+                return new MhopModerationOutcome(MhopModerationOutcome.Violation, rule.Reason);
+            case MhopPolicyVerdict.Suspect:
+                return new MhopModerationOutcome(MhopModerationOutcome.Suspect, rule.Reason);
+            case MhopPolicyVerdict.Crisis:
+                // 危机内容必须第一时间放行并展示援助信息：模型服务商对自伤类内容普遍直接拒答（5xx），
+                // 交给它只会得到「不可用」，反而把最需要帮助的人卡在人工队列里。
+                return new MhopModerationOutcome(MhopModerationOutcome.Safe, string.Empty);
+        }
+
         var messages = new List<Dictionary<string, string>>
         {
-            new() { ["role"] = "system", ["content"] = ModerationSystemPrompt },
+            new() { ["role"] = "system", ["content"] = ModerationSystemPrompt(kind) },
             new() { ["role"] = "user", ["content"] = text.Length > 1000 ? text[..1000] : text },
         };
-        var (reply, _) = await ChatAsync(messages, cancellationToken);
-        if (string.IsNullOrWhiteSpace(reply))
-            return new MhopModerationOutcome(MhopModerationOutcome.Unavailable, string.Empty);
-        return ParseModeration(reply);
+
+        // 审核要确定性输出：低温、短输出；调用/解析失败重试一次，仍失败才判「不可用」
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var (reply, _) = await ChatAsync(messages, cancellationToken, temperature: 0.1, maxTokens: 120);
+            if (!string.IsNullOrWhiteSpace(reply))
+            {
+                var outcome = ParseModeration(reply);
+                if (outcome.Verdict != MhopModerationOutcome.Unavailable) return outcome;
+            }
+            if (attempt == 0) await Task.Delay(400, cancellationToken);
+        }
+
+        return new MhopModerationOutcome(MhopModerationOutcome.Unavailable, string.Empty);
     }
 
     /// <summary>解析审核模型输出（容忍 "label|理由" / "label: 理由" / markdown 包裹）。</summary>

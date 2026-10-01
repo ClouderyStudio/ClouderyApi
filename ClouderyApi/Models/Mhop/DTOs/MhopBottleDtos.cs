@@ -138,6 +138,9 @@ public class AdminBottleMessageOut
 {
     public int Id { get; set; }
 
+    /// <summary>所属瓶子 Id（消息审核队列里用于跳转查看上下文）。</summary>
+    public int BottleId { get; set; }
+
     public int SenderId { get; set; }
 
     /// <summary>发送者真实用户名（后台追责用，前台接口绝不下发）。</summary>
@@ -154,7 +157,25 @@ public class AdminBottleMessageOut
 
     public string AiFlag { get; set; } = string.Empty;
 
+    /// <summary>AI 初筛理由。</summary>
+    public string AiReviewNote { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛完成时间；null 表示仍在审核中。</summary>
+    public DateTime? AiReviewedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>消息审核队列（跨瓶子）。</summary>
+public class AdminBottleMessageListOut
+{
+    public int Total { get; set; }
+
+    public int Page { get; set; }
+
+    public int Size { get; set; }
+
+    public List<AdminBottleMessageOut> Items { get; set; } = [];
 }
 
 public class AdminBottleOut
@@ -232,4 +253,13 @@ public class AdminBottleStatsOut
 
     /// <summary>待审核（AI 未通过 / 未完成）的瓶子数。</summary>
     public int Pending { get; set; }
+
+    /// <summary>AI 没给出结论（服务不可用 / 拒答）的待审瓶子数。</summary>
+    public int AiUnavailable { get; set; }
+
+    /// <summary>AI 标记疑似/违规且仍然可见的消息数。</summary>
+    public int FlaggedMessages { get; set; }
+
+    /// <summary>被隐藏的消息数。</summary>
+    public int HiddenMessages { get; set; }
 }

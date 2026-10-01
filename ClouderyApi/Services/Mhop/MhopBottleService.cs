@@ -3,7 +3,6 @@ using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace ClouderyApi.Services.Mhop;
 
@@ -22,10 +21,11 @@ public sealed class MhopBottleService
     public const int ReportReasonMaxLength = 200;
     public static readonly TimeSpan ConversationTimeout = TimeSpan.FromDays(7);
 
+    /// <summary>后台筛选特殊值：只看还没有任何 AI 标记的内容。</summary>
+    public const string AdminFilterPending = "pending";
+
     private readonly MhopDbContext _db;
-    private readonly MhopAiService _ai;
     private readonly MhopContentReviewService _review;
-    private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<MhopBottleService> _logger;
 
     // 频控防并发闸门：单实例部署下把同一用户的投瓶/捞瓶/发消息、同一瓶子的举报计数串行化，
@@ -41,15 +41,11 @@ public sealed class MhopBottleService
 
     public MhopBottleService(
         MhopDbContext db,
-        MhopAiService ai,
         MhopContentReviewService review,
-        IServiceScopeFactory scopes,
         ILogger<MhopBottleService> logger)
     {
         _db = db;
-        _ai = ai;
         _review = review;
-        _scopes = scopes;
         _logger = logger;
     }
 
@@ -266,7 +262,7 @@ public sealed class MhopBottleService
             bottle.LastMessageAt = now;
             await _db.SaveChangesAsync();
 
-            QueueMessageAiScreen(message.Id);
+            _review.QueueMessageReview(message.Id);
             return message;
         }
         finally
@@ -332,14 +328,58 @@ public sealed class MhopBottleService
     {
         var query = _db.MhopBottles.AsNoTracking().AsQueryable();
         if (status is int s) query = query.Where(b => b.Status == s);
-        if (!string.IsNullOrWhiteSpace(flag)) query = query.Where(b => b.AiFlag == flag);
+        if (!string.IsNullOrWhiteSpace(flag))
+        {
+            var value = flag.Trim();
+            // pending：还在等 AI / 人工给结论（没有任何标记且未公开）
+            query = value == AdminFilterPending
+                ? query.Where(b => b.AiFlag == string.Empty && b.Status == MhopBottleStatus.Pending)
+                : query.Where(b => b.AiFlag == value);
+        }
         if (reportedOnly) query = query.Where(b => b.ReportedCount > 0 && b.Status != MhopBottleStatus.Removed);
 
         var total = await query.CountAsync();
+        // 审核队列排序：待审 → 被举报 → 危机 → 有 AI 标记 → 最新
         var items = await query
-            .OrderByDescending(b => b.ReportedCount)
+            .OrderByDescending(b => b.Status == MhopBottleStatus.Pending)
+            .ThenByDescending(b => b.ReportedCount)
             .ThenByDescending(b => b.Crisis)
+            .ThenByDescending(b => b.AiFlag != string.Empty)
             .ThenByDescending(b => b.CreatedAt)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToListAsync();
+        return (total, items);
+    }
+
+    /// <summary>消息审核队列：默认只列出「需要处置」的消息（被隐藏的，或带 AI 标记的）。</summary>
+    public async Task<(int Total, List<MhopBottleMessage> Items)> AdminListMessagesAsync(
+        int page, int size, string? flag, int? status)
+    {
+        var query = _db.MhopBottleMessages.AsNoTracking().Include(m => m.Bottle).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(flag))
+        {
+            var value = flag.Trim();
+            query = value == AdminFilterPending
+                ? query.Where(m => m.AiFlag == string.Empty)
+                : query.Where(m => m.AiFlag == value);
+        }
+        if (status is int s) query = query.Where(m => m.Status == s);
+        if (string.IsNullOrWhiteSpace(flag) && status is null)
+        {
+            query = query.Where(m =>
+                m.Status != 1
+                || m.AiFlag == MhopModerationOutcome.Suspect
+                || m.AiFlag == MhopModerationOutcome.Violation
+                || m.AiFlag == MhopModerationOutcome.Unavailable);
+        }
+
+        var total = await query.CountAsync();
+        // 先看「已隐藏」和「疑似/违规」，再看「未定论」，最后按时间倒序
+        var items = await query
+            .OrderByDescending(m => m.Status != 1)
+            .ThenByDescending(m => m.AiFlag == MhopModerationOutcome.Violation || m.AiFlag == MhopModerationOutcome.Suspect)
+            .ThenByDescending(m => m.Id)
             .Skip((page - 1) * size)
             .Take(size)
             .ToListAsync();
@@ -354,20 +394,32 @@ public sealed class MhopBottleService
     public Task<int> AdminMessageCountAsync()
         => _db.MhopBottleMessages.CountAsync();
 
-    public async Task<(int Crisis, int Suspect, int Reported, int Pending)> AdminStatsAsync()
+    public async Task<MhopBottleAdminStats> AdminStatsAsync()
     {
         var crisis = await _db.MhopBottles.CountAsync(b =>
             b.Crisis && (b.Status == MhopBottleStatus.Drifting || b.Status == MhopBottleStatus.Picked));
         var suspectBottles = await _db.MhopBottles.CountAsync(b =>
-            (b.AiFlag == "suspect" || b.AiFlag == "violation")
+            (b.AiFlag == MhopModerationOutcome.Suspect || b.AiFlag == MhopModerationOutcome.Violation)
             && b.Status != MhopBottleStatus.Removed);
-        var suspectMessages = await _db.MhopBottleMessages.CountAsync(m =>
-            (m.AiFlag == "suspect" || m.AiFlag == "violation") && m.Status == 1);
+        var flaggedMessages = await _db.MhopBottleMessages.CountAsync(m =>
+            (m.AiFlag == MhopModerationOutcome.Suspect || m.AiFlag == MhopModerationOutcome.Violation)
+            && m.Status == 1);
         var reported = await _db.MhopBottles.CountAsync(b =>
             b.ReportedCount > 0 && b.Status != MhopBottleStatus.Removed);
         // 待审核：AI 未通过 / 尚未完成审核，等待人工处置
         var pending = await _db.MhopBottles.CountAsync(b => b.Status == MhopBottleStatus.Pending);
-        return (crisis, suspectBottles + suspectMessages, reported, pending);
+        // AI 没给结论（模型不可用或拒答），需要人工兜底
+        var unavailable = await _db.MhopBottles.CountAsync(b =>
+            b.AiFlag == MhopModerationOutcome.Unavailable && b.Status == MhopBottleStatus.Pending);
+        var hiddenMessages = await _db.MhopBottleMessages.CountAsync(m => m.Status == 2);
+        return new MhopBottleAdminStats(
+            Crisis: crisis,
+            Reported: reported,
+            Pending: pending,
+            Suspect: suspectBottles,
+            AiUnavailable: unavailable,
+            FlaggedMessages: flaggedMessages,
+            HiddenMessages: hiddenMessages);
     }
 
     public async Task AdminSetBottleStatusAsync(int bottleId, int status, string note, int adminUserId)
@@ -407,9 +459,30 @@ public sealed class MhopBottleService
             ?? throw new MhopApiException(404, "消息不存在");
         if (status is not (1 or 2)) throw new MhopApiException(422, "不支持的消息状态");
         message.Status = status;
-        if (status == 1 && message.AiFlag == "violation") message.AiFlag = string.Empty;
+        if (status == 1)
+        {
+            // 人工放行：打上 approved，AI 重跑审核不会再自动隐藏这条消息
+            message.AiFlag = MhopContentReviewService.ApprovedFlag;
+            message.AiReviewedAt ??= DateTime.UtcNow;
+        }
         await _db.SaveChangesAsync();
         _logger.LogWarning("管理员 {AdminId} 处置漂流瓶消息 {MessageId} → 状态 {Status}", adminUserId, messageId, status);
+    }
+
+    /// <summary>人工放行待审核的瓶子：直接放入海中，并留下人工结论，避免 AI 重跑翻案。</summary>
+    public async Task AdminApproveBottleAsync(int bottleId, string note, int adminUserId)
+    {
+        var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId)
+            ?? throw new MhopApiException(404, "瓶子不存在");
+        if (bottle.Status != MhopBottleStatus.Pending)
+            throw new MhopApiException(409, "该瓶子不在待审核状态");
+
+        bottle.Status = MhopBottleStatus.Drifting;
+        bottle.AiFlag = MhopContentReviewService.ApprovedFlag;
+        bottle.AiReviewedAt = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(note)) bottle.ReviewNote = note.Trim();
+        await _db.SaveChangesAsync();
+        _logger.LogWarning("管理员 {AdminId} 人工放行漂流瓶 {BottleId}", adminUserId, bottleId);
     }
 
     // ---------------- 辅助 ----------------
@@ -439,43 +512,20 @@ public sealed class MhopBottleService
             return [];
         }
     }
-
-    /// <summary>
-    /// 会话消息 AI 异步初筛：独立 DI 作用域执行，命中风险时回写 AiFlag 供人工队列处置；
-    /// 任何异常都静默降级（关键词检测已同步执行过），绝不阻塞或影响主流程。
-    /// 注意：瓶身内容在投瓶时走 MhopContentReviewService 的前置审核，不在此处理。
-    /// </summary>
-    private void QueueMessageAiScreen(int messageId)
-    {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                string text;
-                using (var readScope = _scopes.CreateScope())
-                {
-                    var db = readScope.ServiceProvider.GetRequiredService<MhopDbContext>();
-                    var msg = await db.MhopBottleMessages.AsNoTracking()
-                        .FirstOrDefaultAsync(m => m.Id == messageId);
-                    if (msg is null) return;
-                    text = msg.Content;
-                }
-
-                var outcome = await _ai.ModerateAsync(text);
-                if (outcome.IsSafe) return;
-
-                using var writeScope = _scopes.CreateScope();
-                var writeDb = writeScope.ServiceProvider.GetRequiredService<MhopDbContext>();
-                await writeDb.MhopBottleMessages
-                    .Where(m => m.Id == messageId && m.AiFlag == string.Empty)
-                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.AiFlag, outcome.Verdict));
-                _logger.LogInformation(
-                    "漂流瓶消息 AI 初筛完成：message={MessageId} flag={Flag}", messageId, outcome.Verdict);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "漂流瓶消息 AI 初筛失败，已降级为仅关键词检测");
-            }
-        });
-    }
 }
+/// <summary>漂流瓶后台统计口径。</summary>
+public sealed record MhopBottleAdminStats(
+    /// <summary>命中危机词且仍在漂流/对话中的瓶子数。</summary>
+    int Crisis,
+    /// <summary>被举报且未下架的瓶子数。</summary>
+    int Reported,
+    /// <summary>待人工处置（AI 未放行）的瓶子数。</summary>
+    int Pending,
+    /// <summary>AI 判定疑似/违规、仍在下架的瓶子数。</summary>
+    int Suspect,
+    /// <summary>AI 没给出结论（服务不可用/拒答）的待审瓶子数。</summary>
+    int AiUnavailable,
+    /// <summary>AI 标记疑似/违规且仍然可见的消息数。</summary>
+    int FlaggedMessages,
+    /// <summary>被隐藏的消息数（AI 自动隐藏 + 人工隐藏）。</summary>
+    int HiddenMessages);

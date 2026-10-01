@@ -124,6 +124,7 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.Property(m => m.Status).HasDefaultValue(1);
             e.Property(m => m.Crisis).HasDefaultValue(false);
             e.Property(m => m.AiFlag).HasDefaultValue(string.Empty);
+            e.Property(m => m.AiReviewNote).HasDefaultValue(string.Empty);
             // after_id 增量拉取：按瓶子聚合且按 Id 顺序扫描
             e.HasIndex(m => new { m.BottleId, m.Id });
             e.HasIndex(m => m.SenderUserId);

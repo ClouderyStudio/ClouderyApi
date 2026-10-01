@@ -16,6 +16,7 @@ namespace ClouderyApi.Controllers.Mhop;
 [MhopAdmin]
 public class MhopBottleAdminController(
     MhopBottleService bottles,
+    MhopContentReviewService review,
     MhopDbContext db,
     MhopCurrentUserAccessor current) : MhopControllerBase
 {
@@ -23,13 +24,16 @@ public class MhopBottleAdminController(
     [MhopPerm(MhopAdminPermissions.Bottles)]
     public async Task<IActionResult> Stats()
     {
-        var (crisis, suspect, reported, pending) = await bottles.AdminStatsAsync();
+        var stats = await bottles.AdminStatsAsync();
         return MhopOk(new AdminBottleStatsOut
         {
-            Crisis = crisis,
-            Suspect = suspect,
-            Reported = reported,
-            Pending = pending,
+            Crisis = stats.Crisis,
+            Suspect = stats.Suspect,
+            Reported = stats.Reported,
+            Pending = stats.Pending,
+            AiUnavailable = stats.AiUnavailable,
+            FlaggedMessages = stats.FlaggedMessages,
+            HiddenMessages = stats.HiddenMessages,
         });
     }
 
@@ -134,6 +138,63 @@ public class MhopBottleAdminController(
             body?.Note ?? string.Empty,
             admin.Id);
         return MhopOk(new { ok = true });
+    }
+
+    /// <summary>人工放行待审核的瓶子：一键通过并放入海中（AI 未放行时的主路径）。</summary>
+    [HttpPost("{id:int}/approve")]
+    [MhopPerm(MhopAdminPermissions.Bottles)]
+    public async Task<IActionResult> Approve(int id, [FromBody] BottleAdminActionIn? body)
+    {
+        var admin = await current.RequirePermAsync(MhopAdminPermissions.Bottles);
+        await bottles.AdminApproveBottleAsync(id, body?.Note ?? string.Empty, admin.Id);
+        return MhopOk(new { ok = true });
+    }
+
+    /// <summary>重跑瓶身的 AI 审核（AI 未定论、换模型后复查等场景）。</summary>
+    [HttpPost("{id:int}/rescreen")]
+    [MhopPerm(MhopAdminPermissions.Bottles)]
+    public async Task<IActionResult> Rescreen(int id)
+    {
+        await current.RequirePermAsync(MhopAdminPermissions.Bottles);
+        review.QueueBottleReview(id, rescreen: true);
+        return MhopOk(new { ok = true, queued = true });
+    }
+
+    /// <summary>消息审核队列：默认只列需要处置的消息（已隐藏 / 带 AI 标记）。</summary>
+    [HttpGet("messages")]
+    [MhopPerm(MhopAdminPermissions.Bottles)]
+    public async Task<IActionResult> ListMessages(
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20,
+        [FromQuery] string? flag = null,
+        [FromQuery] int? status = null)
+    {
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+
+        var (total, items) = await bottles.AdminListMessagesAsync(page, size, flag, status);
+        var names = await LoadNamesAsync(items.Select(m => m.SenderUserId));
+        var withContext = items.Where(m => m.Bottle is not null).ToList();
+
+        return MhopOk(new AdminBottleMessageListOut
+        {
+            Total = total,
+            Page = page,
+            Size = size,
+            Items = withContext
+                .Select(m => MhopBottleMapper.ToAdminMessageOut(m, m.Bottle!, names))
+                .ToList(),
+        });
+    }
+
+    /// <summary>重跑某条消息的 AI 审核。</summary>
+    [HttpPost("messages/{messageId:int}/rescreen")]
+    [MhopPerm(MhopAdminPermissions.Bottles)]
+    public async Task<IActionResult> RescreenMessage(int messageId)
+    {
+        await current.RequirePermAsync(MhopAdminPermissions.Bottles);
+        review.QueueMessageReview(messageId, rescreen: true);
+        return MhopOk(new { ok = true, queued = true });
     }
 
     [HttpPost("messages/{messageId:int}/hide")]

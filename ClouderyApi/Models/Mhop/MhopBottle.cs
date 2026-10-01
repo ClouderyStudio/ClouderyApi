@@ -6,7 +6,7 @@ namespace ClouderyApi.Models.Mhop;
 /// <summary>漂流瓶状态。</summary>
 public static class MhopBottleStatus
 {
-    /// <summary>预留：待处置（当前流程为 AI 异步初筛，瓶子直接进入漂流，此状态暂不使用）。</summary>
+    /// <summary>待审核：刚扔出，等待 AI 初筛 / 人工放行，不参与随机捞取。</summary>
     public const int Pending = 0;
 
     /// <summary>漂流中：等待陌生人捞起。</summary>
@@ -52,7 +52,10 @@ public class MhopBottle
     /// <summary>内容含自伤/自杀信号，双方界面展示援助热线。</summary>
     public bool Crisis { get; set; }
 
-    /// <summary>AI 初筛风险标记："" 通过/未审 / suspect 疑似 / violation 违规 / unavailable 服务不可用。</summary>
+    /// <summary>
+    /// AI 初筛风险标记："" 通过/未审 / suspect 疑似 / violation 违规 / unavailable 未定论 /
+    /// approved 人工复核后放行。
+    /// </summary>
     [Required]
     [MaxLength(16)]
     public string AiFlag { get; set; } = string.Empty;

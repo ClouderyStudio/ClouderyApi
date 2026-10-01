@@ -98,6 +98,7 @@ public static class MhopBottleMapper
     public static AdminBottleMessageOut ToAdminMessageOut(MhopBottleMessage m, MhopBottle b, IReadOnlyDictionary<int, string> names) => new()
     {
         Id = m.Id,
+        BottleId = m.BottleId,
         SenderId = m.SenderUserId,
         SenderName = names.GetValueOrDefault(m.SenderUserId, $"用户{m.SenderUserId}"),
         SenderRole = b.UserId == m.SenderUserId ? "thrower" : "picker",
@@ -105,6 +106,8 @@ public static class MhopBottleMapper
         Status = m.Status,
         Crisis = m.Crisis,
         AiFlag = m.AiFlag,
+        AiReviewNote = m.AiReviewNote,
+        AiReviewedAt = m.AiReviewedAt,
         CreatedAt = m.CreatedAt,
     };
 
