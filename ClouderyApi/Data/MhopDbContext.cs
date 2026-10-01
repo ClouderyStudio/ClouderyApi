@@ -45,6 +45,8 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.Property(p => p.Crisis).HasDefaultValue(false);
             e.Property(p => p.ViewCount).HasDefaultValue(0);
             e.Property(p => p.Board).HasDefaultValue("mood");
+            e.Property(p => p.AiFlag).HasDefaultValue(string.Empty);
+            e.Property(p => p.AiReviewNote).HasDefaultValue(string.Empty);
             e.HasIndex(p => p.UserId);
             e.HasIndex(p => p.Board);
             e.HasIndex(p => p.Status);
@@ -59,6 +61,8 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.Property(r => r.IsAi).HasDefaultValue(false);
             e.Property(r => r.Crisis).HasDefaultValue(false);
             e.Property(r => r.Recalled).HasDefaultValue(false);
+            e.Property(r => r.AiFlag).HasDefaultValue(string.Empty);
+            e.Property(r => r.AiReviewNote).HasDefaultValue(string.Empty);
             e.HasIndex(r => r.PostId);
             e.HasIndex(r => r.Status);
             e.HasIndex(r => r.Recalled);
@@ -97,6 +101,7 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting);
             e.Property(b => b.Crisis).HasDefaultValue(false);
             e.Property(b => b.AiFlag).HasDefaultValue(string.Empty);
+            e.Property(b => b.AiReviewNote).HasDefaultValue(string.Empty);
             e.Property(b => b.ReviewNote).HasDefaultValue(string.Empty);
             e.Property(b => b.ReportedCount).HasDefaultValue(0);
             e.Property(b => b.ReportedBy).HasColumnType("text");

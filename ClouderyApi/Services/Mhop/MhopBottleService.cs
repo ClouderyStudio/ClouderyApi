@@ -24,6 +24,7 @@ public sealed class MhopBottleService
 
     private readonly MhopDbContext _db;
     private readonly MhopAiService _ai;
+    private readonly MhopContentReviewService _review;
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<MhopBottleService> _logger;
 
@@ -41,11 +42,13 @@ public sealed class MhopBottleService
     public MhopBottleService(
         MhopDbContext db,
         MhopAiService ai,
+        MhopContentReviewService review,
         IServiceScopeFactory scopes,
         ILogger<MhopBottleService> logger)
     {
         _db = db;
         _ai = ai;
+        _review = review;
         _scopes = scopes;
         _logger = logger;
     }
@@ -77,7 +80,8 @@ public sealed class MhopBottleService
             {
                 UserId = user.Id,
                 Content = content,
-                Status = MhopBottleStatus.Drifting,
+                // 先送 AI 自动审核：通过后自动放入海中，未通过则停留待审核并转人工
+                Status = MhopBottleStatus.Pending,
                 Crisis = crisis,
                 LastMessageAt = now,
                 CreatedAt = now,
@@ -87,7 +91,7 @@ public sealed class MhopBottleService
             await _db.SaveChangesAsync();
             _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, crisis);
 
-            QueueAiScreen(bottle.Id, null);
+            _review.QueueBottleReview(bottle.Id);
             return bottle;
         }
         finally
@@ -262,7 +266,7 @@ public sealed class MhopBottleService
             bottle.LastMessageAt = now;
             await _db.SaveChangesAsync();
 
-            QueueAiScreen(bottle.Id, message.Id);
+            QueueMessageAiScreen(message.Id);
             return message;
         }
         finally
@@ -350,7 +354,7 @@ public sealed class MhopBottleService
     public Task<int> AdminMessageCountAsync()
         => _db.MhopBottleMessages.CountAsync();
 
-    public async Task<(int Crisis, int Suspect, int Reported)> AdminStatsAsync()
+    public async Task<(int Crisis, int Suspect, int Reported, int Pending)> AdminStatsAsync()
     {
         var crisis = await _db.MhopBottles.CountAsync(b =>
             b.Crisis && (b.Status == MhopBottleStatus.Drifting || b.Status == MhopBottleStatus.Picked));
@@ -361,7 +365,9 @@ public sealed class MhopBottleService
             (m.AiFlag == "suspect" || m.AiFlag == "violation") && m.Status == 1);
         var reported = await _db.MhopBottles.CountAsync(b =>
             b.ReportedCount > 0 && b.Status != MhopBottleStatus.Removed);
-        return (crisis, suspectBottles + suspectMessages, reported);
+        // 待审核：AI 未通过 / 尚未完成审核，等待人工处置
+        var pending = await _db.MhopBottles.CountAsync(b => b.Status == MhopBottleStatus.Pending);
+        return (crisis, suspectBottles + suspectMessages, reported, pending);
     }
 
     public async Task AdminSetBottleStatusAsync(int bottleId, int status, string note, int adminUserId)
@@ -379,7 +385,11 @@ public sealed class MhopBottleService
             bottle.Status = bottle.PickerUserId is null
                 ? MhopBottleStatus.Drifting
                 : bottle.EndReason is null ? MhopBottleStatus.Picked : bottle.Status;
-            if (bottle.Status != MhopBottleStatus.Removed) bottle.AiFlag = string.Empty;
+            if (bottle.Status != MhopBottleStatus.Removed)
+            {
+                bottle.AiFlag = string.Empty;
+                bottle.AiReviewNote = string.Empty;
+            }
         }
         else
         {
@@ -431,10 +441,11 @@ public sealed class MhopBottleService
     }
 
     /// <summary>
-    /// AI 异步初筛：独立 DI 作用域执行，结果回写 AiFlag 供人工队列处置；
+    /// 会话消息 AI 异步初筛：独立 DI 作用域执行，命中风险时回写 AiFlag 供人工队列处置；
     /// 任何异常都静默降级（关键词检测已同步执行过），绝不阻塞或影响主流程。
+    /// 注意：瓶身内容在投瓶时走 MhopContentReviewService 的前置审核，不在此处理。
     /// </summary>
-    private void QueueAiScreen(int bottleId, int? messageId)
+    private void QueueMessageAiScreen(int messageId)
     {
         _ = Task.Run(async () =>
         {
@@ -444,46 +455,26 @@ public sealed class MhopBottleService
                 using (var readScope = _scopes.CreateScope())
                 {
                     var db = readScope.ServiceProvider.GetRequiredService<MhopDbContext>();
-                    if (messageId is int mid)
-                    {
-                        var msg = await db.MhopBottleMessages.AsNoTracking()
-                            .FirstOrDefaultAsync(m => m.Id == mid);
-                        if (msg is null) return;
-                        text = msg.Content;
-                    }
-                    else
-                    {
-                        var bottle = await db.MhopBottles.AsNoTracking()
-                            .FirstOrDefaultAsync(b => b.Id == bottleId);
-                        if (bottle is null) return;
-                        text = bottle.Content;
-                    }
+                    var msg = await db.MhopBottleMessages.AsNoTracking()
+                        .FirstOrDefaultAsync(m => m.Id == messageId);
+                    if (msg is null) return;
+                    text = msg.Content;
                 }
 
-                var flag = await _ai.ModerateTextAsync(text);
-                if (string.IsNullOrEmpty(flag)) return;
+                var outcome = await _ai.ModerateAsync(text);
+                if (outcome.IsSafe) return;
 
                 using var writeScope = _scopes.CreateScope();
                 var writeDb = writeScope.ServiceProvider.GetRequiredService<MhopDbContext>();
-                if (messageId is int msgId2)
-                {
-                    await writeDb.MhopBottleMessages
-                        .Where(m => m.Id == msgId2 && m.AiFlag == string.Empty)
-                        .ExecuteUpdateAsync(s => s.SetProperty(m => m.AiFlag, flag));
-                }
-                else
-                {
-                    await writeDb.MhopBottles
-                        .Where(b => b.Id == bottleId && b.AiFlag == string.Empty)
-                        .ExecuteUpdateAsync(s => s.SetProperty(b => b.AiFlag, flag));
-                }
+                await writeDb.MhopBottleMessages
+                    .Where(m => m.Id == messageId && m.AiFlag == string.Empty)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.AiFlag, outcome.Verdict));
                 _logger.LogInformation(
-                    "漂流瓶 AI 初筛完成：bottle={BottleId} message={MessageId} flag={Flag}",
-                    bottleId, messageId, flag);
+                    "漂流瓶消息 AI 初筛完成：message={MessageId} flag={Flag}", messageId, outcome.Verdict);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "漂流瓶 AI 初筛失败，已降级为仅关键词检测");
+                _logger.LogWarning(ex, "漂流瓶消息 AI 初筛失败，已降级为仅关键词检测");
             }
         });
     }

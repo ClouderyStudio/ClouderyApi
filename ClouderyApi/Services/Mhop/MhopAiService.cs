@@ -59,10 +59,16 @@ public sealed class MhopAiService
         "寻求专业帮助是力量，而不是软弱。";
 
     private const string ModerationSystemPrompt =
-        "你是公益心理平台的内容安全审核员。判断用户文本，只输出一个标签，不要输出任何解释：\n" +
+        "你是公益心理平台的内容安全审核员。判断用户文本，只输出一行结果，" +
+        "不要输出任何解释、引号或多余标点：\n" +
+        "safe\n" +
+        "suspect|理由\n" +
+        "violation|理由\n" +
+        "含义：\n" +
         "safe：正常倾诉、情绪表达或普通对话；\n" +
         "suspect：有自伤/自杀情绪危机、或疑似骚扰/广告/性暗示/不适内容，需要人工复核；\n" +
         "violation：明确违法或严重违规（色情、毒品、暴恐、自杀方法指导、诈骗引流等）。\n" +
+        "理由不超过30字，用于告知人工审核人员；输出 safe 时不写理由。\n" +
         "注意：单纯表达痛苦、求助、抑郁情绪必须判 safe 或 suspect，绝不允许判 violation。";
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -128,23 +134,54 @@ public sealed class MhopAiService
     }
 
     /// <summary>
-    /// AI 文本初筛：返回 violation（明确违规）/ suspect（疑似风险，转人工）/ ""（安全或服务不可用）。
-    /// LLM 未配置或调用失败时返回空串（静默降级，不阻断业务）。
+    /// AI 文本审核：返回结论 + 理由。
+    /// safe（通过，可自动公开）/ suspect（疑似，转人工）/ violation（违规，转人工）/
+    /// unavailable（LLM 未配置或调用失败，无法判断，转人工）。
     /// </summary>
-    public async Task<string> ModerateTextAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<MhopModerationOutcome> ModerateAsync(string text, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+            return new MhopModerationOutcome(MhopModerationOutcome.Safe, string.Empty);
+
         var messages = new List<Dictionary<string, string>>
         {
             new() { ["role"] = "system", ["content"] = ModerationSystemPrompt },
             new() { ["role"] = "user", ["content"] = text.Length > 1000 ? text[..1000] : text },
         };
         var (reply, _) = await ChatAsync(messages, cancellationToken);
-        if (string.IsNullOrWhiteSpace(reply)) return string.Empty;
-        var label = reply.Trim().ToLowerInvariant();
-        if (label.StartsWith("violation")) return "violation";
-        if (label.StartsWith("suspect")) return "suspect";
-        return string.Empty;
+        if (string.IsNullOrWhiteSpace(reply))
+            return new MhopModerationOutcome(MhopModerationOutcome.Unavailable, string.Empty);
+        return ParseModeration(reply);
+    }
+
+    /// <summary>解析审核模型输出（容忍 "label|理由" / "label: 理由" / markdown 包裹）。</summary>
+    private static MhopModerationOutcome ParseModeration(string reply)
+    {
+        var line = reply.Trim();
+        var breakAt = line.IndexOfAny(['\r', '\n']);
+        if (breakAt >= 0) line = line[..breakAt];
+        line = line.Trim().Trim('`', '"', '\'', '。', '.', ' ', '：', ':');
+
+        string? reason = null;
+        foreach (var separator in new[] { "|", "｜", ":", "：" })
+        {
+            var index = line.IndexOf(separator, StringComparison.Ordinal);
+            if (index < 0) continue;
+            reason = line[(index + 1)..].Trim();
+            line = line[..index].Trim();
+            break;
+        }
+
+        var label = line.ToLowerInvariant();
+        var verdict = label.StartsWith("violation", StringComparison.Ordinal) ? MhopModerationOutcome.Violation
+            : label.StartsWith("suspect", StringComparison.Ordinal) ? MhopModerationOutcome.Suspect
+            : label.StartsWith("safe", StringComparison.Ordinal) ? MhopModerationOutcome.Safe
+            : MhopModerationOutcome.Unavailable;
+
+        if (verdict == MhopModerationOutcome.Safe)
+            return new MhopModerationOutcome(verdict, string.Empty);
+        reason = string.IsNullOrWhiteSpace(reason) ? "AI 判定需要人工复核" : Truncate(reason, 200);
+        return new MhopModerationOutcome(verdict, reason);
     }
 
     public async Task<(string Text, string Engine)> ForumReplyAsync(string userContent, bool crisis)

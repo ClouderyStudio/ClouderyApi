@@ -104,6 +104,12 @@ public class BottleSummaryOut
     public DateTime LastMessageAt { get; set; }
 
     public int? EndReason { get; set; }
+
+    /// <summary>AI 初筛标记（仅「我的瓶子」返回，用于展示审核中 / 未通过）。</summary>
+    public string AiFlag { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛理由（仅「我的瓶子」返回）。</summary>
+    public string AiReviewNote { get; set; } = string.Empty;
 }
 
 public class BottleMineOut
@@ -163,6 +169,12 @@ public class AdminBottleOut
 
     public string AiFlag { get; set; } = string.Empty;
 
+    /// <summary>AI 初筛给人工审核的理由。</summary>
+    public string AiReviewNote { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛完成时间；null 表示仍在审核中。</summary>
+    public DateTime? AiReviewedAt { get; set; }
+
     public string ReviewNote { get; set; } = string.Empty;
 
     public int ReportedCount { get; set; }
@@ -217,4 +229,7 @@ public class AdminBottleStatsOut
 
     /// <summary>被举报且未下架的瓶子数。</summary>
     public int Reported { get; set; }
+
+    /// <summary>待审核（AI 未通过 / 未完成）的瓶子数。</summary>
+    public int Pending { get; set; }
 }

@@ -23,8 +23,14 @@ public class MhopBottleAdminController(
     [MhopPerm(MhopAdminPermissions.Bottles)]
     public async Task<IActionResult> Stats()
     {
-        var (crisis, suspect, reported) = await bottles.AdminStatsAsync();
-        return MhopOk(new AdminBottleStatsOut { Crisis = crisis, Suspect = suspect, Reported = reported });
+        var (crisis, suspect, reported, pending) = await bottles.AdminStatsAsync();
+        return MhopOk(new AdminBottleStatsOut
+        {
+            Crisis = crisis,
+            Suspect = suspect,
+            Reported = reported,
+            Pending = pending,
+        });
     }
 
     [HttpGet]
@@ -88,6 +94,8 @@ public class MhopBottleAdminController(
             Status = detail.Status,
             Crisis = detail.Crisis,
             AiFlag = detail.AiFlag,
+            AiReviewNote = detail.AiReviewNote,
+            AiReviewedAt = detail.AiReviewedAt,
             ReviewNote = detail.ReviewNote,
             ReportedCount = detail.ReportedCount,
             LastReportedAt = detail.LastReportedAt,

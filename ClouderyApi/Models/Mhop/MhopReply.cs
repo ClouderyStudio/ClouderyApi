@@ -32,6 +32,17 @@ public class MhopReply
     [MaxLength(255)]
     public string ReviewNote { get; set; } = string.Empty;
 
+    /// <summary>AI 初筛标记："" 通过/未审，suspect 疑似，violation 违规，unavailable 服务不可用。</summary>
+    [MaxLength(16)]
+    public string AiFlag { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛给人工审核的理由（通过时为空）。</summary>
+    [MaxLength(255)]
+    public string AiReviewNote { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛完成时间；null 表示尚未完成（仍在审核中）。</summary>
+    public DateTime? AiReviewedAt { get; set; }
+
     /// <summary>管理员撤回（仅 AI 回复）：撤回后公开接口不返回正文，内容保留以备审计。</summary>
     public bool Recalled { get; set; }
 

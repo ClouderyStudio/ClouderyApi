@@ -40,6 +40,7 @@ builder.Services.AddSingleton<MhopSmtpClient>();
 builder.Services.AddSingleton<MhopEmailCodeService>();
 builder.Services.AddSingleton<MhopCasdoorService>();
 builder.Services.AddSingleton<MhopAiService>();
+builder.Services.AddSingleton<MhopContentReviewService>();
 builder.Services.AddScoped<MhopCurrentUserAccessor>();
 
 // 图片对象存储：local = 本机磁盘（由 /mhop/uploads 静态托管）；oss = 远端阿里云 OSS

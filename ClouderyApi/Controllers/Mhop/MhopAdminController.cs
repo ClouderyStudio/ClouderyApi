@@ -55,6 +55,8 @@ public class MhopAdminController : MhopControllerBase
             crisis_posts = await _db.MhopPosts.CountAsync(p => p.Crisis && p.Status != 2 && p.Status != 3),
             pending_replies = await _db.MhopReplies.CountAsync(r => r.Status == 0 && !r.IsAi),
             rejected_replies = await _db.MhopReplies.CountAsync(r => r.Status == 2),
+            ai_flagged_posts = await _db.MhopPosts.CountAsync(p => p.AiFlag != string.Empty && p.Status != 3),
+            ai_flagged_replies = await _db.MhopReplies.CountAsync(r => r.AiFlag != string.Empty && r.Status != 3),
             new_posts_24h = await _db.MhopPosts.CountAsync(p => p.CreatedAt >= since),
             new_users_24h = await _db.MhopUsers.CountAsync(u => u.CreatedAt >= since),
             online = _online.Count(),
@@ -63,11 +65,13 @@ public class MhopAdminController : MhopControllerBase
 
     [HttpGet("posts")]
     [MhopPerm(MhopAdminPermissions.Review)]
-    public async Task<IActionResult> ListPosts([FromQuery] int? status = null)
+    public async Task<IActionResult> ListPosts([FromQuery] int? status = null, [FromQuery] string? flag = null)
     {
         // 草稿不对后台展示（作者主动取消审核后的私有内容）
         var query = _db.MhopPosts.Where(p => p.Status != 3);
         if (status.HasValue) query = query.Where(p => p.Status == status.Value);
+        // flag：按 AI 初筛结论过滤（suspect / violation / unavailable）
+        if (!string.IsNullOrWhiteSpace(flag)) query = query.Where(p => p.AiFlag == flag);
         var posts = await query.OrderByDescending(p => p.CreatedAt).Take(200).ToListAsync();
 
         var postIds = posts.Select(p => p.Id).ToList();
@@ -95,6 +99,9 @@ public class MhopAdminController : MhopControllerBase
                 author,
                 author_phone = phone,
                 review_note = p.ReviewNote ?? string.Empty,
+                ai_flag = p.AiFlag ?? string.Empty,
+                ai_review_note = p.AiReviewNote ?? string.Empty,
+                ai_reviewed_at = p.AiReviewedAt,
                 reply_count = replyCounts.GetValueOrDefault(p.Id, 0),
                 created_at = p.CreatedAt,
             };
@@ -152,10 +159,12 @@ public class MhopAdminController : MhopControllerBase
 
     [HttpGet("replies")]
     [MhopPerm(MhopAdminPermissions.Review)]
-    public async Task<IActionResult> ListReplies([FromQuery] int? status = null)
+    public async Task<IActionResult> ListReplies([FromQuery] int? status = null, [FromQuery] string? flag = null)
     {
         var query = _db.MhopReplies.Where(r => r.Status != 3);
         if (status.HasValue) query = query.Where(r => r.Status == status.Value);
+        // flag：按 AI 初筛结论过滤（suspect / violation / unavailable）
+        if (!string.IsNullOrWhiteSpace(flag)) query = query.Where(r => r.AiFlag == flag);
         var replies = await query.OrderByDescending(r => r.CreatedAt).Take(300).ToListAsync();
 
         var postIds = replies.Select(r => r.PostId).Distinct().ToList();
@@ -183,6 +192,9 @@ public class MhopAdminController : MhopControllerBase
                 author,
                 author_phone = phone,
                 review_note = r.ReviewNote ?? string.Empty,
+                ai_flag = r.AiFlag ?? string.Empty,
+                ai_review_note = r.AiReviewNote ?? string.Empty,
+                ai_reviewed_at = r.AiReviewedAt,
                 recalled = r.Recalled,
                 recall_reason = r.RecallReason ?? string.Empty,
                 created_at = r.CreatedAt,

@@ -64,6 +64,8 @@ public static class MhopBottleMapper
             CreatedAt = b.CreatedAt,
             LastMessageAt = b.LastMessageAt,
             EndReason = b.EndReason,
+            AiFlag = b.AiFlag,
+            AiReviewNote = b.AiReviewNote,
         };
     }
 
@@ -74,6 +76,8 @@ public static class MhopBottleMapper
         Status = b.Status,
         Crisis = b.Crisis,
         AiFlag = b.AiFlag,
+        AiReviewNote = b.AiReviewNote,
+        AiReviewedAt = b.AiReviewedAt,
         ReviewNote = b.ReviewNote,
         ReportedCount = b.ReportedCount,
         LastReportedAt = b.LastReportedAt,

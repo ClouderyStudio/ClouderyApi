@@ -52,10 +52,18 @@ public class MhopBottle
     /// <summary>内容含自伤/自杀信号，双方界面展示援助热线。</summary>
     public bool Crisis { get; set; }
 
-    /// <summary>AI 初筛风险标记："" 无 / suspect 疑似 / violation 违规。</summary>
+    /// <summary>AI 初筛风险标记："" 通过/未审 / suspect 疑似 / violation 违规 / unavailable 服务不可用。</summary>
     [Required]
     [MaxLength(16)]
     public string AiFlag { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛给人工审核的理由（通过时为空）。</summary>
+    [Required]
+    [MaxLength(255)]
+    public string AiReviewNote { get; set; } = string.Empty;
+
+    /// <summary>AI 初筛完成时间；null 表示尚未完成（仍在审核中）。</summary>
+    public DateTime? AiReviewedAt { get; set; }
 
     [Required]
     [MaxLength(255)]

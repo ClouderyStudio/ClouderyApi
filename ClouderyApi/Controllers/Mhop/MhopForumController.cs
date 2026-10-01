@@ -9,8 +9,9 @@ using Microsoft.EntityFrameworkCore;
 namespace ClouderyApi.Controllers.Mhop;
 
 /// <summary>
-/// 论坛互助：板块、发帖、人类回复先审后发、点赞。
-/// AI 自动回复不在发帖/编辑时生成，统一由管理员审核通过后触发（见 MhopAdminController.ModeratePost）。
+/// 论坛互助：板块、发帖、人类回复、点赞。
+/// 发帖 / 回复先经 AI 自动审核：通过即直接公开；未通过或 AI 不可用时转人工审核并记录理由。
+/// AI 自动回复随帖子自动公开时生成（见 MhopContentReviewService）。
 /// 对应 Python 后端 routers/forum.py。
 /// </summary>
 [ApiController]
@@ -22,19 +23,22 @@ public class MhopForumController : MhopControllerBase
     private readonly MhopOnlineTracker _online;
     private readonly MhopUploadService _uploads;
     private readonly MhopContentService _content;
+    private readonly MhopContentReviewService _review;
 
     public MhopForumController(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
         MhopOnlineTracker online,
         MhopUploadService uploads,
-        MhopContentService content)
+        MhopContentService content,
+        MhopContentReviewService review)
     {
         _db = db;
         _current = current;
         _online = online;
         _uploads = uploads;
         _content = content;
+        _review = review;
     }
 
     // ---------------- 读取接口 ----------------
@@ -191,15 +195,16 @@ public class MhopForumController : MhopControllerBase
             Content = content,
             Board = body.Board,
             Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty,
-            Status = 0, // 待审核，管理员通过后才公开展示
+            Status = MhopContentStatus.Pending, // 先送 AI 自动审核：通过即公开，否则转人工
             Crisis = crisis,
             CreatedAt = DateTime.UtcNow,
         };
         _db.MhopPosts.Add(post);
         await _db.SaveChangesAsync();
 
-        // 这里不生成 AI 自动回复：待审核期间正文可能被反复修改，
-        // 统一等管理员审核通过后再生成，避免堆积多条与最终正文脱节的回复
+        // AI 自动审核异步执行：通过则自动公开并生成 AI 回复，未通过则保留待审核并记录理由
+        _review.QueuePostReview(post.Id);
+
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopStatus(201, ToPostOut(post, users, [], current.Id, null, null));
     }
@@ -236,6 +241,9 @@ public class MhopForumController : MhopControllerBase
         };
         _db.MhopReplies.Add(reply);
         await _db.SaveChangesAsync();
+
+        // 命中敏感词已直接驳回；其余送 AI 自动审核，通过即公开，否则转人工
+        if (reply.Status == StatusPending) _review.QueueReplyReview(reply.Id);
 
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopStatus(201, ToReplyOut(reply, users, null, null));
@@ -382,6 +390,8 @@ public class MhopForumController : MhopControllerBase
                 view_count = p.ViewCount,
                 like_count = likeCounts.GetValueOrDefault(p.Id, 0),
                 review_note = p.ReviewNote ?? string.Empty,
+                ai_flag = p.AiFlag ?? string.Empty,
+                ai_review_note = p.AiReviewNote ?? string.Empty,
                 editable = p.Status is StatusPending or StatusDraft,
                 can_withdraw = p.Status == StatusPending,
                 can_submit = p.Status == StatusDraft,
@@ -435,6 +445,8 @@ public class MhopForumController : MhopControllerBase
                 images = ParseImages(r.Images),
                 like_count = likeCounts.GetValueOrDefault(r.Id, 0),
                 review_note = r.ReviewNote ?? string.Empty,
+                ai_flag = r.AiFlag ?? string.Empty,
+                ai_review_note = r.AiReviewNote ?? string.Empty,
                 editable = r.Status is StatusPending or StatusDraft,
                 can_withdraw = r.Status == StatusPending,
                 can_submit = r.Status == StatusDraft,
@@ -470,9 +482,13 @@ public class MhopForumController : MhopControllerBase
         post.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
         post.Crisis = MhopModeration.DetectCrisis(content);
         post.ReviewNote = string.Empty;
+        post.AiFlag = string.Empty;
+        post.AiReviewNote = string.Empty;
+        post.AiReviewedAt = null;
 
         await _db.SaveChangesAsync();
-        // AI 自动回复只随审核通过产生：待审核 / 草稿阶段无论编辑多少次都不会生成回复
+        // 正文已变更：待审核内容重新送 AI 审核；草稿等作者重新提交时再审
+        if (post.Status == StatusPending) _review.QueuePostReview(post.Id);
         await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
 
         return MhopOk(new { ok = true, status = post.Status, crisis = post.Crisis });
@@ -504,7 +520,11 @@ public class MhopForumController : MhopControllerBase
 
         post.Status = StatusPending;
         post.ReviewNote = string.Empty;
+        post.AiFlag = string.Empty;
+        post.AiReviewNote = string.Empty;
+        post.AiReviewedAt = null;
         await _db.SaveChangesAsync();
+        _review.QueuePostReview(post.Id);
         return MhopOk(new { ok = true, status = post.Status });
     }
 
@@ -541,6 +561,9 @@ public class MhopForumController : MhopControllerBase
         var removedImages = ParseImages(reply.Images).Except(images, StringComparer.Ordinal).ToList();
         reply.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
         reply.Crisis = MhopModeration.DetectCrisis(content);
+        reply.AiFlag = string.Empty;
+        reply.AiReviewNote = string.Empty;
+        reply.AiReviewedAt = null;
 
         if (reply.Status == StatusPending)
         {
@@ -552,6 +575,7 @@ public class MhopForumController : MhopControllerBase
         }
 
         await _db.SaveChangesAsync();
+        if (reply.Status == StatusPending) _review.QueueReplyReview(reply.Id);
         await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
         return MhopOk(new { ok = true, status = reply.Status });
     }
@@ -582,7 +606,11 @@ public class MhopForumController : MhopControllerBase
 
         reply.Status = StatusPending;
         reply.ReviewNote = string.Empty;
+        reply.AiFlag = string.Empty;
+        reply.AiReviewNote = string.Empty;
+        reply.AiReviewedAt = null;
         await _db.SaveChangesAsync();
+        _review.QueueReplyReview(reply.Id);
         return MhopOk(new { ok = true, status = reply.Status });
     }
 
