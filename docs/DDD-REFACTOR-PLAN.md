@@ -1,6 +1,6 @@
 # ClouderyApi DDD 改造方案（评估 + 分阶段实施计划）
 
-> 状态：待评审。本文件仅为方案，尚未改动任何业务代码。
+> 状态：已批准实施。Stage 0（安全网测试）已完成并提交（ac6c00c）；下方保留原方案并追加实施记录。
 > 项目：ClouderyApi.sln / ClouderyApi/ClouderyApi.csproj（net10.0，MySQL，Oracle MySql.EntityFrameworkCore 10.0.9）
 > 目标：参考 DDD 架构理念，改善可维护性，**同时保持对外 HTTP 路由与 JSON 契约完全不变**。
 
@@ -40,7 +40,7 @@
 ## 2. 现状评估
 
 ### 2.1 架构全景
-- 115 个 .cs 文件，约 12,200 行；单项目（ClouderyApi.sln:6），无测试项目，无 analyzer / .editorconfig，Nullable 已开启。
+- 115 个 .cs 文件，约 12,200 行；单项目（ClouderyApi.sln:6），无 analyzer / .editorconfig，Nullable 已开启。（Stage 0 已新增测试项目 ClouderyApi.Tests。）
 - 目录按类型分层：Controllers/、Services/、Models/、Data/、Migrations/。命名空间二级再按领域分（Cloudery、Zhuxs、Mhop、Identity），即“按层分包、领域散落”。
 - 对外有四类鉴权：Casdoor Cookie（identity/）、AdminOnly 过滤器（cloudery/、zhuxs/、exam/ 部分）、MHOP 自有 JWT + MhopPerm 特性（mhop/）、SurvivalCraft 静态 Token。
 
@@ -135,7 +135,7 @@
 - DTO 与实体手工互转散落各处，无统一 mapper；ExamPaper 的 POST/PUT 直接绑定实体，存在 over-posting（ExamPapersController.cs:147/162）。
 
 ### 3.9 工程化与横切
-- 无测试；CI 的 test 步骤是空转（.github/workflows/dotnet.yml:24-25）。
+- ~~无测试；CI 的 test 步骤是空转~~ —— Stage 0 已修复：两个 workflow 增加 mysql:8.0 service、构建 ClouderyApi.sln、注入 CLOUDERY_TEST_MYSQL，dotnet test 真正运行 43 个用例。
 - 启动期直接 Database.Migrate() + Seed（Program.cs:156-183，Seed 默认 true，会创建 admin/admin123 等）；失败仅记 warning。
 - 配置直读：AdminOnlyAttribute.cs:26-30、AuthController.cs:34-43、ServerController.cs:13-19、MhopCasdoorService.cs:30-40。
 - 统一 400 契约缺失：DTO DataAnnotations 让框架返回 ValidationProblemDetails，与模块裸 {success,message} 不一致；且 [ApiController] 自动校验使控制器里的 ModelState 检查成为死代码（MembersController.cs:39/63 等）。
@@ -207,15 +207,11 @@
 | Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox |
 | Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 |
 
-### Stage 0 — 建立安全网（必须先做）
-- **目标**：让后续每一步重构都有回归保护。
-- **改动清单**：
-  1. 新增测试项目 ClouderyApi.Tests（xUnit + Microsoft.AspNetCore.Mvc.Testing；DB 用 Testcontainers.MySql 起真实 MySQL，因为漂流瓶捞取依赖 ORDER BY RAND() 与条件 UPDATE 等 MySQL 方言，InMemory/SQLite 不可用）。
-  2. 特征测试覆盖关键契约：identity/auth 登录与 /me；mhop/forum 帖子创建→审核→公开 与 withdraw/submit 状态机；mhop/bottles throw→pick→messages→end/report；mhop/auth 注册/登录与权限；exam/results sync 幂等（ClientKey）；序列化契约（snake_case、UnsafeRelaxedJsonEscaping、错误体 {detail}）。
-  3. 修复 CI：让 .github/workflows/dotnet.yml:24-25 的 dotnet test 真正运行测试项目。
-- **验证**：dotnet test 全绿。
-- **风险 / 降级**：CI 需 Docker；若无，退化为对领域 / 应用服务的单元测试 + 人工冒烟清单。
-- **回滚**：独立提交，删除测试项目即可。
+### Stage 0 — 建立安全网 ✅ 已完成（提交 ac6c00c）
+- **实际做法**：新增 ClouderyApi.Tests（xUnit + Microsoft.AspNetCore.Mvc.Testing）；**未用 Testcontainers**，改为 `CLOUDERY_TEST_MYSQL` 指向真实 MySQL（本地用便携 mysqld，CI 用 mysql:8.0 service），每个测试类自建/自删一次性库 `cloudery_test_<16位>`（TestSupport/MySqlTestServer.cs、IntegrationTestBase.cs）。
+- **已覆盖契约（43 用例全绿，约 47s）**：MHOP 鉴权（注册/登录/错误体 {detail}）、后台权限阶梯（401/403）、论坛读写与 snake_case 序列化、Zhuxs 匿名读与 camelCase、身份 Cookie 鉴权（TestSupport/AuthCookie.cs 用真实 Cookies 方案的 TicketDataFormat 造票据）。
+- **未能自动化**：漂流瓶 throw→pick→messages→end/report 依赖 LLM/存储，暂以读契约覆盖（后续可加 stub）。
+- **踩坑记录**：临时诊断文件 DiagTests.cs 用于 dump 认证方案与响应，验证后已删除；不要在没有把握时重现。
 
 ### Stage 1 — 值对象与充血模型（MHOP 优先）
 - **目标**：把规则收回模型，消除原始类型与重复常量。
@@ -274,6 +270,8 @@
 
 ## 6. 兼容性红线（必须逐字保留）
 - 路由全部不变；CORS 白名单不变（Program.cs:102-123）。
+- **鉴权方案真相（Stage 0 运行时实测）**：默认认证方案 = Cookies，但默认 **Challenge 方案 = Bearer**（Program.cs:89-90 的 `.AddCasdoor(...)` 扩展带入 JwtBearerHandler）。所以只挂 `[Authorize]` 的路由未登录时是 **401 + `WWW-Authenticate: Bearer` + 空响应体**，**不是** 302 跳 `/identity/auth/login`（该 action 本就不存在）。只挂 `[AdminOnly]`（无类级 [Authorize]）的路由才由过滤器自己写 `401 {"success":false,"message":"请先登录"}` 或 `403 {"success":false,"message":"无管理员权限，操作被拒绝"}`（AdminOnlyAttribute.cs:19-39）。鉴权改造绝不能引入 302。
+- **[AdminOnly] 判定**：读 claim `CasdoorId`，与 `Authorization:Admins`（string[]，OrdinalIgnoreCase）比较。（测试可在启动时注入 `Authorization:Admins:0`。）
 - JSON：snake_case + UnsafeRelaxedJsonEscaping（中文不转义）+ UTC 带 Z（MhopJson.cs:14-35）；错误体形状 {detail}。
 - **inc_view 必须是字符串**：ASP.NET bool 绑定不接受 "1"，MhopForumController.cs:138 用 string? 并由 IsTruthy 接受 1/true/yes/on（:631）。
 - 管理员看真实身份（MhopAdminController.cs:513 RealAuthor 暴露真实用户名 + 手机号），而 mhop/auth/users/{id} 掩码手机号并隐藏权限（MhopAuthController.cs:228）。
