@@ -20,6 +20,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | MHOP 公共 | `/mhop` | 健康检查、援助热线、在线人数心跳（匿名） |
 | MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料与手机号绑定（登录后统一签发 **JWT Bearer**） |
 | MHOP 论坛 | `/mhop/forum` | 板块、帖子、回复（先审后发）、**审核通过后**的 AI 自动回复、点赞；`/mine/*` 与作者自助编辑 / 撤回审核 / 重新提交 / 删除 |
+| MHOP 漂流瓶 | `/mhop/bottles` | 投瓶 / 捞瓶 / 我的瓶子 / 瓶内消息 / 结束与举报；敏感词同步拦截，AI 初筛通过后入海 |
 | MHOP 量表 | `/mhop/assessments` | PHQ-9 / GAD-7 / 自由倾诉：服务端计分 + AI 解读 |
 | MHOP 后台 | `/mhop/admin` | 数据看板、帖子巡检与**删除**、回复审核与**删除**、AI 回复撤回/恢复/重新生成、用户管理与**删除**、AI 日志（需管理员） |
 | MHOP 上传 | `/mhop/upload` | 头像 / 帖子图片上传；存储可切换本地磁盘（`/mhop/uploads/*`）或**远端阿里云 OSS** |
@@ -31,48 +32,52 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 - 四个 `DbContext`：`ClouderyContext`（云术域：成员 / 试卷 / 成绩，含 JSON 列转换与 `ExamResults` 唯一索引）、`ZhuxsContext`（竹像素域：白名单 / 条款 / 申请，独立迁移历史表）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
 - **Casdoor** OAuth2 认证（`Casdoor.AspNetCore` + `Casdoor.Client`），Cookie 会话，会话有效期 7 天且支持滚动续期
 - **MHOP 认证**：手写 HS256 JWT（`Authorization: Bearer`）+ PBKDF2-SHA256 密码哈希，兼容原有协议；并提供 **Casdoor 统一身份认证（OAuth2 授权码 / OIDC）** 登录，成功后同样签发 MHOP JWT
-- **共享大模型客户端**：`Services/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
+- **共享大模型客户端**：`Shared/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
 - **SixLabors.ImageSharp** 处理上传图片：头像方形裁剪、帖子图缩放、统一 WebP 编码（对应 Python 版的 Pillow）
 - 自定义 **CSRF 防护**中间件：对 POST/PUT/PATCH/DELETE 请求校验 Origin 头是否在 CORS 白名单内
 - **Swagger / OpenAPI**（开发环境启用）
 - **Costura.Fody** 将依赖程序集嵌入，便于单文件分发
+- **模块化单体（DDD 分层）**：业务代码按限界上下文放在 `Modules/<Ctx>/`，模块内再分 `Domain`（聚合与领域规则）/ `Application`（用例编排与映射）/ `Api`（控制器与请求响应 DTO）/ `Infrastructure`（持久化与外部服务）；跨模块共享内核在 `Shared/`。改造历程见 [docs/DDD-REFACTOR-PLAN.md](docs/DDD-REFACTOR-PLAN.md)
+- **xUnit 测试项目** `ClouderyApi.Tests/`：契约测试 + 领域单测，CI 以 `dotnet build -warnaserror` 与 `dotnet test` 为门禁（见下文「测试」）
 - GitHub Actions 自动化构建，推送 `master` 自动部署到 1Panel（见 [DEPLOY.md](DEPLOY.md)）
 
 ## 目录结构
 
 ```
 ClouderyApi/
-├── Program.cs                     # 入口：服务注册、认证、CORS、CSRF 中间件、Swagger
+├── Program.cs                     # 入口：服务注册、认证、CORS、CSRF 中间件、基础限流、Swagger、命令行开关
 ├── ClouderyApi.csproj             # 项目文件与 NuGet 依赖
 ├── appsettings.example.json       # 配置示例（提交到仓库）
 ├── appsettings.json               # 实际配置（含密钥，已被 .gitignore 忽略，不入库）
 ├── ClouderyApi.http               # HTTP 调试脚本（VS 使用）
-├── Controllers/
-│   ├── Auth/AuthController.cs
-│   ├── Cloudery/           # Members / ExamPapers / ResultAnalysis / ExamResults
-│   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器（另有按 IP 限流的 IpRateLimitAttribute）
-│   ├── MHOP/                      # 见下方「MHOP 模块」：Common / Auth / Forum / Assessment / Admin / Upload
-│   ├── Misc/LongLinkController.cs
-│   ├── SurvivalCraft/ServerController.cs
-│   └── Zhuxs/                     # Applications / Terms / Whitelists
-├── Data/
-│   ├── ClouderyApiContext.cs
-│   ├── IdentityDbContext.cs        # 身份域（本地登录用户 Users 表）
-│   ├── IdentityDbContextFactory.cs # 身份域设计时工厂（dotnet ef）
-│   ├── MhopDbContext.cs            # MHOP 域（表名 mhop_ 前缀）
-│   └── MhopDbContextFactory.cs     # MHOP 设计时工厂（dotnet ef）
-├── Models/
-│   ├── Cloudery/                 # Member（实体）+ MemberDto、ExamPaper（含嵌套类型）、ExamResult（测评结果云端存档）
-│   ├── Mhop/                     # MHOP 实体（MhopUser/Post/Reply/Like/Assessment/AiLog）+ DTOs
-│   ├── Identity/                 # User（本地登录用户实体）
-│   └── Zhuxs/                    # 实体 + DTOs
-├── Services/
-│   ├── Ai/                         # 共享大模型客户端与危机文本（LlmOptions / ILlmClient / LlmClient / CrisisSupport）
-│   ├── Cloudery/                   # ResultAnalysisService（量表结果 AI 解读）/ ExamResultService（云端结果同步）
-│   └── Mhop/                       # MHOP 业务：AI 服务、内容审核、对象存储等
-├── Migrations/                    # 各 Context 独立迁移目录：Migrations/Identity/（IdentityDbContext）、Migrations/Cloudery/（ClouderyContext，含 ExamPapers、ExamResults 及快照对齐）、Migrations/Zhuxs/（ZhuxsContext，幂等 baseline，独立历史表 __EFMigrationsHistory_Zhuxs）、Migrations/Mhop/（MhopDbContext）
+├── Modules/                       # 业务代码：按限界上下文分模块，模块内再分 Domain / Application / Api / Infrastructure
+│   ├── Cloudery/                  # 云术域：成员 / 试卷 / 云端测评结果 / 结果解读
+│   │   ├── Api/                   # Members、ExamPapers、ExamResults、ResultAnalysis 控制器；Contracts/ 为请求响应 DTO
+│   │   ├── Application/           # *AppService 用例编排、ExamResultService、ResultAnalysisService、IClouderyDbContext、Mapping/
+│   │   ├── Domain/                # Member、ExamPaper、ExamPaperGrader、ExamResult
+│   │   └── Infrastructure/Persistence/   # ClouderyContext + ClouderyContextFactory
+│   ├── Zhuxs/                     # 竹像素域：白名单 / 周目 / 申请（结构同 Cloudery，含 IZhuxsDbContext 与 ZhuxsContext）
+│   ├── Identity/                  # 身份域：AuthController、UserSyncService、User、IdentityDbContext
+│   ├── Mhop/                      # MHOP 域（最大的模块）
+│   │   ├── Api/                   # 11 个控制器 + MhopControllerBase / MhopAdminAttribute；Contracts/ 为 DTO
+│   │   ├── Application/           # *AppService、内容审核与服务、权限码、Events/ 领域事件订阅者、Mapping/
+│   │   ├── Domain/                # 聚合与领域规则（Post / Reply / Bottle / User、量表计分、内容策略、Events/）
+│   │   └── Infrastructure/        # AI、JWT、密码哈希、邮件验证码、对象存储、在线人数、Seeder / 迁移维护 / 孤儿清理、Persistence/
+│   ├── Link/                      # 长链（LongLinkController）
+│   └── SurvivalCraft/             # SurvivalCraft 服务器接口（ServerController）
+├── Shared/                        # 跨模块共享内核
+│   ├── Ai/                        # ILlmClient / LlmClient / LlmOptions / CrisisSupport
+│   ├── Authorization/             # AdminOnlyAttribute + AdminOnlyAuthorization（基于 policy 的管理员鉴权）
+│   ├── Domain/                    # IDomainEvent 等领域事件基座与 DomainEventDispatcher
+│   ├── Exceptions/                # DomainRuleException / MhopApiException / MhopApiExceptionFilter
+│   ├── Filters/                   # IpRateLimitAttribute（按 IP + 路径限流）
+│   ├── Json/                      # MhopJson（snake_case + UTC）
+│   └── Options/                   # AdminOptions / CasdoorSettings / CorsSettings / SckeyOptions
+├── Migrations/                    # 各 Context 独立迁移目录：Cloudery/、Zhuxs/、Identity/、Mhop/
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
+
+`ClouderyApi.Tests/` 与 `ClouderyApi/` 并列，是 xUnit 测试项目（契约测试 + 领域单测）；`TestSupport/` 提供集成测试夹具（一次性 MySQL 库、认证 Cookie、JSON 辅助）。
 
 ## 快速开始
 
@@ -136,6 +141,8 @@ dotnet ef database update --context MhopDbContext
 
 > 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境保持 `false`，改用 CLI `dotnet ClouderyApi.dll --migrate [--seed]`（`.github/workflows/deploy.yml` 在重启容器前自动执行，失败即中止部署）。
 
+> **命令行开关**（`dotnet ClouderyApi.dll <开关>`，执行完即退出、不启动 Web 主机）：`--migrate` 应用待执行迁移、`--seed` 写入种子数据（可同时使用）、`--sweep-orphans [--delete-orphans]` 清理对象存储中的孤儿图片（见下文「历史孤儿清理」）。
+
 > 内部试卷表迁移 `AddExamPapers` 仅新增 `ExamPapers` 表（整卷 JSON 存单列，兼容既有 schema）。存在多个 `DbContext` 时，`dotnet ef` 命令需显式指定 `--context`。
 
 > 云端测评结果迁移 `AddExamResults` 仅新增 `ExamResults` 表与索引 `IX_ExamResults_UserId_ClientKey`（唯一）、`IX_ExamResults_UserId_SavedAt`，兼容既有 schema。
@@ -193,12 +200,12 @@ dotnet ef database update --context MhopDbContext
 
 | 位置 | 说明 |
 | ---- | ---- |
-| `Services/Ai/LlmOptions.cs` | 根级 `Llm` 配置：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30） |
-| `Services/Ai/LlmClient.cs` | OpenAI 兼容 `/chat/completions` 调用；失败只记日志并返回 `engine = "local"`，不抛给调用方 |
-| `Services/Ai/CrisisSupport.cs` | 危机词、热线号码与热线前缀文本（与 MHOP 共用） |
-| `Services/Cloudery/ResultAnalysisService.cs` | 提示词组装（`BuildSystemPrompt` / `BuildUserPrompt`）与本地兜底文本 |
-| `Controllers/Cloudery/ResultAnalysisController.cs` | 路由 `POST /exam/result-analysis` |
-| `Controllers/Filters/IpRateLimitAttribute.cs` | 按 IP + 路径的固定窗口限流过滤器 |
+| `Shared/Ai/LlmOptions.cs` | 根级 `Llm` 配置：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30） |
+| `Shared/Ai/LlmClient.cs` | OpenAI 兼容 `/chat/completions` 调用；失败只记日志并返回 `engine = "local"`，不抛给调用方 |
+| `Shared/Ai/CrisisSupport.cs` | 危机词、热线号码与热线前缀文本（与 MHOP 共用） |
+| `Modules/Cloudery/Application/ResultAnalysisService.cs` | 提示词组装（`BuildSystemPrompt` / `BuildUserPrompt`）与本地兜底文本 |
+| `Modules/Cloudery/Api/ResultAnalysisController.cs` | 路由 `POST /exam/result-analysis` |
+| `Shared/Filters/IpRateLimitAttribute.cs` | 按 IP + 路径的固定窗口限流过滤器 |
 
 > 根级 `Llm` 留空时会**逐项回退**到旧配置 `Mhop:Llm`；两者都空则结果解读一律走本地兜底（`engine = "local"`）。MHOP 的 AI 回复与审核也改用同一个 `ILlmClient`，`MhopAiService.ChatAsync` 的签名与 `Engine` 标记保持不变。
 
@@ -241,10 +248,10 @@ dotnet ef database update --context MhopDbContext
 
 | 位置 | 说明 |
 | ---- | ---- |
-| `Models/Cloudery/ExamResult.cs` | 实体：`UserId` / `ClientKey` / `TestId` / `TestTitle` / `SavedAt` / `Payload`（`longtext`）/ `CreatedAt` / `UpdatedAt` |
-| `Models/Cloudery/DTOs/ExamResultDtos.cs` | `ExamResultIn` / `ExamResultSyncIn` / `ExamResultOut` / `ExamResultSyncOut` |
-| `Services/Cloudery/ExamResultService.cs` | 列表 / 同步 / 删除 / 清空，含配额校验与时间归一化 |
-| `Controllers/Cloudery/ExamResultsController.cs` | 路由 `exam/results` |
+| `Modules/Cloudery/Domain/ExamResult.cs` | 实体：`UserId` / `ClientKey` / `TestId` / `TestTitle` / `SavedAt` / `Payload`（`longtext`）/ `CreatedAt` / `UpdatedAt` |
+| `Modules/Cloudery/Api/Contracts/ExamResultDtos.cs` | `ExamResultIn` / `ExamResultSyncIn` / `ExamResultOut` / `ExamResultSyncOut` |
+| `Modules/Cloudery/Application/ExamResultService.cs` | 列表 / 同步 / 删除 / 清空，含配额校验与时间归一化 |
+| `Modules/Cloudery/Api/ExamResultsController.cs` | 路由 `exam/results` |
 | `Migrations/Cloudery/20261001091128_AddExamResults.cs` | 仅新增 `ExamResults` 表与两个索引，兼容既有 schema |
 
 > 部署前执行 `dotnet ef database update --context ClouderyContext`。`ClouderyContext` / `ZhuxsContext` **不会**随启动自动迁移（只有 `MhopDbContext` 会自动迁移）。
@@ -270,7 +277,7 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
   服务端自动绑定 / 创建本地 `mhop_users` 账号后签发同一种 MHOP JWT。
 - **序列化**：MHOP 控制器统一通过 `MhopJson.Options` 输出**蛇形字段名**与 **UTC（带 Z）时间**；
   请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致）。
-- **AI**：`Services/Mhop/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
+- **AI**：`Modules/Mhop/Infrastructure/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
   未配置或调用失败时降级为内置共情式规则回复；任何引擎下检测到危机信号都会强制前置援助热线。
 - **后台任务**：帖子**首次审核通过**时，通过独立 DI 作用域异步生成一条 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
   待审核 / 草稿期间反复编辑不会产生任何 AI 回复；**隐藏后重新展示会沿用已有回复，不会重复调用大模型**，
@@ -409,6 +416,21 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 种子数据（`Mhop:Seed=true` 或 CLI `--seed`）会创建管理员 `admin / admin123` 与一条引导帖，
 首次登录后请立即修改密码。`Mhop:AutoMigrate` 在开发环境默认开启；`Mhop:Seed` 默认关闭，生产由部署脚本执行 `--seed`。
 
+## 测试
+
+`ClouderyApi.Tests/` 为 xUnit 项目：`*ContractTests` 覆盖 HTTP 路由 / JSON 契约 / 鉴权与错误体形状（`SwaggerRouteSnapshotTests` 守住路由表），`Domain*Tests` 覆盖领域规则。
+
+```bash
+# 集成测试需要一个可用的 MySQL：每个测试类自建一次性库，测试结束即删除
+export CLOUDERY_TEST_MYSQL="server=127.0.0.1;port=3306;user=root;password=root"
+
+dotnet test ClouderyApi.sln --configuration Release                        # 全量
+dotnet test ClouderyApi.Tests --configuration Release \
+  --filter "FullyQualifiedName~ExamPapersContractTests"                    # 只跑受影响范围
+```
+
+- 夹具 `ClouderyApi.Tests/TestSupport/ClouderyApiFactory.cs` 用**环境变量**注入 Casdoor（`Casdoor__Endpoint` 等）与管理员（`Authorization__Admins__0`），因此不依赖本地 `appsettings.json`（该文件不入库）；`IntegrationTestBase.cs` 每个测试类建库、结束时清理连接池。
+- CI（`.github/workflows/dotnet.yml` 与 `deploy.yml`）都起了 `mysql:8.0` 服务容器，并在 Test 之前执行 `SET GLOBAL max_connections=500`（容器默认 151，会被并发测试类打满而报 `Too many connections`）。
 ## GitHub Actions
 
 | 工作流 | 触发 | 作用 |
@@ -421,7 +443,7 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 ## 安全注意事项
 
 - 所有需授权的写操作依赖 Cookie 会话与 CSRF 校验；请确保生产环境走 HTTPS（Cookie 为 `Secure`）。
-- 敏感数据（白名单/周目/申请/成员/内部试卷）的写操作由 `AdminOnlyAttribute` 限管理员（配置 `Authorization:Admins`），主键由服务端生成并校验 `ModelState`（防越权与 over-posting）。
+- 敏感数据（白名单/周目/申请/成员/内部试卷）的写操作由 `AdminOnlyAttribute`（基于 policy 的 `AdminOnlyAuthorization`，配置 `Authorization:Admins`）限管理员；写接口绑定输入 DTO（如 `ExamPaperInput`）并由服务端生成主键与时间戳，客户端多余字段不会影响实体（防越权与 over-posting）；请求模型校验由 `[ApiController]` 自动完成（400 ValidationProblemDetails）。
 - 用户内容（MHOP 帖子 / 回复）由前端渲染边界防御 XSS（markdown 经 DOMPurify 净化、纯文本经 Vue `{{}}` 转义），服务端保持原样返回；会话 Cookie 已设 `HttpOnly=true`。
 - 点赞基于 `mhop_likes` 去重表实现幂等切换，避免并发计数不一致。
 - 内置按 IP 的固定窗口限流（每 60 秒 300 次），缓解接口被刷与爆破。

@@ -3,6 +3,7 @@
 > 状态：已批准实施。Stage 0（安全网测试）已完成并提交（ac6c00c）；下方保留原方案并追加实施记录。
 > 项目：ClouderyApi.sln / ClouderyApi/ClouderyApi.csproj（net10.0，MySQL，Oracle MySql.EntityFrameworkCore 10.0.9）
 > 目标：参考 DDD 架构理念，改善可维护性，**同时保持对外 HTTP 路由与 JSON 契约完全不变**。
+> 2026-10-02：Stage 3/4/5 的独立施工图已随改造完成清理（`git log --diff-filter=D -- docs/` 可查），本文件保留为改造总记录。
 
 ---
 
@@ -304,7 +305,7 @@
 - **回滚**：逐控制器回退。
 
 ### Stage 3 — 按限界上下文重组目录 ✅ 已完成（7 次提交，零行为变更）
-- **前置条件**：Stage 2（含 M4）已收尾；施工图 docs/DDD-STAGE3-MODULE-MAP.md 已按 M4 后的真实文件数刷新。
+- **前置条件**：Stage 2（含 M4）已收尾；施工图 docs/DDD-STAGE3-MODULE-MAP.md（改造完成后已清理，可从 git 历史取回） 已按 M4 后的真实文件数刷新。
 - **目标**：把类型分层改为模块化单体（第 4.1 节），只移动文件与改命名空间，HTTP 路由 / JSON 契约 / 鉴权语义一律不变。
 - **M5 里程碑记录（7 次提交，均仅本地未推送）**：
   - `4d2ebd4` 第 1 步 Shared 抽取：10 个 git mv（`Models/DomainRuleException.cs`、`Services/Mhop/{MhopApiException,MhopApiExceptionFilter,MhopJson}.cs`、`Controllers/Filters/{AdminOnly,IpRateLimit}Attribute.cs`、`Services/Ai/*`（4））→ `ClouderyApi/Shared/{Exceptions,Json,Filters,Ai}/`，命名空间 `ClouderyApi.Shared.*`，类型名不变（44 files +60/-32）。
@@ -315,11 +316,11 @@
 - **收尾状态**：`ClouderyApi/Controllers/`、`Models/`、`Services/`、`UseCases/` 已清空；`ClouderyApi/Data/` 只剩 `ClouderyApi/Data/ClouderyApiContext.cs`（Cloudery 与 Zhuxs 共用，Stage 5 才拆分）；ClouderyApi 下 150 个 .cs、31 个命名空间（+ `Program.cs` 无 namespace），全部业务代码位于 `Modules/<Ctx>/<Layer>/`。
 - **机械等价证据**：第 1–3 步与第 5 步的全部 diff 只有 `using`/`namespace` 行（剔除后逐行比对零残差，第 5 步非 using 行数 = 0）；第 4 步唯一非 using 改动是 7 个 `Migrations/Mhop` 文件里 `modelBuilder.Entity("...")` 等 EF CLR 实体名字符串（176 行）；迁移文件 BOM 与行尾逐字节保持（`20260930124306_MhopBottles.Designer.cs`、`20261001035824_mssql.local_migration_832.Designer.cs` 本就无 BOM，现仍无）。
 - **验证口径**：每一步在主树单跑 `dotnet build` 0 error（唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603）+ `dotnet test` **185 passed / 0 failed**（必须单跑：本机 MySQL `max_connections=151` 被多代理共用，并发会假失败）；`dotnet ef migrations list` 三上下文正常、`has-pending-model-changes` 三上下文均 No changes；旧命名空间 grep 全 0；`using ClouderyApi.Data;` 仅剩 14 处真正使用 `ClouderyApiContext` 的位置（Program.cs、Cloudery/Zhuxs 应用层、Migrations/ClouderyApi、3 个测试文件）。
-- **说明**：本文 Stage 1 / Stage 2 章节引用的路径是当时的真实路径（如 `ClouderyApi/Models/Mhop/*`、`ClouderyApi/UseCases/*`、`ClouderyApi/Data/ClouderyApiContext.cs(51,22)` 警告仍有效），Stage 3 之后统一位于 `ClouderyApi/Modules/<Ctx>/<Layer>/`；旧→新完整映射见 docs/DDD-STAGE3-MODULE-MAP.md。
+- **说明**：本文 Stage 1 / Stage 2 章节引用的路径是当时的真实路径（如 `ClouderyApi/Models/Mhop/*`、`ClouderyApi/UseCases/*`、`ClouderyApi/Data/ClouderyApiContext.cs(51,22)` 警告仍有效），Stage 3 之后统一位于 `ClouderyApi/Modules/<Ctx>/<Layer>/`；旧→新完整映射见 docs/DDD-STAGE3-MODULE-MAP.md（改造完成后已清理，可从 git 历史取回）。
 - **未做**：NetArchTest 架构测试（可选项，未引入）；拆分 `ClouderyApiContext` 属 Stage 5。
 
 ### Stage 4 — 领域事件与事务边界 ✅ 已完成（路线 A：进程内派发；5 步 + 2 次接线守卫 + 1 次缺陷记录）
-> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（第 5 步实测后已在 §四/§五 回填「内容审核那一处事务不适用」的结论）。以下 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号为方案撰写时的旧值，现以施工图为准。
+> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（改造完成后已清理，可从 git 历史取回）（第 5 步实测后已在 §四/§五 回填「内容审核那一处事务不适用」的结论）。以下 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号为方案撰写时的旧值，现以施工图为准。
 - **目标**：解耦副作用、显式事务。
 - **M6 里程碑记录（均仅本地未推送）**：
   - `bb2c66b` 第 1 步 事件基座：新增 `ClouderyApi/Shared/Domain/`（`IDomainEvent` / `IDomainEventHandler<T>` / `IHasDomainEvents` / `IDomainEventDispatcher` / `DomainEventDispatcher` + `NullDomainEventDispatcher`）；5 个 Mhop 聚合以 `[NotMapped]` 事件列表实现接口（不用实体基类，避免 EF 把基类纳入类型层级/要求主键）；`MhopDbContext.SaveChangesAsync` 覆写「收集 → base.Save → 派发 → 全部成功后清空」；暂无订阅者，行为不变。
@@ -334,7 +335,7 @@
 - **回滚**：逐提交 `git revert`；整体放弃基座时先 revert 订阅步骤再 revert 基座步骤。
 
 ### Stage 5 — 横切与工程化（可并行）
-> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE5-CROSS-CUTTING.md（含 8 项会改变对外行为的改造清单，实施前需用户批准）。
+> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE5-CROSS-CUTTING.md（改造完成后已清理，可从 git 历史取回）（含 8 项会改变对外行为的改造清单，实施前需用户批准）。
 - 拆分 ClouderyApiContext → ClouderyContext + ZhuxsContext（需 EF 迁移与历史表处置）；或先做代码级接口隔离。
 - Options 模式替换配置直读（AdminOnlyAttribute.cs:26-30、AuthController.cs:34-43、ServerController.cs:13-19、MhopCasdoorService.cs:30-40）。
 - 基于 policy 的授权替换 AdminOnlyAttribute 的 service-locator。
