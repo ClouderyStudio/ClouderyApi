@@ -5,6 +5,7 @@ using ClouderyApi.Models;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
+using ClouderyApi.UseCases.Mhop;
 using Casdoor.Client;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,14 +22,14 @@ public class MhopCasdoorController : MhopControllerBase
 {
     private static readonly Regex InvalidUsernameChars = new("[^a-zA-Z0-9_\\u4e00-\\u9fa5]", RegexOptions.Compiled);
 
-    private readonly MhopCasdoorService _casdoor;
+    private readonly CasdoorAppService _casdoor;
     private readonly MhopDbContext _db;
     private readonly MhopPasswordHasher _hasher;
     private readonly IMhopJwtService _jwt;
     private readonly ILogger<MhopCasdoorController> _logger;
 
     public MhopCasdoorController(
-        MhopCasdoorService casdoor,
+        CasdoorAppService casdoor,
         MhopDbContext db,
         MhopPasswordHasher hasher,
         IMhopJwtService jwt,

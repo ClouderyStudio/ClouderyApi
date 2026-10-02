@@ -1,9 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using Casdoor.Client;
+using ClouderyApi.Services.Mhop;
 using Microsoft.Extensions.Options;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.UseCases.Mhop;
 
 /// <summary>
 /// Casdoor 统一身份认证（OAuth2 授权码 + OIDC）适配层：复用项目根 Casdoor 配置，
@@ -11,7 +12,7 @@ namespace ClouderyApi.Services.Mhop;
 /// 因此 MHOP 前端无需改动既有令牌存取逻辑。
 /// state 采用 HMAC 签名 + 过期时间的无状态实现，避免 SPA 跨域 Cookie 问题。
 /// </summary>
-public sealed class MhopCasdoorService
+public sealed class CasdoorAppService
 {
     private const int StateTtlSeconds = 600;
 
@@ -19,7 +20,7 @@ public sealed class MhopCasdoorService
     private readonly MhopOptions _options;
     private readonly IHttpClientFactory _httpClientFactory;
 
-    public MhopCasdoorService(
+    public CasdoorAppService(
         IConfiguration configuration, IOptions<MhopOptions> options, IHttpClientFactory httpClientFactory)
     {
         _configuration = configuration;

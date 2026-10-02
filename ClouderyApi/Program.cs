@@ -62,7 +62,7 @@ builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();
 builder.Services.AddSingleton<MhopOnlineTracker>();
 builder.Services.AddSingleton<MhopSmtpClient>();
 builder.Services.AddSingleton<MhopEmailCodeService>();
-builder.Services.AddSingleton<MhopCasdoorService>();
+builder.Services.AddSingleton<CasdoorAppService>();
 builder.Services.AddSingleton<MhopAiService>();
 builder.Services.AddSingleton<MhopContentReviewService>();
 builder.Services.AddScoped<MhopCurrentUserAccessor>();
