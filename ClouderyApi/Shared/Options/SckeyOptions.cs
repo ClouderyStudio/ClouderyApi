@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 namespace ClouderyApi.Shared.Options;
 
 /// <summary>
@@ -14,8 +16,10 @@ public sealed class SckeyOptions
     public const string SectionName = "Env";
 
     /// <summary>SCKEY 后端基地址。缺失时回退 <c>SurvivalCraft:SCKEY_API_BASE</c> 或内置默认值。</summary>
+    [ConfigurationKeyName("SCKEY_API_BASE")]
     public string? ApiBase { get; set; }
 
     /// <summary>SCKEY Bearer 令牌。缺失时回退 <c>SurvivalCraft:SCKEY_BEARER_TOKEN</c> 或空串。</summary>
+    [ConfigurationKeyName("SCKEY_BEARER_TOKEN")]
     public string? BearerToken { get; set; }
 }
