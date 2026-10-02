@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 帖子 / 回复的内容状态（mhop_posts.status / mhop_replies.status 的 int 列）。

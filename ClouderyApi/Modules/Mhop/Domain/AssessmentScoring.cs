@@ -1,6 +1,6 @@
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>一次心理评估的计分结论：量表总分与分档（自由文本评估无分值）。</summary>
 public sealed record AssessmentScore(int? Score, string Level, string LevelCode, bool Crisis);

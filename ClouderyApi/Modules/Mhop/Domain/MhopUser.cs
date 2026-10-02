@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>MHOP 用户角色：user（普通用户）/ admin（普通管理员）/ superadmin（超级管理员）。</summary>
 public static class MhopUserRole

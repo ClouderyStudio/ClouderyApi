@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>内容类型：不同场景使用不同的规则与提示词。</summary>
 public static class MhopContentKind

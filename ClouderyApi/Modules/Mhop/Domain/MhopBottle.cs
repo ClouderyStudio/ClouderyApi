@@ -4,7 +4,7 @@ using System.Text.Json;
 
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>漂流瓶状态。</summary>
 public static class MhopBottleStatus

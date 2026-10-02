@@ -1,6 +1,6 @@
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 帖子 / 回复正文：构造即校验（trim → 非空 → 长度上限），把原来散落在各 action 里的校验收敛到一处。

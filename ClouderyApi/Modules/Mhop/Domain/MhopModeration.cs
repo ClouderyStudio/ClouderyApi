@@ -1,6 +1,6 @@
 using ClouderyApi.Shared.Ai;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 内容安全：危机词识别（触发强制援助提示）+ 基础敏感词巡检。

@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// AI 内容审核结论。Verdict 取值见常量（帖子 / 回复 / 瓶身 / 会话消息共用同一口径）；

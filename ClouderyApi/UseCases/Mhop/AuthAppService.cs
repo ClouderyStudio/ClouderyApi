@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Casdoor.Client;
 using ClouderyApi.Data;
 using ClouderyApi.Shared.Exceptions;
-using ClouderyApi.Models.Mhop;
+using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 using ClouderyApi.UseCases.Mhop.Mapping;

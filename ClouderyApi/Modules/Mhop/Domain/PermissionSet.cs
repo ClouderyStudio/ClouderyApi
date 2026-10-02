@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 后台模块权限集合（值对象）：与前端后台菜单一一对应的权限码目录，以及权限码数组的

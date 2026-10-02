@@ -22,7 +22,7 @@ namespace ClouderyApi.Migrations.Mhop
                 .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopAiLog", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopAiLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -71,7 +71,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_ai_logs");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopAssessment", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopAssessment", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -111,7 +111,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_assessments");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopBottle", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopBottle", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -214,7 +214,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_bottles");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopBottleMessage", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopBottleMessage", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -262,7 +262,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_bottle_messages");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopLike", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopLike", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -294,7 +294,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_likes");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopPost", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopPost", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -374,7 +374,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_posts");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopReply", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopReply", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -458,7 +458,7 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_replies");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopUser", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopUser", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -541,9 +541,9 @@ namespace ClouderyApi.Migrations.Mhop
                     b.ToTable("mhop_users");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopBottleMessage", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopBottleMessage", b =>
                 {
-                    b.HasOne("ClouderyApi.Models.Mhop.MhopBottle", "Bottle")
+                    b.HasOne("ClouderyApi.Modules.Mhop.Domain.MhopBottle", "Bottle")
                         .WithMany("Messages")
                         .HasForeignKey("BottleId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -552,9 +552,9 @@ namespace ClouderyApi.Migrations.Mhop
                     b.Navigation("Bottle");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopReply", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopReply", b =>
                 {
-                    b.HasOne("ClouderyApi.Models.Mhop.MhopPost", "Post")
+                    b.HasOne("ClouderyApi.Modules.Mhop.Domain.MhopPost", "Post")
                         .WithMany("Replies")
                         .HasForeignKey("PostId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -563,12 +563,12 @@ namespace ClouderyApi.Migrations.Mhop
                     b.Navigation("Post");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopBottle", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopBottle", b =>
                 {
                     b.Navigation("Messages");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Mhop.MhopPost", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Mhop.Domain.MhopPost", b =>
                 {
                     b.Navigation("Replies");
                 });

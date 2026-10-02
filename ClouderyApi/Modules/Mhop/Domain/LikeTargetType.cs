@@ -1,6 +1,6 @@
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 点赞目标类型（mhop_likes.target_type）：帖子或回复。

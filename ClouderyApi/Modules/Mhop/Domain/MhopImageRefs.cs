@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>
 /// 入库图片地址数组的统一解析 / 归一化 / 序列化：帖子 / 回复的 images 字段是 JSON 字符串数组。

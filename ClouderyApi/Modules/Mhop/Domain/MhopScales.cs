@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 public sealed record MhopScaleOption(string Label, int Value);
 

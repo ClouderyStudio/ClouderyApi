@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>规则预筛结论。</summary>
 public enum MhopPolicyVerdict
