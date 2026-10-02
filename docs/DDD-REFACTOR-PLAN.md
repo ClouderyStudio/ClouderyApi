@@ -213,15 +213,23 @@
 - **未能自动化**：漂流瓶 throw→pick→messages→end/report 依赖 LLM/存储，暂以读契约覆盖（后续可加 stub）。
 - **踩坑记录**：临时诊断文件 DiagTests.cs 用于 dump 认证方案与响应，验证后已删除；不要在没有把握时重现。
 
-### Stage 1 — 值对象与充血模型（MHOP 优先）
+### Stage 1 — 值对象与充血模型（MHOP 优先，进行中）
 - **目标**：把规则收回模型，消除原始类型与重复常量。
-- **改动清单**：
-  1. 统一 ContentStatus 单一来源，删除 MhopForumController.cs:312-315 的重复常量。
-  2. 新增值对象：ContentText（trim、非空、1–2000 / 1–1000）、BoardSlug（校验 MhopBoards.Slugs）、ImageRefs（≤9、JSON 封装）、LikeTargetType、AiFlag、MhopRole、PermissionSet、BottleStatus、BottleEndReason。
-  3. 为 MhopPost / MhopReply / MhopUser / MhopBottle 增加第 4.3 节的方法，非法转换抛领域异常。
-  4. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把 MhopForumController.cs:556-565 的内联敏感词筛查并入 MhopContentPolicy。
-  5. EF 配置用 HasConversion 保持列不变。
-- **验证**：dotnet build + Stage 0 测试。
+- **进展（内容聚合已完成）**：
+  - `ContentStatus`（ClouderyApi/Models/Mhop/ContentStatus.cs）成为唯一来源：删除了 MhopForumController.cs 的 4 个私有常量、Services/Mhop/MhopContentStatus.cs（原文件已删除），并把 forum / admin / MhopContentReviewService / MhopAiService / MhopSeeder 里的 `0/1/2/3` 字面量全部换成常量（漂流瓶消息状态 1/2 属瓶聚合，留待下一步）。
+  - 新增值对象（ClouderyApi/Models/Mhop/ContentValueObjects.cs）：`ContentText`（trim、非空、帖子 1–2000 / 回复 1–1000，消息文案 `内容不能为空` / `回复内容不能超过 1000 字`）、`BoardSlug`（校验 `MhopBoards.Slugs`，**不 trim** 以保持历史行为）、`ContentScreening`（危机信号 + 敏感词，由边界层用 MhopModeration 计算后传入，领域层不反向依赖服务层）、`ContentRules.TruncateReviewNote`（255 列宽）。
+  - `MhopBoards`、`MhopImageRefs` 从 Services/Mhop 移到 Models/Mhop（领域词汇，依赖方向改为 Services → Models）；`MhopImageRefs` 增加 `Normalize`（丢弃空白、≤9 张）与 `Serialize`。
+  - `MhopPost` / `MhopReply` 充血：`NewAuthorPost` / `NewAuthorReply` 工厂、`ApplyAuthorEdit`（返回不再被引用的图片地址）、`Withdraw` / `SubmitForReview` / `Publish` / `Reject` / `RejectBySensitiveWords` / `ClearReviewState` / `ClearAiReviewState`、`Recall` / `Restore`、`AddView`，以及 `IsEditable` / `CanWithdraw` / `CanSubmit`；非法转换抛 `DomainRuleException`（ClouderyApi/Models/DomainRuleException.cs），由 MhopApiExceptionFilter 统一映射为 400 `{detail}`。
+  - 错误文案与校验顺序逐字保留：帖子编辑为「状态 → 正文 → 板块」、回复编辑为「状态 → 正文」，因此 `ApplyAuthorEdit` 收原始字符串、在方法内部构造值对象；回复编辑**不清**草稿的人工理由、待审核时重新做敏感词复核（历史行为）。
+  - AI 自动放行仍走 MhopContentReviewService 的 `ExecuteUpdateAsync` 条件更新（跨作用域 + 内容未变守卫），未改为实体方法，避免改变并发语义。
+  - 新增纯单测 ClouderyApi.Tests/DomainContentTests.cs（19 用例，无 HTTP / 无库）。
+- **关键取舍**：暂不给 `Content` / `Board` / `Images` 加 EF 值转换（原第 5 条），因为 `Contains` / `==` / `GroupBy` / `ExecuteUpdateAsync` 触点太广、易改变可翻译性；先以「构造即校验 + 实体方法」收口规则，列与迁移保持不变。
+- **改动清单（剩余）**：
+  1. `LikeTargetType`、`AiFlag` 值对象；`MhopRole` / `PermissionSet`（可复用现有 MhopAdminPermissions）。
+  2. 为 `MhopUser` / `MhopBottle` / `MhopBottleMessage` 增加第 4.3 节的方法；瓶子消息状态 1/2 命名常量。
+  3. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
+  4. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`）。
+- **验证**：dotnet build + Stage 0 测试（61 用例全绿）。
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 

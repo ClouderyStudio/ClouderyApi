@@ -66,7 +66,7 @@ public sealed class MhopContentReviewService
                 post = await scope.ServiceProvider.GetRequiredService<MhopDbContext>()
                     .MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
             }
-            if (post is null || post.Status != MhopContentStatus.Pending) return;
+            if (post is null || post.Status != ContentStatus.Pending) return;
 
             var outcome = await ModerateAsync(post.Content, MhopContentKind.Post);
             using var writeScope = _scopes.CreateScope();
@@ -75,9 +75,9 @@ public sealed class MhopContentReviewService
             if (outcome.IsSafe)
             {
                 var affected = await writeDb.MhopPosts
-                    .Where(p => p.Id == postId && p.Status == MhopContentStatus.Pending && p.Content == post.Content)
+                    .Where(p => p.Id == postId && p.Status == ContentStatus.Pending && p.Content == post.Content)
                     .ExecuteUpdateAsync(s => s
-                        .SetProperty(p => p.Status, MhopContentStatus.Published)
+                        .SetProperty(p => p.Status, ContentStatus.Published)
                         .SetProperty(p => p.AiFlag, string.Empty)
                         .SetProperty(p => p.AiReviewNote, string.Empty)
                         .SetProperty(p => p.AiReviewedAt, DateTime.UtcNow));
@@ -91,7 +91,7 @@ public sealed class MhopContentReviewService
 
             var note = BuildNote(outcome);
             await writeDb.MhopPosts
-                .Where(p => p.Id == postId && p.Status == MhopContentStatus.Pending && p.Content == post.Content)
+                .Where(p => p.Id == postId && p.Status == ContentStatus.Pending && p.Content == post.Content)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(p => p.AiFlag, outcome.Verdict)
                     .SetProperty(p => p.AiReviewNote, note)
@@ -114,7 +114,7 @@ public sealed class MhopContentReviewService
                 reply = await scope.ServiceProvider.GetRequiredService<MhopDbContext>()
                     .MhopReplies.AsNoTracking().FirstOrDefaultAsync(r => r.Id == replyId);
             }
-            if (reply is null || reply.Status != MhopContentStatus.Pending) return;
+            if (reply is null || reply.Status != ContentStatus.Pending) return;
 
             var outcome = await ModerateAsync(reply.Content, MhopContentKind.Reply);
             using var writeScope = _scopes.CreateScope();
@@ -123,9 +123,9 @@ public sealed class MhopContentReviewService
             if (outcome.IsSafe)
             {
                 await writeDb.MhopReplies
-                    .Where(r => r.Id == replyId && r.Status == MhopContentStatus.Pending && r.Content == reply.Content)
+                    .Where(r => r.Id == replyId && r.Status == ContentStatus.Pending && r.Content == reply.Content)
                     .ExecuteUpdateAsync(s => s
-                        .SetProperty(r => r.Status, MhopContentStatus.Published)
+                        .SetProperty(r => r.Status, ContentStatus.Published)
                         .SetProperty(r => r.AiFlag, string.Empty)
                         .SetProperty(r => r.AiReviewNote, string.Empty)
                         .SetProperty(r => r.AiReviewedAt, DateTime.UtcNow));
@@ -135,7 +135,7 @@ public sealed class MhopContentReviewService
 
             var note = BuildNote(outcome);
             await writeDb.MhopReplies
-                .Where(r => r.Id == replyId && r.Status == MhopContentStatus.Pending && r.Content == reply.Content)
+                .Where(r => r.Id == replyId && r.Status == ContentStatus.Pending && r.Content == reply.Content)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(r => r.AiFlag, outcome.Verdict)
                     .SetProperty(r => r.AiReviewNote, note)

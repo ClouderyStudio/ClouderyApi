@@ -22,7 +22,7 @@ public class MhopReply
     /// <summary>JSON 数组：回复附图 URL 列表。</summary>
     public string Images { get; set; } = string.Empty;
 
-    /// <summary>0=待系统审核 1=审核通过 2=驳回</summary>
+    /// <summary>内容状态，见 <see cref="ContentStatus"/>。</summary>
     public int Status { get; set; }
 
     public bool IsAi { get; set; }
@@ -52,4 +52,129 @@ public class MhopReply
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public MhopPost? Post { get; set; }
+
+    // ---------------- 领域行为 ----------------
+
+    /// <summary>允许作者编辑正文的状态：待审核 / 草稿。</summary>
+    public bool IsEditable => Status is ContentStatus.Pending or ContentStatus.Draft;
+
+    /// <summary>允许作者取消审核的状态。</summary>
+    public bool CanWithdraw => Status == ContentStatus.Pending;
+
+    /// <summary>允许作者重新提交审核的状态。</summary>
+    public bool CanSubmit => Status == ContentStatus.Draft;
+
+    /// <summary>新建人类回复：进入待审核（命中敏感词时由调用方立即驳回）。</summary>
+    public static MhopReply NewAuthorReply(
+        int postId,
+        int userId,
+        bool isAnonymous,
+        ContentText content,
+        IReadOnlyCollection<string> imageUrls,
+        bool crisis)
+        => new()
+        {
+            PostId = postId,
+            UserId = userId,
+            IsAnonymous = isAnonymous,
+            Content = content.Value,
+            Images = MhopImageRefs.Serialize(imageUrls),
+            Status = ContentStatus.Pending,
+            Crisis = crisis,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+    /// <summary>
+    /// 作者编辑回复：仅待审核 / 草稿可改，写完清空 AI 初筛结论。
+    /// 待审核的回复会重新做敏感词复核（命中即驳回，未命中则重置人工理由）；草稿保持原状。
+    /// 返回本次编辑后不再被引用的图片地址，供调用方清理存储对象。
+    /// </summary>
+    public IReadOnlyList<string> ApplyAuthorEdit(
+        string? rawContent,
+        bool isAnonymous,
+        IReadOnlyCollection<string> imageUrls,
+        ContentScreening screening)
+    {
+        // 校验顺序与历史行为一致：状态 → 正文
+        if (!IsEditable) throw new DomainRuleException("已通过审核的内容不可修改，仅可删除");
+        var content = ContentText.ForReply(rawContent);
+
+        var removed = MhopImageRefs.Parse(Images).Except(imageUrls, StringComparer.Ordinal).ToList();
+        Content = content.Value;
+        IsAnonymous = isAnonymous;
+        Images = MhopImageRefs.Serialize(imageUrls);
+        Crisis = screening.Crisis;
+        ClearAiReviewState();
+
+        if (Status == ContentStatus.Pending)
+        {
+            if (screening.HasSensitiveWords) RejectBySensitiveWords(screening.SensitiveWords);
+            else ReviewNote = string.Empty;
+        }
+
+        return removed;
+    }
+
+    /// <summary>取消审核：待审核 → 草稿（作者自留，仅本人可见）。</summary>
+    public void Withdraw()
+    {
+        if (!CanWithdraw) throw new DomainRuleException("只有审核中的内容可以取消审核");
+        Status = ContentStatus.Draft;
+    }
+
+    /// <summary>重新提交审核：草稿 → 待审核，并清空上一轮审核结论。</summary>
+    public void SubmitForReview()
+    {
+        if (!CanSubmit) throw new DomainRuleException("只有草稿可以重新提交审核");
+        if (string.IsNullOrWhiteSpace(Content)) throw new DomainRuleException("回复内容不能为空");
+        ClearReviewState();
+        Status = ContentStatus.Pending;
+    }
+
+    /// <summary>人工放行（AI 自动放行走审核服务的条件更新，不经过实体）。</summary>
+    public void Publish(string? note = null)
+    {
+        Status = ContentStatus.Published;
+        ReviewNote = ContentRules.TruncateReviewNote(note);
+    }
+
+    /// <summary>人工驳回并记录理由。</summary>
+    public void Reject(string? note = null)
+    {
+        Status = ContentStatus.Rejected;
+        ReviewNote = ContentRules.TruncateReviewNote(note);
+    }
+
+    /// <summary>命中敏感词的系统拦截：直接驳回并写入拦截理由。</summary>
+    public void RejectBySensitiveWords(IReadOnlyCollection<string> words)
+        => Reject($"系统拦截：命中敏感词 {string.Join(",", words)}");
+
+    /// <summary>清空上一轮审核结论（编辑 / 重新提交后需要重新审核）。</summary>
+    public void ClearReviewState()
+    {
+        ReviewNote = string.Empty;
+        ClearAiReviewState();
+    }
+
+    /// <summary>只清 AI 初筛结论，保留人工审核理由。</summary>
+    public void ClearAiReviewState()
+    {
+        AiFlag = string.Empty;
+        AiReviewNote = string.Empty;
+        AiReviewedAt = null;
+    }
+
+    /// <summary>管理员撤回（仅 AI 回复）：正文立即对所有用户隐藏，内容与原因保留备审。</summary>
+    public void Recall(string reason)
+    {
+        Recalled = true;
+        RecallReason = ContentRules.TruncateReviewNote(reason.Trim());
+    }
+
+    /// <summary>恢复被撤回的 AI 回复，重新公开展示。</summary>
+    public void Restore()
+    {
+        Recalled = false;
+        RecallReason = string.Empty;
+    }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
@@ -47,7 +46,7 @@ public class MhopForumController : MhopControllerBase
     public async Task<IActionResult> Boards()
     {
         var counts = await _db.MhopPosts
-            .Where(p => p.Status == 1)
+            .Where(p => p.Status == ContentStatus.Published)
             .GroupBy(p => p.Board)
             .Select(g => new { Board = g.Key, Count = g.Count() })
             .ToListAsync();
@@ -68,8 +67,8 @@ public class MhopForumController : MhopControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> PublicStats() => MhopOk(new
     {
-        posts = await _db.MhopPosts.CountAsync(p => p.Status == 1),
-        replies = await _db.MhopReplies.CountAsync(r => r.Status == 1),
+        posts = await _db.MhopPosts.CountAsync(p => p.Status == ContentStatus.Published),
+        replies = await _db.MhopReplies.CountAsync(r => r.Status == ContentStatus.Published),
         users = await _db.MhopUsers.CountAsync(),
         online = _online.Count(),
     });
@@ -85,7 +84,7 @@ public class MhopForumController : MhopControllerBase
         if (page < 1) page = 1;
         size = Math.Clamp(size, 1, 50);
 
-        var query = _db.MhopPosts.Where(p => p.Status == 1);
+        var query = _db.MhopPosts.Where(p => p.Status == ContentStatus.Published);
         var trimmedKeyword = (keyword ?? string.Empty).Trim();
         if (trimmedKeyword.Length > 0)
             query = query.Where(p => p.Content.Contains(trimmedKeyword));
@@ -105,7 +104,7 @@ public class MhopForumController : MhopControllerBase
             // 最新回复：取每帖最新一条已通过且未撤回回复的时间，无回复则按发帖时间
             query = query.OrderByDescending(p =>
                 _db.MhopReplies
-                    .Where(r => r.PostId == p.Id && r.Status == 1 && !r.Recalled)
+                    .Where(r => r.PostId == p.Id && r.Status == ContentStatus.Published && !r.Recalled)
                     .Select(r => (DateTime?)r.CreatedAt)
                     .Max() ?? p.CreatedAt);
         }
@@ -143,18 +142,18 @@ public class MhopForumController : MhopControllerBase
         [FromQuery(Name = "inc_view")] string? incView = null)
     {
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
-        if (post is null || post.Status != 1)
+        if (post is null || post.Status != ContentStatus.Published)
             throw new MhopApiException(404, "帖子不存在或正在审核中");
 
         if (IsTruthy(incView))
         {
-            post.ViewCount += 1;
+            post.AddView();
             await _db.SaveChangesAsync();
         }
 
         // 已撤回的 AI 回复保留占位（正文在 _reply_out 中屏蔽），AI 回复置顶
         var replies = await _db.MhopReplies
-            .Where(r => r.PostId == postId && r.Status == 1)
+            .Where(r => r.PostId == postId && r.Status == ContentStatus.Published)
             .OrderBy(r => r.IsAi ? 0 : 1)
             .ThenBy(r => r.CreatedAt)
             .ToListAsync();
@@ -179,26 +178,13 @@ public class MhopForumController : MhopControllerBase
     public async Task<IActionResult> CreatePost([FromBody] PostIn body)
     {
         var current = await _current.RequirePhoneVerifiedAsync();
-        var content = (body.Content ?? string.Empty).Trim();
-        if (content.Length == 0) throw new MhopApiException(400, "内容不能为空");
-        if (content.Length > 2000) throw new MhopApiException(400, "内容不能超过 2000 字");
-        if (string.IsNullOrWhiteSpace(body.Board) || !MhopBoards.Slugs.Contains(body.Board))
-            throw new MhopApiException(400, "请选择板块");
+        var content = ContentText.ForPost(body.Content);
+        var board = BoardSlug.Create(body.Board);
 
-        var crisis = MhopModeration.DetectCrisis(content);
-        var images = NormalizeImages(body.Images);
-        var post = new MhopPost
-        {
-            // 匿名仅对前台脱敏；user_id 始终留存，供后台审核与追责
-            UserId = current.Id,
-            IsAnonymous = body.IsAnonymous,
-            Content = content,
-            Board = body.Board,
-            Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty,
-            Status = MhopContentStatus.Pending, // 先送 AI 自动审核：通过即公开，否则转人工
-            Crisis = crisis,
-            CreatedAt = DateTime.UtcNow,
-        };
+        var crisis = MhopModeration.DetectCrisis(content.Value);
+        var images = MhopImageRefs.Normalize(body.Images);
+        // 先送 AI 自动审核：通过即公开，否则转人工
+        var post = MhopPost.NewAuthorPost(current.Id, body.IsAnonymous, content, board, images, crisis);
         _db.MhopPosts.Add(post);
         await _db.SaveChangesAsync();
 
@@ -215,35 +201,21 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequirePhoneVerifiedAsync();
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         // 草稿仅作者可见，禁止他人（含作者本人）对其回复
-        if (post is null || post.Status is StatusRejected or StatusDraft)
+        if (post is null || post.Status is ContentStatus.Rejected or ContentStatus.Draft)
             throw new MhopApiException(404, "帖子不存在或已被移除");
 
-        var content = (body.Content ?? string.Empty).Trim();
-        if (content.Length == 0) throw new MhopApiException(400, "回复内容不能为空");
-        if (content.Length > 1000) throw new MhopApiException(400, "回复内容不能超过 1000 字");
-
-        var crisis = MhopModeration.DetectCrisis(content);
-        var sensitiveWords = MhopModeration.HitSensitive(content);
-        var images = NormalizeImages(body.Images);
-        var reply = new MhopReply
-        {
-            PostId = postId,
-            UserId = current.Id,
-            IsAnonymous = body.IsAnonymous,
-            Content = content,
-            Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty,
-            Crisis = crisis,
-            Status = sensitiveWords.Count > 0 ? 2 : 0, // 命中违规词直接拦截，否则待审核
-            ReviewNote = sensitiveWords.Count > 0
-                ? Truncate($"系统拦截：命中敏感词 {string.Join(",", sensitiveWords)}", 255)
-                : string.Empty,
-            CreatedAt = DateTime.UtcNow,
-        };
+        var content = ContentText.ForReply(body.Content);
+        var crisis = MhopModeration.DetectCrisis(content.Value);
+        var sensitiveWords = MhopModeration.HitSensitive(content.Value);
+        var images = MhopImageRefs.Normalize(body.Images);
+        var reply = MhopReply.NewAuthorReply(postId, current.Id, body.IsAnonymous, content, images, crisis);
+        // 命中违规词直接拦截，否则待审核
+        if (sensitiveWords.Count > 0) reply.RejectBySensitiveWords(sensitiveWords);
         _db.MhopReplies.Add(reply);
         await _db.SaveChangesAsync();
 
         // 命中敏感词已直接驳回；其余送 AI 自动审核，通过即公开，否则转人工
-        if (reply.Status == StatusPending) _review.QueueReplyReview(reply.Id);
+        if (reply.Status == ContentStatus.Pending) _review.QueueReplyReview(reply.Id);
 
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopStatus(201, ToReplyOut(reply, users, null, null));
@@ -259,15 +231,15 @@ public class MhopForumController : MhopControllerBase
         if (body.TargetType == "post")
         {
             var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == body.TargetId);
-            if (post is null || post.Status is StatusRejected or StatusDraft)
+            if (post is null || post.Status is ContentStatus.Rejected or ContentStatus.Draft)
                 throw new MhopApiException(404, "内容不存在或已被移除");
         }
         else
         {
             var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == body.TargetId);
-            if (reply is null || reply.Status == 2)
+            if (reply is null || reply.Status == ContentStatus.Rejected)
                 throw new MhopApiException(404, "内容不存在或已被移除");
-            if (reply.Status != 1 || reply.Recalled)
+            if (reply.Status != ContentStatus.Published || reply.Recalled)
                 throw new MhopApiException(400, "该回复暂不可点赞");
         }
 
@@ -308,12 +280,6 @@ public class MhopForumController : MhopControllerBase
 
     // ---------------- 作者自管理（个人主页：查看 / 编辑 / 撤回审核 / 重新提交 / 删除） ----------------
 
-    /// <summary>内容状态：0=待审核 1=已通过 2=已驳回 3=草稿（作者取消审核后自留，仅本人可见）。</summary>
-    private const int StatusPending = 0;
-    private const int StatusPublished = 1;
-    private const int StatusRejected = 2;
-    private const int StatusDraft = 3;
-
     /// <summary>个人主页统计：按状态汇总我的帖子 / 回复数量。</summary>
     [HttpGet("mine/summary")]
     public async Task<IActionResult> MySummary()
@@ -331,18 +297,18 @@ public class MhopForumController : MhopControllerBase
             posts = new
             {
                 total = postMap.Values.Sum(),
-                pending = postMap.GetValueOrDefault(StatusPending, 0),
-                published = postMap.GetValueOrDefault(StatusPublished, 0),
-                rejected = postMap.GetValueOrDefault(StatusRejected, 0),
-                draft = postMap.GetValueOrDefault(StatusDraft, 0),
+                pending = postMap.GetValueOrDefault(ContentStatus.Pending, 0),
+                published = postMap.GetValueOrDefault(ContentStatus.Published, 0),
+                rejected = postMap.GetValueOrDefault(ContentStatus.Rejected, 0),
+                draft = postMap.GetValueOrDefault(ContentStatus.Draft, 0),
             },
             replies = new
             {
                 total = replyMap.Values.Sum(),
-                pending = replyMap.GetValueOrDefault(StatusPending, 0),
-                published = replyMap.GetValueOrDefault(StatusPublished, 0),
-                rejected = replyMap.GetValueOrDefault(StatusRejected, 0),
-                draft = replyMap.GetValueOrDefault(StatusDraft, 0),
+                pending = replyMap.GetValueOrDefault(ContentStatus.Pending, 0),
+                published = replyMap.GetValueOrDefault(ContentStatus.Published, 0),
+                rejected = replyMap.GetValueOrDefault(ContentStatus.Rejected, 0),
+                draft = replyMap.GetValueOrDefault(ContentStatus.Draft, 0),
             },
         });
     }
@@ -359,7 +325,7 @@ public class MhopForumController : MhopControllerBase
         var query = _db.MhopPosts.Where(p => p.UserId == current.Id);
         if (status.HasValue)
         {
-            if (status.Value is < StatusPending or > StatusDraft) throw new MhopApiException(400, "非法状态");
+            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new MhopApiException(400, "非法状态");
             query = query.Where(p => p.Status == status.Value);
         }
 
@@ -386,15 +352,15 @@ public class MhopForumController : MhopControllerBase
                 crisis = p.Crisis,
                 is_anonymous = p.IsAnonymous,
                 images = ParseImages(p.Images),
-                reply_count = postReplies.Count(r => r.Status == StatusPublished && !r.Recalled),
+                reply_count = postReplies.Count(r => r.Status == ContentStatus.Published && !r.Recalled),
                 view_count = p.ViewCount,
                 like_count = likeCounts.GetValueOrDefault(p.Id, 0),
                 review_note = p.ReviewNote ?? string.Empty,
                 ai_flag = p.AiFlag ?? string.Empty,
                 ai_review_note = p.AiReviewNote ?? string.Empty,
-                editable = p.Status is StatusPending or StatusDraft,
-                can_withdraw = p.Status == StatusPending,
-                can_submit = p.Status == StatusDraft,
+                editable = p.IsEditable,
+                can_withdraw = p.CanWithdraw,
+                can_submit = p.CanSubmit,
                 created_at = p.CreatedAt,
             };
         }).ToList();
@@ -414,7 +380,7 @@ public class MhopForumController : MhopControllerBase
         var query = _db.MhopReplies.Where(r => r.UserId == current.Id);
         if (status.HasValue)
         {
-            if (status.Value is < StatusPending or > StatusDraft) throw new MhopApiException(400, "非法状态");
+            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new MhopApiException(400, "非法状态");
             query = query.Where(r => r.Status == status.Value);
         }
 
@@ -447,9 +413,9 @@ public class MhopForumController : MhopControllerBase
                 review_note = r.ReviewNote ?? string.Empty,
                 ai_flag = r.AiFlag ?? string.Empty,
                 ai_review_note = r.AiReviewNote ?? string.Empty,
-                editable = r.Status is StatusPending or StatusDraft,
-                can_withdraw = r.Status == StatusPending,
-                can_submit = r.Status == StatusDraft,
+                editable = r.IsEditable,
+                can_withdraw = r.CanWithdraw,
+                can_submit = r.CanSubmit,
                 created_at = r.CreatedAt,
             };
         }).ToList();
@@ -464,31 +430,14 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null || post.UserId != current.Id) throw new MhopApiException(404, "帖子不存在");
-        if (post.Status is not (StatusPending or StatusDraft))
-            throw new MhopApiException(400, "已通过审核的内容不可修改，仅可删除");
 
-        var content = (body.Content ?? string.Empty).Trim();
-        if (content.Length == 0) throw new MhopApiException(400, "内容不能为空");
-        if (content.Length > 2000) throw new MhopApiException(400, "内容不能超过 2000 字");
-        if (string.IsNullOrWhiteSpace(body.Board) || !MhopBoards.Slugs.Contains(body.Board))
-            throw new MhopApiException(400, "请选择板块");
-
-        post.Content = content;
-        post.Board = body.Board;
-        post.IsAnonymous = body.IsAnonymous;
-        var images = NormalizeImages(body.Images);
+        var images = MhopImageRefs.Normalize(body.Images);
         // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
-        var removedImages = ParseImages(post.Images).Except(images, StringComparer.Ordinal).ToList();
-        post.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
-        post.Crisis = MhopModeration.DetectCrisis(content);
-        post.ReviewNote = string.Empty;
-        post.AiFlag = string.Empty;
-        post.AiReviewNote = string.Empty;
-        post.AiReviewedAt = null;
+        var removedImages = post.ApplyAuthorEdit(body.Content, body.Board, body.IsAnonymous, images, Screen(body.Content));
 
         await _db.SaveChangesAsync();
         // 正文已变更：待审核内容重新送 AI 审核；草稿等作者重新提交时再审
-        if (post.Status == StatusPending) _review.QueuePostReview(post.Id);
+        if (post.Status == ContentStatus.Pending) _review.QueuePostReview(post.Id);
         await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
 
         return MhopOk(new { ok = true, status = post.Status, crisis = post.Crisis });
@@ -501,9 +450,7 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null || post.UserId != current.Id) throw new MhopApiException(404, "帖子不存在");
-        if (post.Status != StatusPending) throw new MhopApiException(400, "只有审核中的内容可以取消审核");
-
-        post.Status = StatusDraft;
+        post.Withdraw();
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true, status = post.Status });
     }
@@ -515,14 +462,7 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null || post.UserId != current.Id) throw new MhopApiException(404, "帖子不存在");
-        if (post.Status != StatusDraft) throw new MhopApiException(400, "只有草稿可以重新提交审核");
-        if (string.IsNullOrWhiteSpace(post.Content)) throw new MhopApiException(400, "内容不能为空");
-
-        post.Status = StatusPending;
-        post.ReviewNote = string.Empty;
-        post.AiFlag = string.Empty;
-        post.AiReviewNote = string.Empty;
-        post.AiReviewedAt = null;
+        post.SubmitForReview();
         await _db.SaveChangesAsync();
         _review.QueuePostReview(post.Id);
         return MhopOk(new { ok = true, status = post.Status });
@@ -547,35 +487,13 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
-        if (reply.Status is not (StatusPending or StatusDraft))
-            throw new MhopApiException(400, "已通过审核的内容不可修改，仅可删除");
 
-        var content = (body.Content ?? string.Empty).Trim();
-        if (content.Length == 0) throw new MhopApiException(400, "回复内容不能为空");
-        if (content.Length > 1000) throw new MhopApiException(400, "回复内容不能超过 1000 字");
-
-        reply.Content = content;
-        reply.IsAnonymous = body.IsAnonymous;
-        var images = NormalizeImages(body.Images);
+        var images = MhopImageRefs.Normalize(body.Images);
         // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
-        var removedImages = ParseImages(reply.Images).Except(images, StringComparer.Ordinal).ToList();
-        reply.Images = images.Count > 0 ? JsonSerializer.Serialize(images) : string.Empty;
-        reply.Crisis = MhopModeration.DetectCrisis(content);
-        reply.AiFlag = string.Empty;
-        reply.AiReviewNote = string.Empty;
-        reply.AiReviewedAt = null;
-
-        if (reply.Status == StatusPending)
-        {
-            var sensitiveWords = MhopModeration.HitSensitive(content);
-            reply.Status = sensitiveWords.Count > 0 ? StatusRejected : StatusPending;
-            reply.ReviewNote = sensitiveWords.Count > 0
-                ? Truncate($"系统拦截：命中敏感词 {string.Join(",", sensitiveWords)}", 255)
-                : string.Empty;
-        }
+        var removedImages = reply.ApplyAuthorEdit(body.Content, body.IsAnonymous, images, Screen(body.Content));
 
         await _db.SaveChangesAsync();
-        if (reply.Status == StatusPending) _review.QueueReplyReview(reply.Id);
+        if (reply.Status == ContentStatus.Pending) _review.QueueReplyReview(reply.Id);
         await _uploads.DeleteAsync(removedImages, HttpContext.RequestAborted);
         return MhopOk(new { ok = true, status = reply.Status });
     }
@@ -587,9 +505,7 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
-        if (reply.Status != StatusPending) throw new MhopApiException(400, "只有审核中的内容可以取消审核");
-
-        reply.Status = StatusDraft;
+        reply.Withdraw();
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true, status = reply.Status });
     }
@@ -601,14 +517,7 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.RequireAsync();
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
-        if (reply.Status != StatusDraft) throw new MhopApiException(400, "只有草稿可以重新提交审核");
-        if (string.IsNullOrWhiteSpace(reply.Content)) throw new MhopApiException(400, "回复内容不能为空");
-
-        reply.Status = StatusPending;
-        reply.ReviewNote = string.Empty;
-        reply.AiFlag = string.Empty;
-        reply.AiReviewNote = string.Empty;
-        reply.AiReviewedAt = null;
+        reply.SubmitForReview();
         await _db.SaveChangesAsync();
         _review.QueueReplyReview(reply.Id);
         return MhopOk(new { ok = true, status = reply.Status });
@@ -634,15 +543,14 @@ public class MhopForumController : MhopControllerBase
         return value.Trim().ToLowerInvariant() is "1" or "true" or "yes" or "on";
     }
 
-    private static List<string> NormalizeImages(IEnumerable<string>? images)
-        => images is null
-            ? []
-            : images.Where(u => !string.IsNullOrWhiteSpace(u)).Take(9).ToList();
-
     private static List<string> ParseImages(string? raw) => MhopImageRefs.Parse(raw);
 
-    private static string Truncate(string value, int maxLength)
-        => value.Length <= maxLength ? value : value[..maxLength];
+    /// <summary>内容安全初筛：危机信号 + 敏感词（领域方法据此改变状态）。</summary>
+    private static ContentScreening Screen(string? rawContent)
+    {
+        var content = (rawContent ?? string.Empty).Trim();
+        return new ContentScreening(MhopModeration.DetectCrisis(content), MhopModeration.HitSensitive(content));
+    }
 
     private static (string Author, string Avatar, string Badge) AuthorForPost(
         MhopPost post, IReadOnlyDictionary<int, MhopUser> users)
@@ -742,7 +650,7 @@ public class MhopForumController : MhopControllerBase
         IReadOnlyDictionary<int, int>? likeCounts,
         IReadOnlySet<int>? liked)
     {
-        var visible = replies.Where(r => r.Status == 1 && !r.Recalled).ToList();
+        var visible = replies.Where(r => r.Status == ContentStatus.Published && !r.Recalled).ToList();
         var last = visible.OrderByDescending(r => r.CreatedAt).FirstOrDefault();
         var (author, avatar, badge) = AuthorForPost(post, users);
         var lastAuthor = last is null ? string.Empty : AuthorForReply(last, users).Author;

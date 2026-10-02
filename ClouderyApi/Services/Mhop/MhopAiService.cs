@@ -376,7 +376,7 @@ public sealed class MhopAiService
 
                 // 生成期间帖子可能已被驳回或删除，或已存在回复：放弃写入
                 var post = await db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
-                if (post is null || post.Status != 1)
+                if (post is null || post.Status != ContentStatus.Published)
                 {
                     _logger.LogInformation("帖子 {PostId} 已不在公开状态，跳过 AI 自动回复", postId);
                     return;
@@ -393,7 +393,7 @@ public sealed class MhopAiService
                     UserId = null,
                     IsAnonymous = true,
                     Content = text,
-                    Status = 1,
+                    Status = ContentStatus.Published,
                     IsAi = true,
                     Crisis = crisis,
                     CreatedAt = DateTime.UtcNow,

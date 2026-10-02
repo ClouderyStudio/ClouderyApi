@@ -47,16 +47,20 @@ public class MhopAdminController : MhopControllerBase
         {
             users = await _db.MhopUsers.CountAsync(),
             // 草稿（status=3）是作者私有内容，不计入后台统计
-            posts = await _db.MhopPosts.CountAsync(p => p.Status != 3),
-            replies = await _db.MhopReplies.CountAsync(r => r.Status != 3),
+            posts = await _db.MhopPosts.CountAsync(p => p.Status != ContentStatus.Draft),
+            replies = await _db.MhopReplies.CountAsync(r => r.Status != ContentStatus.Draft),
             assessments = await _db.MhopAssessments.CountAsync(),
             ai_logs = await _db.MhopAiLogs.CountAsync(),
-            pending_posts = await _db.MhopPosts.CountAsync(p => p.Status == 0),
-            crisis_posts = await _db.MhopPosts.CountAsync(p => p.Crisis && p.Status != 2 && p.Status != 3),
-            pending_replies = await _db.MhopReplies.CountAsync(r => r.Status == 0 && !r.IsAi),
-            rejected_replies = await _db.MhopReplies.CountAsync(r => r.Status == 2),
-            ai_flagged_posts = await _db.MhopPosts.CountAsync(p => p.AiFlag != string.Empty && p.Status != 3),
-            ai_flagged_replies = await _db.MhopReplies.CountAsync(r => r.AiFlag != string.Empty && r.Status != 3),
+            pending_posts = await _db.MhopPosts.CountAsync(p => p.Status == ContentStatus.Pending),
+            crisis_posts = await _db.MhopPosts.CountAsync(p => p.Crisis
+                && p.Status != ContentStatus.Rejected && p.Status != ContentStatus.Draft),
+            pending_replies = await _db.MhopReplies.CountAsync(
+                r => r.Status == ContentStatus.Pending && !r.IsAi),
+            rejected_replies = await _db.MhopReplies.CountAsync(r => r.Status == ContentStatus.Rejected),
+            ai_flagged_posts = await _db.MhopPosts.CountAsync(
+                p => p.AiFlag != string.Empty && p.Status != ContentStatus.Draft),
+            ai_flagged_replies = await _db.MhopReplies.CountAsync(
+                r => r.AiFlag != string.Empty && r.Status != ContentStatus.Draft),
             new_posts_24h = await _db.MhopPosts.CountAsync(p => p.CreatedAt >= since),
             new_users_24h = await _db.MhopUsers.CountAsync(u => u.CreatedAt >= since),
             online = _online.Count(),
@@ -68,7 +72,7 @@ public class MhopAdminController : MhopControllerBase
     public async Task<IActionResult> ListPosts([FromQuery] int? status = null, [FromQuery] string? flag = null)
     {
         // 草稿不对后台展示（作者主动取消审核后的私有内容）
-        var query = _db.MhopPosts.Where(p => p.Status != 3);
+        var query = _db.MhopPosts.Where(p => p.Status != ContentStatus.Draft);
         if (status.HasValue) query = query.Where(p => p.Status == status.Value);
         // flag：按 AI 初筛结论过滤（suspect / violation / unavailable）
         if (!string.IsNullOrWhiteSpace(flag)) query = query.Where(p => p.AiFlag == flag);
@@ -121,8 +125,8 @@ public class MhopAdminController : MhopControllerBase
             "reject" => false,
             _ => throw new MhopApiException(400, "非法操作"),
         };
-        post.Status = approved ? 1 : 2;
-        post.ReviewNote = Truncate(body.Note ?? string.Empty, 255);
+        if (approved) post.Publish(body.Note);
+        else post.Reject(body.Note);
         await _db.SaveChangesAsync();
 
         // AI 自动回复只在「首次通过审核」时生成；隐藏后重新展示沿用已有回复，不重复调用大模型。
@@ -139,7 +143,8 @@ public class MhopAdminController : MhopControllerBase
     {
         var post = await _db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null) throw new MhopApiException(404, "帖子不存在");
-        if (post.Status != 1) throw new MhopApiException(400, "仅公开中的帖子可以生成 AI 自动回复");
+        if (post.Status != ContentStatus.Published)
+            throw new MhopApiException(400, "仅公开中的帖子可以生成 AI 自动回复");
 
         await _ai.RegenerateForumReplyAsync(post.Id, post.Content, post.Crisis);
         return MhopOk(new { ok = true });
@@ -161,7 +166,7 @@ public class MhopAdminController : MhopControllerBase
     [MhopPerm(MhopAdminPermissions.Review)]
     public async Task<IActionResult> ListReplies([FromQuery] int? status = null, [FromQuery] string? flag = null)
     {
-        var query = _db.MhopReplies.Where(r => r.Status != 3);
+        var query = _db.MhopReplies.Where(r => r.Status != ContentStatus.Draft);
         if (status.HasValue) query = query.Where(r => r.Status == status.Value);
         // flag：按 AI 初筛结论过滤（suspect / violation / unavailable）
         if (!string.IsNullOrWhiteSpace(flag)) query = query.Where(r => r.AiFlag == flag);
@@ -209,13 +214,14 @@ public class MhopAdminController : MhopControllerBase
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null) throw new MhopApiException(404, "回复不存在");
 
-        reply.Status = body.Action switch
+        var approved = body.Action switch
         {
-            "approve" => 1,
-            "reject" => 2,
+            "approve" => true,
+            "reject" => false,
             _ => throw new MhopApiException(400, "非法操作"),
         };
-        reply.ReviewNote = Truncate(body.Note ?? string.Empty, 255);
+        if (approved) reply.Publish(body.Note);
+        else reply.Reject(body.Note);
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true });
     }
@@ -232,8 +238,7 @@ public class MhopAdminController : MhopControllerBase
         var reason = (body.Reason ?? string.Empty).Trim();
         if (reason.Length == 0) throw new MhopApiException(400, "请填写撤回原因");
 
-        reply.Recalled = true;
-        reply.RecallReason = Truncate(reason, 255);
+        reply.Recall(reason);
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true });
     }
@@ -247,8 +252,7 @@ public class MhopAdminController : MhopControllerBase
         if (reply is null) throw new MhopApiException(404, "回复不存在");
         if (!reply.IsAi) throw new MhopApiException(400, "仅支持恢复 AI 回复");
 
-        reply.Recalled = false;
-        reply.RecallReason = string.Empty;
+        reply.Restore();
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true });
     }

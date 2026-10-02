@@ -1,4 +1,5 @@
 using ClouderyApi.Data;
+using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Services.Mhop;

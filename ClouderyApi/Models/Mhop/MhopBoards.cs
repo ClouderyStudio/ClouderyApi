@@ -1,4 +1,4 @@
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Models.Mhop;
 
 /// <summary>论坛板块（心理场景适配）。slug 入库，颜色仅用于前端展示。</summary>
 public sealed record MhopBoard(string Slug, string Name, string Color, string Desc);

@@ -67,7 +67,7 @@ public static class MhopSeeder
                 IsAnonymous = true,
                 Content = WelcomePost,
                 Board = "stress",
-                Status = 1,
+                Status = ContentStatus.Published,
                 Crisis = false,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -79,7 +79,7 @@ public static class MhopSeeder
                 UserId = null,
                 IsAnonymous = true,
                 Content = WelcomeAiReply,
-                Status = 1,
+                Status = ContentStatus.Published,
                 IsAi = true,
                 CreatedAt = DateTime.UtcNow,
             });
