@@ -1,33 +1,28 @@
-using ClouderyApi.Data;
-using ClouderyApi.Models.Zhuxs;
 using ClouderyApi.Models.Zhuxs.DTOs;
 using ClouderyApi.Controllers.Filters;
+using ClouderyApi.UseCases.Zhuxs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Controllers.Zhuxs;
 
 [Route("zhuxs/[controller]")]
 [ApiController]
 [Authorize]
-public class TermsController(ClouderyApiContext context) : ControllerBase
+public class TermsController(TermsAppService terms) : ControllerBase
 {
     [HttpGet]
     [AllowAnonymous]
-    public async Task<ActionResult<IEnumerable<Term>>> GetZhuxsTerm()
+    public async Task<ActionResult<IEnumerable<TermOut>>> GetZhuxsTerm()
     {
-        return await context.ZhuxsTerms
-            .OrderByDescending(x => x.RecordDate)
-            .Take(1000)
-            .ToListAsync();
+        return await terms.ListAsync();
     }
 
     [HttpGet("{id}")]
     [AllowAnonymous]
-    public async Task<ActionResult<Term>> GetZhuxsTerm(string id)
+    public async Task<ActionResult<TermOut>> GetZhuxsTerm(string id)
     {
-        var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);
+        var zhuxsTerm = await terms.FindAsync(id);
         if (zhuxsTerm == null) return NotFound();
         return zhuxsTerm;
     }
@@ -39,56 +34,33 @@ public class TermsController(ClouderyApiContext context) : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "参数校验失败" });
 
-        var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);
-        if (zhuxsTerm == null) return NotFound();
-
-        zhuxsTerm.RecordDate = dto.RecordDate;
-        zhuxsTerm.Description = dto.Description;
-        zhuxsTerm.Information = dto.Information;
-        zhuxsTerm.Files = dto.Files;
-
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (await context.ZhuxsTerms.AnyAsync(e => e.Id == id)) throw;
-            return NotFound();
-        }
-        return NoContent();
+        return await terms.UpdateAsync(id, dto) ? NoContent() : NotFound();
     }
 
     [HttpPost]
     [AdminOnly]
-    public async Task<ActionResult<Term>> PostZhuxsTerm([FromBody] TermDto dto)
+    public async Task<ActionResult<TermOut>> PostZhuxsTerm([FromBody] TermDto dto)
     {
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "参数校验失败" });
 
-        var zhuxsTerm = new Term
+        TermOut created;
+        try
         {
-            Id = Guid.NewGuid().ToString("N"),
-            RecordDate = dto.RecordDate,
-            Description = dto.Description,
-            Information = dto.Information,
-            Files = dto.Files
-        };
-
-        context.ZhuxsTerms.Add(zhuxsTerm);
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateException)
+            created = await terms.CreateAsync(dto);
+        }
+        catch (ZhuxsWriteConflictException)
         {
             return Conflict(new { success = false, message = "记录冲突" });
         }
-        return CreatedAtAction("GetZhuxsTerm", new { id = zhuxsTerm.Id }, zhuxsTerm);
+
+        return CreatedAtAction("GetZhuxsTerm", new { id = created.Id }, created);
     }
 
     [HttpDelete("{id}")]
     [AdminOnly]
     public async Task<IActionResult> DeleteZhuxsTerm(string id)
     {
-        var zhuxsTerm = await context.ZhuxsTerms.FindAsync(id);
-        if (zhuxsTerm == null) return NotFound();
-        context.ZhuxsTerms.Remove(zhuxsTerm);
-        await context.SaveChangesAsync();
-        return NoContent();
+        return await terms.DeleteAsync(id) ? NoContent() : NotFound();
     }
 }
