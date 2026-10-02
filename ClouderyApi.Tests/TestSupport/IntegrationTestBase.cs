@@ -1,5 +1,6 @@
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.AspNetCore.Mvc.Testing;
+using MySql.Data.MySqlClient;
 
 namespace ClouderyApi.Tests;
 
@@ -31,6 +32,10 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     {
         Client?.Dispose();
         Factory?.Dispose();
+        // 每个测试类自建一个一次性库和一个真实宿主，连接池按连接串（含库名）区分；
+        // 不主动清理的话，几十个类留下的空闲连接会一直挂在 MySQL 上，
+        // CI 上默认 max_connections=151 会被撞穿（Too many connections）。
+        MySqlConnection.ClearAllPools();
         return string.IsNullOrEmpty(_databaseName)
             ? Task.CompletedTask
             : MySqlTestServer.DropDatabaseAsync(_databaseName);
