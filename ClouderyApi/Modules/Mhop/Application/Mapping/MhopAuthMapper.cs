@@ -2,7 +2,7 @@ using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 
-namespace ClouderyApi.UseCases.Mhop.Mapping;
+namespace ClouderyApi.Modules.Mhop.Application.Mapping;
 
 /// <summary>
 /// MHOP 认证相关的实体 → 输出 DTO 纯映射。赋值顺序与 <see cref="UserOut"/> / <see cref="TokenOut"/>

@@ -6,7 +6,7 @@ using ClouderyApi.Services.Mhop;
 
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 漂流瓶领域服务：投瓶/捞瓶/匿名对话的全部业务规则。

@@ -3,10 +3,10 @@ using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
-using ClouderyApi.UseCases.Mhop.Mapping;
+using ClouderyApi.Modules.Mhop.Application.Mapping;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// MHOP 管理后台用例编排：数据看板、帖子巡检、回复审核、AI 回复重新生成、用户与权限、AI 交互日志。

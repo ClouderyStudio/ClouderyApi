@@ -2,7 +2,7 @@ using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 
-namespace ClouderyApi.UseCases.Mhop.Mapping;
+namespace ClouderyApi.Modules.Mhop.Application.Mapping;
 
 /// <summary>
 /// 管理后台响应映射（纯函数）：帖子 / 回复 / 用户 / AI 日志实体 → 输出 DTO。

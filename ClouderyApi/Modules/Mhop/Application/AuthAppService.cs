@@ -6,11 +6,11 @@ using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
-using ClouderyApi.UseCases.Mhop.Mapping;
+using ClouderyApi.Modules.Mhop.Application.Mapping;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// MHOP 认证用例编排：注册 / 登录 / 邮箱验证码 / 资料与手机号维护 / Casdoor 统一身份。

@@ -1,9 +1,10 @@
 using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
+using ClouderyApi.Services.Mhop;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 内容 AI 自动审核调度：帖子 / 回复 / 漂流瓶瓶身 / 漂流瓶会话消息。

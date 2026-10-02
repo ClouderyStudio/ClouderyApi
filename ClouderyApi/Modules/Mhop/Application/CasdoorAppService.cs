@@ -4,7 +4,7 @@ using Casdoor.Client;
 using ClouderyApi.Services.Mhop;
 using Microsoft.Extensions.Options;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// Casdoor 统一身份认证（OAuth2 授权码 + OIDC）适配层：复用项目根 Casdoor 配置，

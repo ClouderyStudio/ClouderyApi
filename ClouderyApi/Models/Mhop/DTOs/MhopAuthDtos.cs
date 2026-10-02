@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 using ClouderyApi.Services.Mhop;
-using ClouderyApi.UseCases.Mhop.Mapping;
+using ClouderyApi.Modules.Mhop.Application.Mapping;
 using ClouderyApi.Modules.Mhop.Domain;
 
 namespace ClouderyApi.Models.Mhop.DTOs;

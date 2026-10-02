@@ -1,4 +1,4 @@
-using ClouderyApi.UseCases.Mhop;
+using ClouderyApi.Modules.Mhop.Application;
 using ClouderyApi.Models.Mhop.DTOs;
 using Microsoft.AspNetCore.Mvc;
 

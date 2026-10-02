@@ -2,6 +2,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
 using Microsoft.EntityFrameworkCore;
 
+using ClouderyApi.Modules.Mhop.Application;
 namespace ClouderyApi.Services.Mhop;
 
 /// <summary>

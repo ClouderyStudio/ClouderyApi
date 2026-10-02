@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 using ClouderyApi.Shared.Exceptions;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 心理评估用例编排：量表目录、作答计分 → AI 解读 → 可选云端保存 / 历史查询。

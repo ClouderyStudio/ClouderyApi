@@ -2,7 +2,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 内容删除的公共实现：作者自助删除与管理员删除共用同一套回收逻辑，避免两处实现漂移导致漏清数据

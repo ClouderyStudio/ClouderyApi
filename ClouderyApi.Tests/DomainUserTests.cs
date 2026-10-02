@@ -2,6 +2,7 @@ using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Services.Mhop;
 
+using ClouderyApi.Modules.Mhop.Application;
 namespace ClouderyApi.Tests;
 
 /// <summary>

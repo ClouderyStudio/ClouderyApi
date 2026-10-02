@@ -3,10 +3,10 @@ using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
-using ClouderyApi.UseCases.Mhop.Mapping;
+using ClouderyApi.Modules.Mhop.Application.Mapping;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.UseCases.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 论坛互助用例编排：板块 / 统计 / 帖子列表与详情 / 发帖回帖 / 点赞 / 作者自管理。

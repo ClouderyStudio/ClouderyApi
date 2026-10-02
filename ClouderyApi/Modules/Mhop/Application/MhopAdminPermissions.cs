@@ -1,6 +1,6 @@
 using ClouderyApi.Modules.Mhop.Domain;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 后台模块级权限门面：权限码目录与解析规则已下沉到领域值对象

@@ -2,8 +2,9 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
 using ClouderyApi.Shared.Exceptions;
+using ClouderyApi.Services.Mhop;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Modules.Mhop.Application;
 
 /// <summary>
 /// 图片上传（头像、帖子/回复图片）。对应 Python 后端的 routers/upload.py。
