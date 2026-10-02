@@ -1,6 +1,6 @@
 using ClouderyApi.Controllers.Filters;
 using ClouderyApi.Models.Cloudery.DTOs;
-using ClouderyApi.Services.Cloudery;
+using ClouderyApi.UseCases.Cloudery;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClouderyApi.Controllers.Cloudery;
@@ -11,7 +11,7 @@ namespace ClouderyApi.Controllers.Cloudery;
 /// </summary>
 [ApiController]
 [Route("exam/result-analysis")]
-public sealed class ResultAnalysisController(ResultAnalysisService service) : ControllerBase
+public sealed class ResultAnalysisController(ResultAnalysisAppService app) : ControllerBase
 {
     /// <summary>解读一份测评结果；模型不可用时返回本地兜底文本（engine=local），不会以 5xx 结束。</summary>
     [HttpPost]
@@ -19,12 +19,12 @@ public sealed class ResultAnalysisController(ResultAnalysisService service) : Co
     public async Task<ActionResult<ResultAnalysisOut>> Analyze(
         [FromBody] ResultAnalysisIn body, CancellationToken cancellationToken)
     {
-        if (body is null || string.IsNullOrWhiteSpace(body.TestId))
+        var result = await app.AnalyzeAsync(body, cancellationToken);
+        if (result is null)
         {
             return BadRequest(new { success = false, message = "缺少量表标识（testId）" });
         }
 
-        var result = await service.AnalyzeAsync(body, cancellationToken);
         return Ok(result);
     }
 }
