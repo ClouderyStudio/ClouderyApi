@@ -27,7 +27,6 @@ public sealed class BottleAppService
     public const string AdminFilterPending = "pending";
 
     private readonly MhopDbContext _db;
-    private readonly MhopContentReviewService _review;
     private readonly ILogger<BottleAppService> _logger;
 
     // 频控防并发闸门：单实例部署下把同一用户的投瓶/捞瓶/发消息、同一瓶子的举报计数串行化，
@@ -43,11 +42,9 @@ public sealed class BottleAppService
 
     public BottleAppService(
         MhopDbContext db,
-        MhopContentReviewService review,
         ILogger<BottleAppService> logger)
     {
         _db = db;
-        _review = review;
         _logger = logger;
     }
 
@@ -73,13 +70,13 @@ public sealed class BottleAppService
                 throw new MhopApiException(429, $"今天已经扔了 {ThrowDailyLimit} 个瓶子，明天再来吧");
 
             var now = DateTime.UtcNow;
-            // 先送 AI 自动审核：通过后自动放入海中，未通过则停留待审核并转人工
+            // 先送 AI 自动审核：Throw 登记 BottleThrown，SaveChanges 提交后由领域事件排队初筛；
+            // 通过即自动放入海中，未通过则停留待审核并转人工。
             var bottle = MhopBottle.Throw(user.Id, content, MhopModeration.DetectCrisis(content), now);
             _db.MhopBottles.Add(bottle);
             await _db.SaveChangesAsync();
             _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, bottle.Crisis);
 
-            _review.QueueBottleReview(bottle.Id);
             return bottle;
         }
         finally
@@ -242,12 +239,12 @@ public sealed class BottleAppService
                 throw new MhopApiException(429, "发送太频繁了，稍后再试");
 
             var now = DateTime.UtcNow;
+            // Create 登记 BottleMessageSent，SaveChanges 提交后由领域事件排队送 AI 初筛
             var message = MhopBottleMessage.Create(bottle.Id, user.Id, content, MhopModeration.DetectCrisis(content), now);
             _db.MhopBottleMessages.Add(message);
             bottle.TouchLastMessage(now);
             await _db.SaveChangesAsync();
 
-            _review.QueueMessageReview(message.Id);
             return message;
         }
         finally

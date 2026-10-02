@@ -86,6 +86,10 @@ builder.Services.AddSingleton<IDomainEventHandler<PostSubmittedForReview>, PostS
 builder.Services.AddSingleton<IDomainEventHandler<ReplySubmittedForReview>, ReplySubmittedForReviewHandler>();
 builder.Services.AddSingleton<IDomainEventHandler<PostPublished>, PostPublishedHandler>();
 
+// 瓶子侧订阅者（依赖均为 Singleton）：投瓶 / 发消息后排队送 AI 初筛。
+builder.Services.AddSingleton<IDomainEventHandler<BottleThrown>, BottleThrownHandler>();
+builder.Services.AddSingleton<IDomainEventHandler<BottleMessageSent>, BottleMessageSentHandler>();
+
 builder.Services.AddSingleton<MhopPasswordHasher>();
 builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();
 builder.Services.AddSingleton<MhopOnlineTracker>();

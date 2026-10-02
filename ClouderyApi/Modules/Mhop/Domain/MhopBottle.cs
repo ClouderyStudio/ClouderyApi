@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 
+using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
@@ -125,22 +126,27 @@ public class MhopBottle : IHasDomainEvents
     /// <inheritdoc />
     public void ClearDomainEvents() => _domainEvents.Clear();
 
-    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    /// <summary>供实体行为登记领域事件。</summary>
     private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     // ---------------- 领域行为 ----------------
 
     /// <summary>扔出一个瓶子：初始待审核（先送 AI 初筛，通过后自动入海）。</summary>
-    public static MhopBottle Throw(int userId, string content, bool crisis, DateTime now) => new()
+    public static MhopBottle Throw(int userId, string content, bool crisis, DateTime now)
     {
-        UserId = userId,
-        Content = content,
-        Status = MhopBottleStatus.Pending,
-        Crisis = crisis,
-        LastMessageAt = now,
-        CreatedAt = now,
-        ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
-    };
+        var bottle = new MhopBottle
+        {
+            UserId = userId,
+            Content = content,
+            Status = MhopBottleStatus.Pending,
+            Crisis = crisis,
+            LastMessageAt = now,
+            CreatedAt = now,
+            ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
+        };
+        bottle.AddDomainEvent(new BottleThrown(bottle));
+        return bottle;
+    }
 
     public bool IsParty(int userId) => UserId == userId || PickerUserId == userId;
 

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Shared.Domain;
 
 namespace ClouderyApi.Modules.Mhop.Domain;
@@ -69,14 +70,15 @@ public class MhopBottleMessage : IHasDomainEvents
     /// <inheritdoc />
     public void ClearDomainEvents() => _domainEvents.Clear();
 
-    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    /// <summary>供实体行为登记领域事件。</summary>
     private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     // ---------------- 领域行为 ----------------
 
     /// <summary>新建一条消息（初始可见、未审核）。</summary>
     public static MhopBottleMessage Create(int bottleId, int senderUserId, string content, bool crisis, DateTime now)
-        => new()
+    {
+        var message = new MhopBottleMessage
         {
             BottleId = bottleId,
             SenderUserId = senderUserId,
@@ -85,6 +87,9 @@ public class MhopBottleMessage : IHasDomainEvents
             Crisis = crisis,
             CreatedAt = now,
         };
+        message.AddDomainEvent(new BottleMessageSent(message));
+        return message;
+    }
 
     /// <summary>隐藏：AI 自动隐藏或人工隐藏，前台不再下发。</summary>
     public void Hide() => Status = MhopBottleMessageStatus.Hidden;
