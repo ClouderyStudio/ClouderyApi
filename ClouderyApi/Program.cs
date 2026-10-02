@@ -9,6 +9,8 @@ using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Identity.Application;
 using ClouderyApi.Modules.Mhop.Application;
+using ClouderyApi.Modules.Mhop.Application.Events;
+using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
@@ -76,8 +78,13 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<MhopDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
 
-// Stage 4 领域事件基座：SaveChanges 提交后进程内派发（选型 A，零迁移）；当前无订阅者，行为不变。
+// Stage 4 领域事件基座：SaveChanges 提交后进程内派发（选型 A，零迁移）。
 builder.Services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
+
+// 内容侧订阅者（依赖均为 Singleton）：待审内容排队送 AI 初筛；帖子人工放行时生成 / 沿用 AI 自动回复。
+builder.Services.AddSingleton<IDomainEventHandler<PostSubmittedForReview>, PostSubmittedForReviewHandler>();
+builder.Services.AddSingleton<IDomainEventHandler<ReplySubmittedForReview>, ReplySubmittedForReviewHandler>();
+builder.Services.AddSingleton<IDomainEventHandler<PostPublished>, PostPublishedHandler>();
 
 builder.Services.AddSingleton<MhopPasswordHasher>();
 builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();

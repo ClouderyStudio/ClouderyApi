@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
@@ -68,8 +69,12 @@ public class MhopReply : IHasDomainEvents
     /// <inheritdoc />
     public void ClearDomainEvents() => _domainEvents.Clear();
 
-    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    /// <summary>供实体行为登记领域事件。</summary>
     private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
+
+    /// <summary>撤销尚未派发的指定类型事件（例如驳回后不再送审）。</summary>
+    private void CancelDomainEvent<TEvent>() where TEvent : IDomainEvent
+        => _domainEvents.RemoveAll(e => e is TEvent);
 
     // ---------------- 领域行为 ----------------
 
@@ -90,7 +95,8 @@ public class MhopReply : IHasDomainEvents
         ContentText content,
         IReadOnlyCollection<string> imageUrls,
         bool crisis)
-        => new()
+    {
+        var reply = new MhopReply
         {
             PostId = postId,
             UserId = userId,
@@ -101,6 +107,9 @@ public class MhopReply : IHasDomainEvents
             Crisis = crisis,
             CreatedAt = DateTime.UtcNow,
         };
+        reply.AddDomainEvent(new ReplySubmittedForReview(reply));
+        return reply;
+    }
 
     /// <summary>
     /// 作者编辑回复：仅待审核 / 草稿可改，写完清空 AI 初筛结论。
@@ -129,6 +138,8 @@ public class MhopReply : IHasDomainEvents
             if (screening.HasSensitiveWords) RejectBySensitiveWords(screening.SensitiveWords);
             else ReviewNote = string.Empty;
         }
+        // 敏感词复核之后：仍待审核才登记（被驳回时 Status 已变，不排队）
+        if (Status == ContentStatus.Pending) AddDomainEvent(new ReplySubmittedForReview(this));
 
         return removed;
     }
@@ -147,6 +158,7 @@ public class MhopReply : IHasDomainEvents
         if (string.IsNullOrWhiteSpace(Content)) throw new DomainRuleException("回复内容不能为空");
         ClearReviewState();
         Status = ContentStatus.Pending;
+        AddDomainEvent(new ReplySubmittedForReview(this));
     }
 
     /// <summary>人工放行（AI 自动放行走审核服务的条件更新，不经过实体）。</summary>
@@ -161,6 +173,8 @@ public class MhopReply : IHasDomainEvents
     {
         Status = ContentStatus.Rejected;
         ReviewNote = ContentRules.TruncateReviewNote(note);
+        // 已驳回 ⇒ 不能再排队送审：撤销尚未派发的提交事件（与历史 if (Status == Pending) 守卫等价）
+        CancelDomainEvent<ReplySubmittedForReview>();
     }
 
     /// <summary>命中敏感词的系统拦截：直接驳回并写入拦截理由。</summary>

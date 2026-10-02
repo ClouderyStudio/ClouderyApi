@@ -19,22 +19,19 @@ public sealed class ForumAppService
     private readonly MhopOnlineTracker _online;
     private readonly MhopUploadService _uploads;
     private readonly MhopContentService _content;
-    private readonly MhopContentReviewService _review;
 
     public ForumAppService(
         MhopDbContext db,
         MhopCurrentUserAccessor current,
         MhopOnlineTracker online,
         MhopUploadService uploads,
-        MhopContentService content,
-        MhopContentReviewService review)
+        MhopContentService content)
     {
         _db = db;
         _current = current;
         _online = online;
         _uploads = uploads;
         _content = content;
-        _review = review;
     }
 
     // ---------------- 读取接口 ----------------
@@ -174,9 +171,8 @@ public sealed class ForumAppService
         _db.MhopPosts.Add(post);
         await _db.SaveChangesAsync();
 
-        // AI 自动审核异步执行：通过则自动公开并生成 AI 回复，未通过则保留待审核并记录理由
-        _review.QueuePostReview(post.Id);
-
+        // AI 自动审核由领域事件在提交后异步排队（PostSubmittedForReviewHandler）：
+        // 通过即自动公开并生成 AI 回复，未通过则保留待审核并记录理由。
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopForumMapper.ToPostOut(post, users, [], current.Id, null, null);
     }
@@ -199,9 +195,8 @@ public sealed class ForumAppService
         _db.MhopReplies.Add(reply);
         await _db.SaveChangesAsync();
 
-        // 命中敏感词已直接驳回；其余送 AI 自动审核，通过即公开，否则转人工
-        if (reply.Status == ContentStatus.Pending) _review.QueueReplyReview(reply.Id);
-
+        // 命中敏感词已直接驳回（实体驳回时撤销待派发事件）；其余由领域事件在提交后
+        // 排队送 AI 自动审核，通过即公开，否则转人工。
         var users = new Dictionary<int, MhopUser> { [current.Id] = current };
         return MhopForumMapper.ToReplyOut(reply, users, null, null);
     }
@@ -410,9 +405,8 @@ public sealed class ForumAppService
         // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
         var removedImages = post.ApplyAuthorEdit(body.Content, body.Board, body.IsAnonymous, images, Screen(body.Content));
 
+        // 正文已变更：待审核内容由领域事件在提交后重新送 AI 审核；草稿等作者重新提交时再审
         await _db.SaveChangesAsync();
-        // 正文已变更：待审核内容重新送 AI 审核；草稿等作者重新提交时再审
-        if (post.Status == ContentStatus.Pending) _review.QueuePostReview(post.Id);
         await _uploads.DeleteAsync(removedImages, cancellationToken);
 
         return new PostUpdateOut { Status = post.Status, Crisis = post.Crisis };
@@ -436,8 +430,8 @@ public sealed class ForumAppService
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null || post.UserId != current.Id) throw new MhopApiException(404, "帖子不存在");
         post.SubmitForReview();
+        // 提审由实体登记领域事件，SaveChanges 提交后排队送 AI 审核
         await _db.SaveChangesAsync();
-        _review.QueuePostReview(post.Id);
         return new ContentStatusOut { Status = post.Status };
     }
 
@@ -463,8 +457,8 @@ public sealed class ForumAppService
         // 编辑时被移除的图片此后不再被引用，落库成功后清理存储对象
         var removedImages = reply.ApplyAuthorEdit(body.Content, body.IsAnonymous, images, Screen(body.Content));
 
+        // 正文已变更：待审核回复由领域事件在提交后重新送 AI 审核；草稿等作者重新提交时再审
         await _db.SaveChangesAsync();
-        if (reply.Status == ContentStatus.Pending) _review.QueueReplyReview(reply.Id);
         await _uploads.DeleteAsync(removedImages, cancellationToken);
         return new ContentStatusOut { Status = reply.Status };
     }
@@ -487,8 +481,8 @@ public sealed class ForumAppService
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null || reply.UserId != current.Id) throw new MhopApiException(404, "回复不存在");
         reply.SubmitForReview();
+        // 提审由实体登记领域事件，SaveChanges 提交后排队送 AI 审核
         await _db.SaveChangesAsync();
-        _review.QueueReplyReview(reply.Id);
         return new ContentStatusOut { Status = reply.Status };
     }
 

@@ -105,11 +105,10 @@ public sealed class AdminAppService
         };
         if (approved) post.Publish(body.Note);
         else post.Reject(body.Note);
-        await _db.SaveChangesAsync();
-
-        // AI 自动回复只在「首次通过审核」时生成；隐藏后重新展示沿用已有回复，不重复调用大模型。
+        // AI 自动回复由 PostPublished 领域事件在提交后派发（PostPublishedHandler）：响应仍同步等待它。
+        // 只在「首次通过审核」时生成；隐藏后重新展示沿用已有回复，不重复调用大模型；
         // 需要强制刷新时用 POST posts/{id}/ai-reply/regenerate。
-        if (approved) await _ai.EnsureForumReplyAsync(post.Id, post.Content, post.Crisis);
+        await _db.SaveChangesAsync();
 
         return new OkOut();
     }
