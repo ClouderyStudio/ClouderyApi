@@ -1,5 +1,5 @@
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
-using ClouderyApi.Shared.Filters;
+using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

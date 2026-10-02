@@ -5,6 +5,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Shared.Ai;
+using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Shared.Options;
 using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Modules.Mhop.Infrastructure;
@@ -136,6 +137,9 @@ builder.Services.PostConfigure<SckeyOptions>(options =>
     options.BearerToken ??= builder.Configuration["SurvivalCraft:SCKEY_BEARER_TOKEN"] ?? "";
 });
 builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection(CorsSettings.SectionName));
+
+// 管理员 policy 授权（Stage 5.3）：[AdminOnly] 只声明 policy，判定与 401/403 形状在 Shared/Authorization。
+builder.Services.AddAdminOnlyAuthorization();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))

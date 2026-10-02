@@ -1,5 +1,5 @@
 using ClouderyApi.Modules.Zhuxs.Api.Contracts;
-using ClouderyApi.Shared.Filters;
+using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
