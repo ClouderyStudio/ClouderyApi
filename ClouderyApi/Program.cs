@@ -3,7 +3,10 @@ using ClouderyApi.Data;
 using ClouderyApi.Services.Ai;
 using ClouderyApi.Services.Cloudery;
 using ClouderyApi.Services.Mhop;
+using ClouderyApi.UseCases.Cloudery;
+using ClouderyApi.UseCases.Identity;
 using ClouderyApi.UseCases.Mhop;
+using ClouderyApi.UseCases.Zhuxs;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -51,6 +54,18 @@ builder.Services.AddSingleton<ResultAnalysisService>();
 
 // 心理学站点的测评结果云端存档（登录用户的多平台共享，见 ExamResultsController）
 builder.Services.AddScoped<ExamResultService>();
+
+// ===== Stage 2 应用层用例（Cloudery / Zhuxs / Identity） =====
+// 控制器只保留 HTTP 绑定，用例编排下沉到 UseCases/<Context>。注册顺序与依赖生命周期：
+// 解读/判分这类无状态编排与既有服务保持一致（ResultAnalysisService 为 Singleton）。
+builder.Services.AddScoped<MembersAppService>();
+builder.Services.AddScoped<ExamPaperAppService>();
+builder.Services.AddScoped<ExamResultAppService>();
+builder.Services.AddSingleton<ResultAnalysisAppService>();
+builder.Services.AddScoped<WhitelistsAppService>();
+builder.Services.AddScoped<TermsAppService>();
+builder.Services.AddScoped<ApplicationsAppService>();
+builder.Services.AddScoped<UserSyncService>();
 
 // ===== MHOP 公益心理辅助平台模块（从 Python FastAPI 后端迁移） =====
 builder.Services.Configure<MhopOptions>(builder.Configuration.GetSection(MhopOptions.SectionName));
