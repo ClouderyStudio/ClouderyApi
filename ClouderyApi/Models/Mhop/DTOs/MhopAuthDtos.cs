@@ -55,9 +55,9 @@ public class UserOut
 
     public string? Phone { get; set; }
 
-    public string Role { get; set; } = "user";
+    public string Role { get; set; } = MhopUserRole.User;
 
-    public string Status { get; set; } = "active";
+    public string Status { get; set; } = MhopUserStatus.Active;
 
     public string Avatar { get; set; } = string.Empty;
 

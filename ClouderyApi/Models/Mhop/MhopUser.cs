@@ -3,13 +3,39 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ClouderyApi.Models.Mhop;
 
+/// <summary>MHOP 用户角色：user（普通用户）/ admin（普通管理员）/ superadmin（超级管理员）。</summary>
+public static class MhopUserRole
+{
+    public const string User = "user";
+    public const string Admin = "admin";
+    public const string SuperAdmin = "superadmin";
+
+    /// <summary>任意后台人员：普通管理员或超级管理员。</summary>
+    public static bool IsStaff(string? role) => role is Admin or SuperAdmin;
+
+    public static bool IsSuper(string? role) => role == SuperAdmin;
+}
+
+/// <summary>MHOP 用户账号状态：active（可用）/ disabled（停用）。</summary>
+public static class MhopUserStatus
+{
+    public const string Active = "active";
+    public const string Disabled = "disabled";
+
+    public static bool IsValid(string? status) => status is Active or Disabled;
+}
+
 /// <summary>
 /// MHOP 平台用户（论坛 / 心理评估 / 管理后台共用）。对应 Python 后端的 users 表。
 /// 表名加 mhop_ 前缀，避免与身份域及其它已有域的 Users 表冲突。
+/// 角色与账号状态的转换规则收在本聚合内，非法转换抛 <see cref="DomainRuleException"/>。
 /// </summary>
 [Table("mhop_users")]
 public class MhopUser
 {
+    /// <summary>Badge 列宽（与 [MaxLength] 保持一致）。</summary>
+    public const int MaxBadgeLength = 64;
+
     [Key]
     public int Id { get; set; }
 
@@ -36,7 +62,7 @@ public class MhopUser
     /// <summary>admin / superadmin / user</summary>
     [Required]
     [MaxLength(16)]
-    public string Role { get; set; } = "user";
+    public string Role { get; set; } = MhopUserRole.User;
 
     /// <summary>
     /// 普通管理员被授予的后台模块权限码 JSON 数组，如 ["dashboard","review"]；
@@ -49,7 +75,7 @@ public class MhopUser
     /// <summary>active / disabled</summary>
     [Required]
     [MaxLength(16)]
-    public string Status { get; set; } = "active";
+    public string Status { get; set; } = MhopUserStatus.Active;
 
     /// <summary>头像 URL 路径</summary>
     [Required]
@@ -62,4 +88,78 @@ public class MhopUser
     public string Badge { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>是否后台人员（普通管理员或超级管理员）。</summary>
+    public bool IsStaff => MhopUserRole.IsStaff(Role);
+
+    /// <summary>是否超级管理员（隐式拥有全部模块权限）。</summary>
+    public bool IsSuperAdmin => MhopUserRole.IsSuper(Role);
+
+    /// <summary>账号是否可用。</summary>
+    public bool IsActive => Status == MhopUserStatus.Active;
+
+    /// <summary>普通用户 → 普通管理员，并整体覆盖其模块授权。</summary>
+    public void Promote(PermissionSet permissions)
+    {
+        if (IsStaff) throw new DomainRuleException("该用户已是管理员");
+        Role = MhopUserRole.Admin;
+        Permissions = permissions.Serialize();
+    }
+
+    /// <summary>普通管理员 → 普通用户（清空模块授权）。</summary>
+    public void Demote(int operatorUserId)
+    {
+        if (Role != MhopUserRole.Admin)
+            throw new DomainRuleException("该用户不是可降级的管理员（超级管理员请使用「取消超管」）");
+        if (Id == operatorUserId) throw new DomainRuleException("不能取消自己的管理员权限");
+        Role = MhopUserRole.User;
+        Permissions = string.Empty;
+    }
+
+    /// <summary>提升为超级管理员；保留原 permissions 列，便于日后取消超管时恢复模块授权。</summary>
+    public void PromoteSuper()
+    {
+        if (IsSuperAdmin) throw new DomainRuleException("该用户已是超级管理员");
+        Role = MhopUserRole.SuperAdmin;
+    }
+
+    /// <summary>超级管理员 → 普通管理员，返回其原保留的模块授权。</summary>
+    /// <param name="operatorUserId">发起操作的超管 Id（不允许取消自己）。</param>
+    /// <param name="isLastActiveSuperAdmin">该用户是否为最后一个可用的超级管理员。</param>
+    public PermissionSet DemoteSuper(int operatorUserId, bool isLastActiveSuperAdmin)
+    {
+        if (!IsSuperAdmin) throw new DomainRuleException("该用户不是超级管理员");
+        if (Id == operatorUserId) throw new DomainRuleException("不能取消自己的超级管理员身份");
+        if (isLastActiveSuperAdmin) throw new DomainRuleException("系统至少需要保留一个超级管理员");
+        var restored = PermissionSet.Parse(Permissions);
+        Role = MhopUserRole.Admin;
+        return restored;
+    }
+
+    /// <summary>停用账号：不允许停用自己，也不允许停用最后一个可用的超级管理员。</summary>
+    public void Disable(int operatorUserId, bool isLastActiveSuperAdmin)
+    {
+        if (Id == operatorUserId) throw new DomainRuleException("不能停用当前登录的管理员");
+        if (isLastActiveSuperAdmin) throw new DomainRuleException("系统至少需要保留一个可用的超级管理员");
+        Status = MhopUserStatus.Disabled;
+    }
+
+    /// <summary>启用账号。</summary>
+    public void Enable() => Status = MhopUserStatus.Active;
+
+    /// <summary>设置用户标识（trim，超长截断）；返回实际落库值。</summary>
+    public string SetBadge(string? badge)
+    {
+        var value = (badge ?? string.Empty).Trim();
+        Badge = value.Length <= MaxBadgeLength ? value : value[..MaxBadgeLength];
+        return Badge;
+    }
+
+    /// <summary>分配模块权限（仅普通管理员；superadmin 隐式拥有全部权限）。</summary>
+    public void SetPermissions(PermissionSet permissions)
+    {
+        if (Role != MhopUserRole.Admin)
+            throw new DomainRuleException("仅普通管理员可分配模块权限（超级管理员隐式拥有全部权限）");
+        Permissions = permissions.Serialize();
+    }
 }

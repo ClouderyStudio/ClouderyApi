@@ -312,20 +312,18 @@ public class MhopAdminController : MhopControllerBase
     [MhopPerm(MhopAdminPermissions.Users)]
     public async Task<IActionResult> SetUserStatus(int userId, [FromBody] StatusIn body)
     {
-        if (body.Status is not ("active" or "disabled"))
+        if (!MhopUserStatus.IsValid(body.Status))
             throw new MhopApiException(400, "非法状态");
 
         var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
         GuardStaffTarget(admin, user);
-        if (user.Id == admin.Id && body.Status == "disabled")
-            throw new MhopApiException(400, "不能停用当前登录的管理员");
-        if (body.Status == "disabled" && MhopAdminPermissions.IsSuper(user.Role)
-            && await CountSuperAdminsAsync() <= 1)
-            throw new MhopApiException(400, "系统至少需要保留一个可用的超级管理员");
+        if (body.Status == MhopUserStatus.Disabled)
+            user.Disable(admin.Id, user.IsSuperAdmin && await CountSuperAdminsAsync() <= 1);
+        else
+            user.Enable();
 
-        user.Status = body.Status;
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true });
     }
@@ -340,8 +338,7 @@ public class MhopAdminController : MhopControllerBase
         if (user is null) throw new MhopApiException(404, "用户不存在");
         GuardStaffTarget(admin, user);
 
-        var badge = Truncate((body.Badge ?? string.Empty).Trim(), 64);
-        user.Badge = badge;
+        var badge = user.SetBadge(body.Badge);
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true, badge });
     }
@@ -362,42 +359,30 @@ public class MhopAdminController : MhopControllerBase
         switch (body.Action)
         {
             case "promote":
-                if (MhopAdminPermissions.IsStaff(user.Role)) throw new MhopApiException(400, "该用户已是管理员");
-                user.Role = "admin";
-                user.Permissions = MhopAdminPermissions.Serialize(body.Permissions ?? []);
+                user.Promote(PermissionSet.From(body.Permissions));
                 await _db.SaveChangesAsync();
                 return MhopOk(new
                 {
                     ok = true,
-                    role = "admin",
+                    role = MhopUserRole.Admin,
                     permissions = MhopAdminPermissions.Parse(user.Permissions),
                 });
 
             case "demote":
-                if (user.Role != "admin")
-                    throw new MhopApiException(400, "该用户不是可降级的管理员（超级管理员请使用「取消超管」）");
-                if (user.Id == admin.Id) throw new MhopApiException(400, "不能取消自己的管理员权限");
-                user.Role = "user";
-                user.Permissions = string.Empty;
+                user.Demote(admin.Id);
                 await _db.SaveChangesAsync();
-                return MhopOk(new { ok = true, role = "user", permissions = new List<string>() });
+                return MhopOk(new { ok = true, role = MhopUserRole.User, permissions = new List<string>() });
 
             case "promote_super":
-                if (MhopAdminPermissions.IsSuper(user.Role)) throw new MhopApiException(400, "该用户已是超级管理员");
                 // 保留其 permissions 列，便于日后取消超管时恢复原来的模块授权
-                user.Role = "superadmin";
+                user.PromoteSuper();
                 await _db.SaveChangesAsync();
-                return MhopOk(new { ok = true, role = "superadmin" });
+                return MhopOk(new { ok = true, role = MhopUserRole.SuperAdmin });
 
             case "demote_super":
-                if (!MhopAdminPermissions.IsSuper(user.Role)) throw new MhopApiException(400, "该用户不是超级管理员");
-                if (user.Id == admin.Id) throw new MhopApiException(400, "不能取消自己的超级管理员身份");
-                if (await CountSuperAdminsAsync() <= 1)
-                    throw new MhopApiException(400, "系统至少需要保留一个超级管理员");
-                var restoredPerms = MhopAdminPermissions.Parse(user.Permissions);
-                user.Role = "admin";
+                var restoredPerms = user.DemoteSuper(admin.Id, await CountSuperAdminsAsync() <= 1);
                 await _db.SaveChangesAsync();
-                return MhopOk(new { ok = true, role = "admin", permissions = restoredPerms });
+                return MhopOk(new { ok = true, role = MhopUserRole.Admin, permissions = restoredPerms.Codes });
 
             default:
                 throw new MhopApiException(400, "非法操作");
@@ -431,7 +416,7 @@ public class MhopAdminController : MhopControllerBase
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
         if (user.Id == admin.Id) throw new MhopApiException(400, "不能删除当前登录的账号");
-        if (MhopAdminPermissions.IsSuper(user.Role))
+        if (user.IsSuperAdmin)
             throw new MhopApiException(400, "超级管理员账号不可删除");
         GuardStaffTarget(admin, user);
 
@@ -463,10 +448,8 @@ public class MhopAdminController : MhopControllerBase
     {
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
-        if (user.Role != "admin")
-            throw new MhopApiException(400, "仅普通管理员可分配模块权限（超级管理员隐式拥有全部权限）");
 
-        user.Permissions = MhopAdminPermissions.Serialize(body.Permissions ?? []);
+        user.SetPermissions(PermissionSet.From(body.Permissions));
         await _db.SaveChangesAsync();
         return MhopOk(new { ok = true, permissions = MhopAdminPermissions.Parse(user.Permissions) });
     }
@@ -527,10 +510,10 @@ public class MhopAdminController : MhopControllerBase
     /// <summary>对管理员/超管目标的敏感操作（停用/改密/标识/删除）仅超管可执行；操作自己另有校验。</summary>
     private static void GuardStaffTarget(MhopUser operatorUser, MhopUser target)
     {
-        if (MhopAdminPermissions.IsStaff(target.Role) && !MhopAdminPermissions.IsSuper(operatorUser.Role))
+        if (target.IsStaff && !operatorUser.IsSuperAdmin)
             throw new MhopApiException(403, "仅超级管理员可操作管理员账号");
     }
 
     private Task<int> CountSuperAdminsAsync()
-        => _db.MhopUsers.CountAsync(u => u.Role == "superadmin" && u.Status == "active");
+        => _db.MhopUsers.CountAsync(u => u.Role == MhopUserRole.SuperAdmin && u.Status == MhopUserStatus.Active);
 }

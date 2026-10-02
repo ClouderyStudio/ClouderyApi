@@ -58,8 +58,8 @@ public class MhopAuthController : MhopControllerBase
         {
             Username = username,
             PasswordHash = _hasher.Hash(body.Password),
-            Role = "user",
-            Status = "active",
+            Role = MhopUserRole.User,
+            Status = MhopUserStatus.Active,
             CreatedAt = DateTime.UtcNow,
         };
         _db.MhopUsers.Add(user);
@@ -75,7 +75,7 @@ public class MhopAuthController : MhopControllerBase
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Username == username);
         if (user is null || !_hasher.Verify(body.Password ?? string.Empty, user.PasswordHash))
             throw new MhopApiException(401, "用户名或密码错误");
-        if (user.Status != "active")
+        if (!user.IsActive)
             throw new MhopApiException(403, "账号已被停用");
 
         return MhopOk(TokenOut.Create(_jwt.CreateToken(user.Id, user.Role), user));
@@ -166,8 +166,8 @@ public class MhopAuthController : MhopControllerBase
                 Username = username,
                 PasswordHash = _hasher.Hash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24))),
                 Email = email,
-                Role = "user",
-                Status = "active",
+                Role = MhopUserRole.User,
+                Status = MhopUserStatus.Active,
                 CreatedAt = DateTime.UtcNow,
             };
             _db.MhopUsers.Add(user);
@@ -175,7 +175,7 @@ public class MhopAuthController : MhopControllerBase
             isNew = true;
         }
 
-        if (user.Status != "active")
+        if (!user.IsActive)
             throw new MhopApiException(403, "账号已被停用");
 
         return MhopOk(TokenOut.Create(_jwt.CreateToken(user.Id, user.Role), user, isNew));

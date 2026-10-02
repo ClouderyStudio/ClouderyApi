@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ClouderyApi.Models.Mhop;
 using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Services.Mhop;
@@ -75,7 +76,7 @@ public sealed class MhopJwtService : IMhopJwtService
             if (!root.TryGetProperty("exp", out var exp) || !exp.TryGetInt64(out var expiresAt)) return null;
             if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() >= expiresAt) return null;
             if (!root.TryGetProperty("sub", out var sub) || !int.TryParse(sub.GetString(), out var userId)) return null;
-            var role = root.TryGetProperty("role", out var roleEl) ? roleEl.GetString() ?? "user" : "user";
+            var role = root.TryGetProperty("role", out var roleEl) ? roleEl.GetString() ?? MhopUserRole.User : MhopUserRole.User;
             return new MhopTokenPayload(userId, role);
         }
         catch

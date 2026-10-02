@@ -41,7 +41,7 @@ public sealed class MhopCurrentUserAccessor
     public async Task<MhopUser> RequireAdminAsync()
     {
         var user = await RequireAsync();
-        if (!MhopAdminPermissions.IsStaff(user.Role)) throw new MhopApiException(403, "需要管理员权限");
+        if (!user.IsStaff) throw new MhopApiException(403, "需要管理员权限");
         return user;
     }
 
@@ -49,7 +49,7 @@ public sealed class MhopCurrentUserAccessor
     public async Task<MhopUser> RequireSuperAsync()
     {
         var user = await RequireAdminAsync();
-        if (!MhopAdminPermissions.IsSuper(user.Role))
+        if (!user.IsSuperAdmin)
             throw new MhopApiException(403, "仅超级管理员可执行该操作");
         return user;
     }
@@ -87,7 +87,7 @@ public sealed class MhopCurrentUserAccessor
         // 注意：这里必须返回被跟踪的实体——BindPhone / UpdateProfile 等接口会直接修改
         // 该实例并调用 SaveChangesAsync；若用 AsNoTracking 会导致更新静默丢失。
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == payload.UserId);
-        if (user is null || user.Status != "active") return null;
+        if (user is null || !user.IsActive) return null;
         return user;
     }
 }

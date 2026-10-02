@@ -231,13 +231,20 @@
   - 并发语义未动：捞瓶仍是原生 `ORDER BY RAND() LIMIT 1` + 条件 `UPDATE ... WHERE Id=@id AND Status=@drifting`（3 次重试），实体方法只落状态；AI 审核写库仍走 `ExecuteUpdateAsync`（跨作用域 + 内容未变守卫）。
   - 错误文案逐字保留：`该瓶子不在待审核状态`（服务层仍抛 409 MhopApiException，实体 Approve 内另有 DomainRuleException 兜底）、`不支持的处置状态`、`不支持的消息状态`。
   - 新增纯单测 ClouderyApi.Tests/DomainBottleTests.cs（19 用例，无 HTTP / 无库）。
+- **进展（用户聚合已完成）**：
+  - `MhopUserRole`（user / admin / superadmin）与 `MhopUserStatus`（active / disabled）定义在 ClouderyApi/Models/Mhop/MhopUser.cs 内；MhopUser 充血：`IsStaff` / `IsSuperAdmin` / `IsActive`（get-only 计算属性，不参与映射）、`Promote(PermissionSet)` / `Demote(operatorUserId)` / `PromoteSuper()` / `DemoteSuper(operatorUserId, isLastActiveSuperAdmin)`（返回原保留的模块授权）/ `Disable(operatorUserId, isLastActiveSuperAdmin)` / `Enable()` / `SetBadge(string?)`（trim + 截 64）/ `SetPermissions(PermissionSet)`；非法转换抛 `DomainRuleException`，文案逐字保留。
+  - 新增值对象 `PermissionSet`（ClouderyApi/Models/Mhop/PermissionSet.cs）：权限码目录（Dashboard / Review / Users / AiLogs / Bottles + All + Labels）、`From` / `Parse` / `Serialize` / `Contains`；非法码过滤与去重、空 / 非法 JSON → 空集合的旧语义不变。
+  - `MhopAdminPermissions`（ClouderyApi/Services/Mhop/MhopAdminPermissions.cs）退化为门面：常量别名 + `IsStaff` / `IsSuper` / `Parse` / `Serialize` / `Has` / `Effective` 委托领域层，59 处调用点签名不变。
+  - 角色 / 状态字面量清零：MhopAdminController 的 SetUserStatus / SetUserBadge / SetUserRole / SetPermissions 改为调实体方法（「最后一个可用超管不可停用 / 降级」「不可自我停用 / 自我降级」「仅普通管理员可分配模块权限」守卫进实体）；MhopAuthController / MhopCasdoorController / MhopCurrentUserAccessor / MhopJwtService / MhopSeeder / MhopDbContext / MhopAuthDtos 的 user|admin|superadmin|active|disabled 全部换常量（EF 查询内仍用常量比较，未用计算属性以免破坏翻译）。
+  - 授权类 403（`仅超级管理员可操作管理员账号`）仍留在控制器的 GuardStaffTarget：DomainRuleException 一律映射 400，不能改变状态码。
+  - `dotnet ef migrations has-pending-model-changes --context MhopDbContext` = 「No changes have been made to the model since the last migration.」。
+  - 新增纯单测 ClouderyApi.Tests/DomainUserTests.cs（24 用例，无 HTTP / 无库）。
 - **关键取舍**：暂不给 `Content` / `Board` / `Images` 加 EF 值转换（原第 5 条），因为 `Contains` / `==` / `GroupBy` / `ExecuteUpdateAsync` 触点太广、易改变可翻译性；先以「构造即校验 + 实体方法」收口规则，列与迁移保持不变。
 - **改动清单（剩余）**：
-  1. `LikeTargetType`、`AiFlag` 值对象；`MhopRole` / `PermissionSet`（可复用现有 MhopAdminPermissions）。
-  2. 为 `MhopUser` 增加第 4.3 节的方法（Role(Promote/Demote/…) / PermissionSet / Disable / Enable / SetBadge 与「最后一个启用超管」等守卫）。
-  3. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
-  4. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`）。
-- **验证**：dotnet build 0 error；dotnet test **81 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19），约 43s。
+  1. `LikeTargetType` 值对象（"post" / "reply" 字面量：MhopForumController.cs:252-291、MhopContentService.cs:32/65、MhopAiService.cs:321/351）；`AiFlag` 已由 MhopModerationOutcome 常量接管，不再单独包值对象。
+  2. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
+  3. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`）。
+- **验证**：dotnet build 0 error；dotnet test **105 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24），约 43s。
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 

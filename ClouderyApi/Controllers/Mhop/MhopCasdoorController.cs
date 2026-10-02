@@ -92,7 +92,7 @@ public class MhopCasdoorController : MhopControllerBase
             throw new MhopApiException(502, "获取统一身份用户信息失败");
 
         var user = await SyncUserAsync(casdoorUser);
-        if (user.Status != "active")
+        if (!user.IsActive)
             throw new MhopApiException(403, "账号已被停用");
 
         return MhopOk(TokenOut.Create(_jwt.CreateToken(user.Id, user.Role), user));
@@ -120,15 +120,15 @@ public class MhopCasdoorController : MhopControllerBase
         {
             var preferred = SanitizeUsername(casdoorUser.Name)
                             ?? SanitizeUsername(casdoorUser.Email?.Split('@')[0])
-                            ?? "user";
+                            ?? MhopUserRole.User;
             user = new MhopUser
             {
                 Username = await GenerateUniqueUsernameAsync(preferred),
                 PasswordHash = _hasher.Hash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24))),
                 Email = email,
                 CasdoorId = casdoorId,
-                Role = "user",
-                Status = "active",
+                Role = MhopUserRole.User,
+                Status = MhopUserStatus.Active,
                 CreatedAt = DateTime.UtcNow,
             };
             _db.MhopUsers.Add(user);
