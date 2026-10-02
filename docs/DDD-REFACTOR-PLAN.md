@@ -404,3 +404,8 @@
 4. **同一资源时间格式跨端点不一致**：`POST /exam/results`(`/sync`) 的 `savedAt` 形如 `2026-01-02T03:04:05Z`、`updatedAt` 带 `Z` + 7 位小数；`GET /exam/results` 经 MySQL `datetime(6)` 往返后同字段**无 `Z`、6 位小数**（Kind/精度丢失），客户端按 ISO-8601 带时区解析会得到错误时刻。基线刻意只断言字段顺序与业务字段，未断言时间字面量以免固化缺陷。
 5. **`Location` 使用声明大小写**：`CreatedAtAction` 生成 `/cloudery/Members/{id}`、`/exam/ExamPapers/{id}`（与请求的全小写路径不同，路由匹配不区分大小写）；Stage 2 若改路由必须同步。
 6. 未覆盖分支（无缺陷，仅测试缺口）：`MembersController` PUT 的并发 rethrow、Zhuxs 三控制器写成功路径与 `DbUpdateException`/`DbUpdateConcurrencyException`、Auth 的真实 Casdoor callback 成功路径、`ResultAnalysisService` 的 LLM 成功路径（测试把 `Llm__BaseUrl` 指向 `http://127.0.0.1:1` 强制 `engine="local"`）、`IpRateLimitAttribute` 的 429（静态字典 key=`ip|path`，会污染同路径测试）、`ExamResultService` 的 200 条/256KB 上限、`ExamPapers` 的 PUT/DELETE 成功（204）。
+
+## 附录 D：Stage 4 领域事件施工中暴露的既有缺陷（均未修）
+
+1. **`MhopBottle.Status` 的 EF sentinel 与数据库默认值冲突 → 投瓶 AI 初筛从未执行**：`ClouderyApi/Modules/Mhop/Infrastructure/Persistence/MhopDbContext.cs:104` 为 `e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting)`（=1），而 `MhopBottleStatus.Pending = 0`（`ClouderyApi/Modules/Mhop/Domain/MhopBottle.cs:15`）恰为 `int` 的 CLR 默认值。EF Core 把「值等于 sentinel」当作未赋值，INSERT 时省略 `status` 列，于是数据库默认值 1（漂流中）生效。实测（临时探针直插实体再读回，探针已删）：`inMemory=0 persisted=1 aiReviewedAt=null`。连带后果：`ClouderyApi/Modules/Mhop/Application/MhopContentReviewService.cs:163` 的 `if (!rescreen && bottle.Status != MhopBottleStatus.Pending) return;` 立即早退，**投瓶的 AI 初筛实际不执行**（瓶子以「漂流中」直接入库；敏感词与危机标记的同步拦截不受影响，仍在入库前生效）。
+   领域事件化前后行为一致（事件化前是 Save 之后直接调 `QueueBottleReview`，队列读到的是同一份 `status=1`），因此不属 Stage 4 引入。修复候选：给该属性加 `.HasSentinel(-1)`（或改用 `ValueGeneratedNever()`），不动数据库默认值、预期无需迁移；但会把投瓶恢复为「先待审核、AI 通过后自动入海」，属**对外可见行为与时序变更**，需批准后单独立项，并与「瓶子 HTTP 路径无契约测试」的缺口一起补测试。
