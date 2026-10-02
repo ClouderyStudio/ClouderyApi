@@ -11,6 +11,18 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd=mysqladmin ping -h 127.0.0.1 -uroot -proot
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
@@ -20,8 +32,11 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build --no-restore --configuration Release ClouderyApi
+      run: dotnet build --no-restore --configuration Release ClouderyApi.sln
     - name: Test
+      env:
+        # 集成测试需要真实 MySQL（MySQL 的 RAND() 与条件 UPDATE 无法用内存库替代）
+        CLOUDERY_TEST_MYSQL: "server=127.0.0.1;port=3306;user=root;password=root"
       run: dotnet test --no-build --configuration Release --verbosity normal
     - name: Upload artifact
       uses: actions/upload-artifact@v4

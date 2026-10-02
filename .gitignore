@@ -368,3 +368,7 @@ appsettings.json
 # MHOP uploaded files (avatars / post images)
 ClouderyApi/uploads/
 uploads/
+
+# 本地调研 / 临时产物（不属于源码）
+undefined/
+commit-msg.txt

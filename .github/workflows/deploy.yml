@@ -19,6 +19,18 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd=mysqladmin ping -h 127.0.0.1 -uroot -proot
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,9 +44,12 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release ClouderyApi
+        run: dotnet build --no-restore --configuration Release ClouderyApi.sln
 
       - name: Test
+        env:
+          # 集成测试需要真实 MySQL；测试会自建/自删一次性数据库
+          CLOUDERY_TEST_MYSQL: "server=127.0.0.1;port=3306;user=root;password=root"
         run: dotnet test --no-build --configuration Release --verbosity normal
 
       - name: Publish
