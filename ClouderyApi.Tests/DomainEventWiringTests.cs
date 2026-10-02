@@ -119,6 +119,82 @@ public sealed class DomainEventWiringTests : IntegrationTestBase
         Assert.IsType<PostPublished>(Assert.Single(post.DomainEvents));
     }
 
+    // ---------------- 用户权限变更 ----------------
+
+    private static MhopUser NewUser(
+        string role = MhopUserRole.User,
+        string status = MhopUserStatus.Active,
+        string permissions = "",
+        int id = 1) => new()
+        {
+            Id = id,
+            Username = "member",
+            Role = role,
+            Status = status,
+            Permissions = permissions,
+        };
+
+    [Fact]
+    public void Promote_and_Demote_register_user_role_changed_event()
+    {
+        var user = NewUser();
+        user.Promote(PermissionSet.From(["review"]));
+        Assert.IsType<UserRoleChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserRole.Admin, user.Role);
+
+        user.ClearDomainEvents();
+        user.Demote(operatorUserId: 9);
+        Assert.IsType<UserRoleChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserRole.User, user.Role);
+    }
+
+    [Fact]
+    public void PromoteSuper_and_DemoteSuper_register_user_role_changed_event()
+    {
+        var user = NewUser();
+        user.PromoteSuper();
+        Assert.IsType<UserRoleChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserRole.SuperAdmin, user.Role);
+
+        user.ClearDomainEvents();
+        user.DemoteSuper(operatorUserId: 9, isLastActiveSuperAdmin: false);
+        Assert.IsType<UserRoleChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserRole.Admin, user.Role);
+    }
+
+    [Fact]
+    public void Disable_and_Enable_register_user_status_changed_event()
+    {
+        var user = NewUser(MhopUserRole.Admin, id: 2);
+        user.Disable(operatorUserId: 1, isLastActiveSuperAdmin: false);
+        Assert.IsType<UserStatusChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserStatus.Disabled, user.Status);
+
+        user.ClearDomainEvents();
+        user.Enable();
+        Assert.IsType<UserStatusChanged>(Assert.Single(user.DomainEvents));
+        Assert.Equal(MhopUserStatus.Active, user.Status);
+    }
+
+    [Fact]
+    public void SetPermissions_registers_user_permissions_changed_event()
+    {
+        var user = NewUser(MhopUserRole.Admin);
+        user.SetPermissions(PermissionSet.From(["review"]));
+
+        Assert.IsType<UserPermissionsChanged>(Assert.Single(user.DomainEvents));
+    }
+
+    [Fact]
+    public void SetBadge_registers_user_badge_changed_event()
+    {
+        var user = NewUser();
+        var badge = user.SetBadge("  认证咨询师 ");
+
+        Assert.Equal("认证咨询师", badge);
+        Assert.IsType<UserBadgeChanged>(Assert.Single(user.DomainEvents));
+    }
+
     // ---------------- 派发器 ----------------
 
     [Fact]

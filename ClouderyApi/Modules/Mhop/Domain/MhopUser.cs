@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
@@ -122,6 +123,7 @@ public class MhopUser : IHasDomainEvents
         if (IsStaff) throw new DomainRuleException("该用户已是管理员");
         Role = MhopUserRole.Admin;
         Permissions = permissions.Serialize();
+        AddDomainEvent(new UserRoleChanged(this));
     }
 
     /// <summary>普通管理员 → 普通用户（清空模块授权）。</summary>
@@ -132,6 +134,7 @@ public class MhopUser : IHasDomainEvents
         if (Id == operatorUserId) throw new DomainRuleException("不能取消自己的管理员权限");
         Role = MhopUserRole.User;
         Permissions = string.Empty;
+        AddDomainEvent(new UserRoleChanged(this));
     }
 
     /// <summary>提升为超级管理员；保留原 permissions 列，便于日后取消超管时恢复模块授权。</summary>
@@ -139,6 +142,7 @@ public class MhopUser : IHasDomainEvents
     {
         if (IsSuperAdmin) throw new DomainRuleException("该用户已是超级管理员");
         Role = MhopUserRole.SuperAdmin;
+        AddDomainEvent(new UserRoleChanged(this));
     }
 
     /// <summary>超级管理员 → 普通管理员，返回其原保留的模块授权。</summary>
@@ -151,6 +155,7 @@ public class MhopUser : IHasDomainEvents
         if (isLastActiveSuperAdmin) throw new DomainRuleException("系统至少需要保留一个超级管理员");
         var restored = PermissionSet.Parse(Permissions);
         Role = MhopUserRole.Admin;
+        AddDomainEvent(new UserRoleChanged(this));
         return restored;
     }
 
@@ -160,16 +165,22 @@ public class MhopUser : IHasDomainEvents
         if (Id == operatorUserId) throw new DomainRuleException("不能停用当前登录的管理员");
         if (isLastActiveSuperAdmin) throw new DomainRuleException("系统至少需要保留一个可用的超级管理员");
         Status = MhopUserStatus.Disabled;
+        AddDomainEvent(new UserStatusChanged(this));
     }
 
     /// <summary>启用账号。</summary>
-    public void Enable() => Status = MhopUserStatus.Active;
+    public void Enable()
+    {
+        Status = MhopUserStatus.Active;
+        AddDomainEvent(new UserStatusChanged(this));
+    }
 
     /// <summary>设置用户标识（trim，超长截断）；返回实际落库值。</summary>
     public string SetBadge(string? badge)
     {
         var value = (badge ?? string.Empty).Trim();
         Badge = value.Length <= MaxBadgeLength ? value : value[..MaxBadgeLength];
+        AddDomainEvent(new UserBadgeChanged(this));
         return Badge;
     }
 
@@ -179,5 +190,6 @@ public class MhopUser : IHasDomainEvents
         if (Role != MhopUserRole.Admin)
             throw new DomainRuleException("仅普通管理员可分配模块权限（超级管理员隐式拥有全部权限）");
         Permissions = permissions.Serialize();
+        AddDomainEvent(new UserPermissionsChanged(this));
     }
 }
