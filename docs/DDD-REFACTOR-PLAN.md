@@ -262,7 +262,7 @@
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 
-### Stage 2 — 应用层抽取、控制器瘦身
+### Stage 2 — 应用层抽取、控制器瘦身 🔶 M3 已完成（MHOP）；Cloudery/Zhuxs（M4）进行中
 - **目标**：控制器只做 HTTP；用例编排进 Application 层。
 - **改动清单（MHOP）**：
   1. ForumAppService 承接 MhopForumController 的读写 / 状态流转 / 点赞 / 我的列表，映射移入 Application/Mhop/Mapping。
@@ -275,6 +275,17 @@
   - `AssessmentAppService`（ClouderyApi/UseCases/Mhop/AssessmentAppService.cs）承接 MhopAssessmentController 的量表目录（`Scales`）、提交用例（`SubmitAsync`：`AssessmentScoring.Evaluate` → MhopAiService 解读 → `save_to_cloud` 可选落库）与我的记录（`MineAsync`）；控制器由 113 行瘦身为 26 行薄适配器（3 个 action 只做模型绑定 + `MhopOk` 包装），路由 / 蛇形字段 / 状态码 / 文案逐字不变。
   - 应用服务在 `Program.cs:87` 注册为 Scoped（`builder.Services.AddScoped<AssessmentAppService>();`）。
   - `ForumAppService`（ClouderyApi/UseCases/Mhop/ForumAppService.cs，552 行）承接论坛 19 个 action 的全部用例编排（板块 / 统计 / 列表 / 详情 / 发帖 / 回复 / 点赞 / 我的内容 / 编辑 / 撤回 / 重提 / 删除）；纯映射（`ParseImages` / `AuthorForPost` / `AuthorForReply` / `ToReplyOut` / `ToPostOut` / `CopyPostFields`）移入 `ClouderyApi/UseCases/Mhop/Mapping/MhopForumMapper.cs`；输出改用 `ClouderyApi/Models/Mhop/DTOs/MhopForumDtos.cs` 的强类型 DTO（新增 13 个：`BoardOut` / `ForumStatsOut` / `LikeToggleOut` / `LikeIdsOut` / `MineCountOut` / `MineSummaryOut` / `MyPostOut` / `MyPostListOut` / `MyReplyOut` / `MyReplyListOut` / `PostUpdateOut` / `ContentStatusOut` / `OkOut`），属性声明顺序与原匿名对象逐一对齐以保证蛇形 JSON 字段顺序不变；`MhopForumController` 由 703 行降至 133 行（仅 HTTP 绑定 + `MhopOk` / `MhopStatus` 包装，`IsTruthy` 因属 `inc_view` 绑定语义而留在控制器）。机械比对验证：路由/动词 26 项、错误文案（`MhopApiException` / `DomainRuleException`）16 处、`MhopStatus` 2 处、JSON 键名集合全部与重构前一致。
+- **M3 里程碑记录（MHOP 应用层，已完成，8 次提交，均仅本地未推送）**：
+  - `9c3c6f5` AssessmentAppService；`17b91fa` ForumAppService（MhopForumController 703→133 行，19 个 action 编排 + MhopForumMapper + 13 个 DTO；路由/文案/键名集合机械比对一致）。
+  - `0417c74` AdminAppService（MhopAdminController.cs 521→131 行；AdminAppService.cs 419 行、MhopAdminMapper.cs 119 行、12 个输出 DTO；比对：路由 19/19、鉴权特性 18/18、异常文案 26/26、字段顺序全一致；唯一结构差异是 promote_super 由 `Permissions=null` + `[JsonIgnore(WhenWritingNull)]` 省略 permissions，序列化字节等价）。
+  - `1474f29` MhopBottleService 归位为 BottleAppService（规范化逐行比对 0 行差异，控制器不动）。
+  - `8f7e635` AuthAppService（MhopAuthController 8 个 action + MhopCasdoorController 3 个 action 瘦身；`MhopAuthMapper.ToUserOut(user, maskPhone, exposePermissions)`、`ToTokenOut` 复用；EmailCode 拆 `EmailCodeOut`/`EmailCodeDevOut` 两个 DTO，保证「已投递」分支不多出 `dev_mode:null`）。
+  - `05a1140` MhopCasdoorService 归位为 CasdoorAppService（生命周期仍为 AddSingleton）。
+  - `e302bd3` 瓶子管理控制器去除 DbContext 直连（统计/用户名查询下沉为 BottleAppService.CountVisibleMessagesAsync / LoadUsernamesAsync）。
+  - `0bcbd89` SurvivalCraft 配置键修复（附录 A.1/A.2）：改读 `Env:SCKEY_API_BASE` / `Env:SCKEY_BEARER_TOKEN`（旧键回退）、命名 HttpClient `ServerController.HttpClientName = "SckeyServer"`、令牌非空才发 `Authorization: Bearer`；新增 ServerControllerContractTests 5 例，**行为变化：令牌过去从未发出，现在会发出**。
+  - `43a8e2c` Cloudery/Identity 契约基线测试（新增 35 个测试 + `ClouderyApi.Tests/TestData/swagger-routes.snapshot.txt` 路由快照）。
+  - 验证口径：全量 **180 passed / 0 failed**；build 0 error，唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603。
+  - 注意：本机 MySQL（127.0.0.1:3307）`max_connections=151` 被多个代理共用，**并发跑全量套件会假失败**（`MySqlException : Too many connections`），验证必须单跑。
 - **改动清单（Cloudery / Zhuxs）**：
   1. MembersAppService、ExamPaperAppService（含试卷评分领域逻辑）、ExamResultAppService、Zhuxs 各 AppService。
   2. 为 Member / Whitelist / Application / Term / ExamPaper 补输出 DTO，停止返回 EF 实体。
@@ -354,8 +365,8 @@
 ---
 
 ## 附录 A：顺带发现的缺陷 / 隐患（非 DDD，但建议一并修）
-1. **SurvivalCraft 配置键不匹配（功能性 bug）**：ServerController.cs:18-19 读 SurvivalCraft:SCKEY_API_BASE / SCKEY_BEARER_TOKEN，而 appsettings.json:12-15 定义的是 Env:SCKEY_API_BASE / Env:SCKEY_BEARER_TOKEN → 令牌回退为空，Authorization 头实际未发送。
-2. ServerController.cs:13-22 在类型加载时用 ConfigurationBuilder 直读 appsettings.json 并自建静态 HttpClient，忽略环境变量覆盖与 DI。
+1. **SurvivalCraft 配置键不匹配（功能性 bug）**：ServerController.cs:18-19 读 SurvivalCraft:SCKEY_API_BASE / SCKEY_BEARER_TOKEN，而 appsettings.json:12-15 定义的是 Env:SCKEY_API_BASE / Env:SCKEY_BEARER_TOKEN → 令牌回退为空，Authorization 头实际未发送。**已修复：0bcbd89**（改读 `Env:SCKEY_*`，命名 HttpClient，令牌非空才加 Bearer）。
+2. ServerController.cs:13-22 在类型加载时用 ConfigurationBuilder 直读 appsettings.json 并自建静态 HttpClient，忽略环境变量覆盖与 DI。**已修复：0bcbd89**（注入 `IConfiguration` + `IHttpClientFactory`，测试可用 `ConfigureTestServices` 覆盖主消息处理器）。
 3. 死代码：多处 { if (!ModelState.IsValid) ... } 因 [ApiController] 自动校验而不可达（MembersController.cs:39/63、ApplicationsController.cs:39/62、TermsController.cs:39/63）。
 4. 死并发处理：多处 catch DbUpdateConcurrencyException，但无 [Timestamp]/IsRowVersion 与并发令牌（MembersController.cs:51-55 等）。
 5. ExamPaper 的 POST/PUT 直接绑定实体，存在 over-posting（ExamPapersController.cs:147/162；Id/Sections/UpdatedAt 可被客户端影响）。
@@ -367,3 +378,10 @@
 - MhopForumController.cs 797 行；MhopAdminController.cs 533 行；MhopBottleService.cs 532 行；MhopContentReviewService.cs 377 行；MhopContentService.cs 116 行。
 - ExamPapersController.cs 215 行；ExamResultsController.cs 107 行；AuthController.cs 372 行。
 - 其余证据以第 3 节的 file:line 为准。
+## 附录 C：M4 契约基线测试暴露的既有缺陷（Stage 2 Cloudery/Zhuxs 实测，均未修）
+1. **控制器内 ModelState 检查是死代码**：`[ApiController]` 自动校验先行，`MembersController.cs:39/63`、`ExamPapersController` 的 POST/PUT、`Terms/Applications/Whitelists` 的 PUT/POST 中 `BadRequest(new {success=false,message="参数校验失败"})` 永不执行。实测管理员 `POST /cloudery/members {position:…}` → 400 `application/problem+json`（`errors.Name=["The Name field is required."]`），**没有** success/message 字段。全仓库无 `ConfigureApiBehaviorOptions`，400 契约在「控制器文案」与「框架 ProblemDetails」之间分裂；统一必然波及已冻结的 MHOP，需按 Stage 2 第 11 项单独立项。
+2. **`POST /exam/results` 的 body==null 分支不可达**：无 Content-Type → **415**；`application/json` + 字面 `null` 或空白体 → 400 ValidationProblemDetails。`Rejected("缺少请求体")` 永不执行（`ResultAnalysisController` 的 body-null 同理，但其 testId 空白分支可达：`{}` → 400「缺少量表标识（testId）」）。
+3. **同一 API 内 404 有两种形状**：`GET/PUT/DELETE /cloudery/members/{unknown}` 的空参 `NotFound()` 被 ClientErrorResultFilter 转为 404 + `application/problem+json`（`type` 指向 rfc9110#section-15.5.5，**非空体**）；而 `/exam/ExamPapers/{unknown}`、`/exam/results/{unknown}` → 404 + `{success:false,message}`。
+4. **同一资源时间格式跨端点不一致**：`POST /exam/results`(`/sync`) 的 `savedAt` 形如 `2026-01-02T03:04:05Z`、`updatedAt` 带 `Z` + 7 位小数；`GET /exam/results` 经 MySQL `datetime(6)` 往返后同字段**无 `Z`、6 位小数**（Kind/精度丢失），客户端按 ISO-8601 带时区解析会得到错误时刻。基线刻意只断言字段顺序与业务字段，未断言时间字面量以免固化缺陷。
+5. **`Location` 使用声明大小写**：`CreatedAtAction` 生成 `/cloudery/Members/{id}`、`/exam/ExamPapers/{id}`（与请求的全小写路径不同，路由匹配不区分大小写）；Stage 2 若改路由必须同步。
+6. 未覆盖分支（无缺陷，仅测试缺口）：`MembersController` PUT 的并发 rethrow、Zhuxs 三控制器写成功路径与 `DbUpdateException`/`DbUpdateConcurrencyException`、Auth 的真实 Casdoor callback 成功路径、`ResultAnalysisService` 的 LLM 成功路径（测试把 `Llm__BaseUrl` 指向 `http://127.0.0.1:1` 强制 `engine="local"`）、`IpRateLimitAttribute` 的 429（静态字典 key=`ip|path`，会污染同路径测试）、`ExamResultService` 的 200 条/256KB 上限、`ExamPapers` 的 PUT/DELETE 成功（204）。
