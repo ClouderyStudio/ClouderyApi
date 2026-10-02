@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
 using Microsoft.EntityFrameworkCore;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 
 using ClouderyApi.Shared.Exceptions;
 

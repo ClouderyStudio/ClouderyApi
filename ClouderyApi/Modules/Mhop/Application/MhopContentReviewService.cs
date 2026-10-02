@@ -1,6 +1,6 @@
 using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

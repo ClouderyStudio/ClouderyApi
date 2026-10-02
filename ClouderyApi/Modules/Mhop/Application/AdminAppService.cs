@@ -1,8 +1,8 @@
 using ClouderyApi.Data;
 using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
-using ClouderyApi.Models.Mhop.DTOs;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Api.Contracts;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Mhop.Application.Mapping;
 using Microsoft.EntityFrameworkCore;
 

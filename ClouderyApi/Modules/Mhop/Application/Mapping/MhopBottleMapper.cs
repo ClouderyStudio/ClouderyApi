@@ -1,5 +1,5 @@
 using ClouderyApi.Modules.Mhop.Domain;
-using ClouderyApi.Models.Mhop.DTOs;
+using ClouderyApi.Modules.Mhop.Api.Contracts;
 
 namespace ClouderyApi.Modules.Mhop.Application.Mapping;
 

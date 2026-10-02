@@ -2,8 +2,8 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Modules.Mhop.Domain;
-using ClouderyApi.Models.Mhop.DTOs;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Api.Contracts;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 using ClouderyApi.Shared.Exceptions;

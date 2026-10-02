@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Casdoor.Client;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Modules.Mhop.Application;

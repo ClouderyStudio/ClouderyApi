@@ -3,7 +3,7 @@ using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
 using ClouderyApi.Shared.Ai;
 using ClouderyApi.Modules.Cloudery.Application;
-using ClouderyApi.Services.Mhop;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Identity.Application;
 using ClouderyApi.Modules.Mhop.Application;
 using ClouderyApi.Modules.Zhuxs.Application;
