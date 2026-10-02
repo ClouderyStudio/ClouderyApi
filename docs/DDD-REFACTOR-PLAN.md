@@ -205,7 +205,7 @@
 | Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 | ✅ 已完成（M3 + M4） |
 | Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） | ✅ 已完成（7 次提交） |
 | Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox | ✅ 已完成（5 步 + 2 次守卫测试） |
-| Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 | 待启动（8 项需批准） |
+| Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 | 已完成（M7，见下方里程碑记录） |
 
 ### Stage 0 — 建立安全网 ✅ 已完成（提交 ac6c00c）
 - **实际做法**：新增 ClouderyApi.Tests（xUnit + Microsoft.AspNetCore.Mvc.Testing）；**未用 Testcontainers**，改为 `CLOUDERY_TEST_MYSQL` 指向真实 MySQL（本地用便携 mysqld，CI 用 mysql:8.0 service），每个测试类自建/自删一次性库 `cloudery_test_<16位>`（TestSupport/MySqlTestServer.cs、IntegrationTestBase.cs）。
