@@ -1,5 +1,5 @@
-using ClouderyApi.Models.Cloudery;
-using ClouderyApi.Models.Zhuxs;
+using ClouderyApi.Modules.Cloudery.Domain;
+using ClouderyApi.Modules.Zhuxs.Domain;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using ClouderyApi.Data;
-using ClouderyApi.Models.Cloudery;
+using ClouderyApi.Modules.Cloudery.Domain;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 

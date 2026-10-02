@@ -22,7 +22,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                 .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            modelBuilder.Entity("ClouderyApi.Models.Cloudery.ExamPaper", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Cloudery.Domain.ExamPaper", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("varchar(255)");
@@ -43,7 +43,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                     b.ToTable("ExamPapers");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Cloudery.ExamResult", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Cloudery.Domain.ExamResult", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(36)
@@ -88,7 +88,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                     b.ToTable("ExamResults");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Cloudery.Member", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Cloudery.Domain.Member", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("varchar(255)");
@@ -112,7 +112,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                     b.ToTable("ClouderyMembers");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Zhuxs.Application", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Zhuxs.Domain.Application", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("varchar(255)");
@@ -131,7 +131,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                     b.ToTable("ZhuxsApplications");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Zhuxs.Term", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Zhuxs.Domain.Term", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("varchar(255)");
@@ -156,7 +156,7 @@ namespace ClouderyApi.Migrations.ClouderyApi
                     b.ToTable("ZhuxsTerms");
                 });
 
-            modelBuilder.Entity("ClouderyApi.Models.Zhuxs.Whitelist", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Zhuxs.Domain.Whitelist", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("varchar(255)");

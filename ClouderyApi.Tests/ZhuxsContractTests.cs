@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using ClouderyApi.Data;
-using ClouderyApi.Models.Zhuxs;
+using ClouderyApi.Modules.Zhuxs.Domain;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 
