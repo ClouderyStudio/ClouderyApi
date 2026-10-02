@@ -101,7 +101,10 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options, IDomainEvent
         modelBuilder.Entity<MhopBottle>(e =>
         {
             e.Property(b => b.Content).HasColumnType("text");
-            e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting);
+            // 注意：Pending(0) 恰是 int 的 CLR 默认值。若不显式指定 sentinel，EF 会把「Status = Pending」
+            // 判定为「未赋值」，INSERT 时省略 status 列，数据库默认值 Drifting(1) 生效，
+            // 投瓶将绕过 AI 初筛（待审核判断在 MhopContentReviewService 中立即早退）。sentinel 取 -1（非合法状态）。
+            e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting).HasSentinel(-1);
             e.Property(b => b.Crisis).HasDefaultValue(false);
             e.Property(b => b.AiFlag).HasDefaultValue(string.Empty);
             e.Property(b => b.AiReviewNote).HasDefaultValue(string.Empty);
