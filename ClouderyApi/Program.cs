@@ -86,6 +86,7 @@ builder.Services.AddScoped<MhopUploadService>();
 builder.Services.AddScoped<MhopContentService>();
 builder.Services.AddScoped<MhopBottleService>();
 builder.Services.AddScoped<AssessmentAppService>();
+builder.Services.AddScoped<ForumAppService>();
 builder.Services.AddHostedService<MhopBottleTimeoutService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
