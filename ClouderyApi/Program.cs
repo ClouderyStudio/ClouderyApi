@@ -16,6 +16,7 @@ using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using System.Collections.Concurrent;
 
@@ -104,18 +105,16 @@ builder.Services.AddScoped<MhopCurrentUserAccessor>();
 // 图片对象存储：local = 本机磁盘（由 /mhop/uploads 静态托管）；oss = 远端阿里云 OSS
 builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
 {
-    var configuration = sp.GetRequiredService<IConfiguration>();
-    var provider = (configuration["Mhop:Storage:Provider"] ?? "local").Trim();
+    var mhopOptions = sp.GetRequiredService<IOptions<MhopOptions>>().Value;
+    var provider = mhopOptions.Storage.Provider.Trim();
     if (provider.Equals("oss", StringComparison.OrdinalIgnoreCase)
         || provider.Equals("aliyun", StringComparison.OrdinalIgnoreCase))
     {
-        var ossOptions = new MhopOssOptions();
-        configuration.GetSection("Mhop:Storage:Oss").Bind(ossOptions);
-        return new MhopAliyunOssStorage(ossOptions, sp.GetRequiredService<ILogger<MhopAliyunOssStorage>>());
+        return new MhopAliyunOssStorage(mhopOptions.Storage.Oss, sp.GetRequiredService<ILogger<MhopAliyunOssStorage>>());
     }
 
     var contentRoot = sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
-    return new MhopLocalObjectStorage(MhopUploadPaths.ResolveLocalRoot(configuration["Mhop:UploadDir"], contentRoot));
+    return new MhopLocalObjectStorage(MhopUploadPaths.ResolveLocalRoot(mhopOptions.UploadDir, contentRoot));
 });
 builder.Services.AddScoped<MhopUploadService>();
 builder.Services.AddScoped<MhopContentService>();
@@ -205,7 +204,8 @@ if (sweepOrphans)
 
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
-if (app.Configuration.GetValue("Mhop:AutoMigrate", app.Environment.IsDevelopment()))
+var mhopOptions = app.Services.GetRequiredService<IOptions<MhopOptions>>().Value;
+if (mhopOptions.AutoMigrate ?? app.Environment.IsDevelopment())
 {
     try
     {
@@ -218,7 +218,7 @@ if (app.Configuration.GetValue("Mhop:AutoMigrate", app.Environment.IsDevelopment
     }
 }
 
-if (app.Configuration.GetValue("Mhop:Seed", true))
+if (mhopOptions.Seed)
 {
     try
     {
@@ -300,7 +300,7 @@ app.UseHttpsRedirection();
 var mhopStorage = app.Services.GetRequiredService<IMhopObjectStorage>();
 var mhopUploadRoot = mhopStorage is MhopLocalObjectStorage localStorage
     ? localStorage.Root
-    : MhopUploadPaths.ResolveLocalRoot(app.Configuration["Mhop:UploadDir"], app.Environment.ContentRootPath);
+    : MhopUploadPaths.ResolveLocalRoot(mhopOptions.UploadDir, app.Environment.ContentRootPath);
 Directory.CreateDirectory(Path.Combine(mhopUploadRoot, "avatars"));
 Directory.CreateDirectory(Path.Combine(mhopUploadRoot, "posts"));
 app.UseStaticFiles(new StaticFileOptions
