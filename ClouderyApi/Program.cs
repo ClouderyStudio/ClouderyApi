@@ -88,6 +88,7 @@ builder.Services.AddScoped<MhopContentService>();
 builder.Services.AddScoped<BottleAppService>();
 builder.Services.AddScoped<AssessmentAppService>();
 builder.Services.AddScoped<ForumAppService>();
+builder.Services.AddScoped<AuthAppService>();
 builder.Services.AddScoped<AdminAppService>();
 builder.Services.AddHostedService<MhopBottleTimeoutService>();
 

@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using ClouderyApi.Services.Mhop;
+using ClouderyApi.UseCases.Mhop.Mapping;
 
 namespace ClouderyApi.Models.Mhop.DTOs;
 
@@ -68,20 +69,6 @@ public class UserOut
 
     public DateTime CreatedAt { get; set; }
 
-    public static UserOut FromEntity(MhopUser user, bool maskPhone = false, bool exposePermissions = true) => new()
-    {
-        Id = user.Id,
-        Username = user.Username,
-        Email = user.Email,
-        Phone = maskPhone ? null : user.Phone,
-        Role = user.Role,
-        Status = user.Status,
-        Avatar = user.Avatar ?? string.Empty,
-        Badge = user.Badge ?? string.Empty,
-        // 对外公开资料不下发后台权限，避免泄露管理能力
-        Permissions = exposePermissions ? MhopAdminPermissions.Effective(user) : [],
-        CreatedAt = user.CreatedAt,
-    };
 }
 
 public class TokenOut
@@ -94,11 +81,28 @@ public class TokenOut
     public bool NewAccount { get; set; }
 
     public UserOut User { get; set; } = new();
+}
 
-    public static TokenOut Create(string accessToken, MhopUser user, bool newAccount = false) => new()
-    {
-        AccessToken = accessToken,
-        NewAccount = newAccount,
-        User = UserOut.FromEntity(user),
-    };
+/// <summary>邮箱验证码发送结果（已实际投递）。</summary>
+public class EmailCodeOut
+{
+    public bool Sent { get; set; }
+
+    public int Ttl { get; set; }
+
+    public int ResendAfter { get; set; }
+}
+
+/// <summary>邮箱验证码发送结果（未配置 SMTP 的开发环境，额外返回 dev_mode / dev_code）。</summary>
+public class EmailCodeDevOut
+{
+    public bool Sent { get; set; }
+
+    public int Ttl { get; set; }
+
+    public int ResendAfter { get; set; }
+
+    public bool DevMode { get; set; }
+
+    public string DevCode { get; set; } = string.Empty;
 }

@@ -76,7 +76,7 @@ public static class MhopAdminMapper
 
     public static AdminUserListItemOut ToUserListItem(MhopUser user, int postCount, int replyCount)
     {
-        var item = UserOut.FromEntity(user);
+        var item = MhopAuthMapper.ToUserOut(user);
         var isSuper = MhopAdminPermissions.IsSuper(user.Role);
         return new AdminUserListItemOut
         {
