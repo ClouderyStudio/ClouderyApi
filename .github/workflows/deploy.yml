@@ -94,6 +94,13 @@ jobs:
           script: |
             set -e
             CONTAINER="${{ secrets.DEPLOY_CONTAINER }}"
+            # 迁移与种子改为显式执行：失败会因 set -e 中止部署，避免带着未迁移的库重启
+            echo "执行数据库迁移与种子 ..."
+            if ! docker exec "$CONTAINER" dotnet ClouderyApi.dll --migrate --seed; then
+              echo "容器默认工作目录不可用，改用 -w /app 重试"
+              docker exec -w /app "$CONTAINER" dotnet ClouderyApi.dll --migrate --seed
+            fi
+
             echo "重启容器 $CONTAINER ..."
             docker restart "$CONTAINER"
             sleep 5
