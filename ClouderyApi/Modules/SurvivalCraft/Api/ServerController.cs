@@ -1,5 +1,7 @@
+using ClouderyApi.Shared.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -15,25 +17,19 @@ public class ServerController : ControllerBase
     public const string HttpClientName = "SckeyServer";
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private readonly SckeyOptions _sckey;
 
-    public ServerController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public ServerController(IHttpClientFactory httpClientFactory, IOptions<SckeyOptions> sckeyOptions)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _sckey = sckeyOptions.Value;
     }
 
     // 配置键以 appsettings.json 实际定义的 Env:* 为准；旧代码读 SurvivalCraft:*，导致令牌恒为空、
-    // Authorization 头从未发出。旧键名保留为兼容回退。
-    private string ApiBase =>
-        _configuration["Env:SCKEY_API_BASE"]
-        ?? _configuration["SurvivalCraft:SCKEY_API_BASE"]
-        ?? "https://api.sckey.net";
+    // Authorization 头从未发出。旧键名回退已移至 SckeyOptions 的 PostConfigure（见 Program.cs）。
+    private string ApiBase => _sckey.ApiBase ?? "https://api.sckey.net";
 
-    private string ApiToken =>
-        _configuration["Env:SCKEY_BEARER_TOKEN"]
-        ?? _configuration["SurvivalCraft:SCKEY_BEARER_TOKEN"]
-        ?? "";
+    private string ApiToken => _sckey.BearerToken ?? "";
 
     /// <summary>
     /// 校验转发路径，防止路径穿越（SSRF 保护）

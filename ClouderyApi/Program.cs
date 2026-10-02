@@ -129,6 +129,13 @@ builder.Services.AddHostedService<MhopBottleTimeoutService>();
 // ===== 横切配置（Options 模式，见 docs/DDD-STAGE5-CROSS-CUTTING.md §5.2）=====
 builder.Services.Configure<CasdoorSettings>(builder.Configuration.GetSection(CasdoorSettings.SectionName));
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.SectionName));
+builder.Services.Configure<SckeyOptions>(builder.Configuration.GetSection(SckeyOptions.SectionName));
+builder.Services.PostConfigure<SckeyOptions>(options =>
+{
+    // 旧键名 SurvivalCraft:SCKEY_* 保留为兼容回退；?? 语义只覆盖“键缺失”，显式空串仍是有效取值。
+    options.ApiBase ??= builder.Configuration["SurvivalCraft:SCKEY_API_BASE"] ?? "https://api.sckey.net";
+    options.BearerToken ??= builder.Configuration["SurvivalCraft:SCKEY_BEARER_TOKEN"] ?? "";
+});
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
