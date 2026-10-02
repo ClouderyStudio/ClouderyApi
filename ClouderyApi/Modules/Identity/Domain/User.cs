@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace ClouderyApi.Models.Identity;
+namespace ClouderyApi.Modules.Identity.Domain;
 
 /// <summary>
 /// 本地登录用户：Casdoor 回调时按 CasdoorId 增量同步，

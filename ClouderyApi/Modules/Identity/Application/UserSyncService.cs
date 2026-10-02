@@ -1,9 +1,9 @@
 using Casdoor.Client;
 using ClouderyApi.Data;
-using ClouderyApi.Models.Identity;
+using ClouderyApi.Modules.Identity.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.UseCases.Identity;
+namespace ClouderyApi.Modules.Identity.Application;
 
 /// <summary>
 /// Casdoor 用户 → 本地 Identity 用户表的同步（登录回调时调用）。

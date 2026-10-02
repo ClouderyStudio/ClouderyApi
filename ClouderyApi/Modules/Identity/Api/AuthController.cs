@@ -1,5 +1,5 @@
 using Casdoor.Client;
-using ClouderyApi.UseCases.Identity;
+using ClouderyApi.Modules.Identity.Application;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClouderyApi.Controllers.Auth;
+namespace ClouderyApi.Modules.Identity.Api;
 
 [Route("identity/[controller]")]
 [ApiController]

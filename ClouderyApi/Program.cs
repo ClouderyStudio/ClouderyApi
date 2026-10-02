@@ -4,7 +4,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Shared.Ai;
 using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Services.Mhop;
-using ClouderyApi.UseCases.Identity;
+using ClouderyApi.Modules.Identity.Application;
 using ClouderyApi.UseCases.Mhop;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authentication.Cookies;

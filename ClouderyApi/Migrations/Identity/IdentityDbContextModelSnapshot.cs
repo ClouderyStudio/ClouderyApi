@@ -19,7 +19,7 @@ namespace ClouderyApi.Migrations.Identity
                 .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            modelBuilder.Entity("ClouderyApi.Models.Identity.User", b =>
+            modelBuilder.Entity("ClouderyApi.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()

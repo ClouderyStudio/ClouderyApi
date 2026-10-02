@@ -1,4 +1,4 @@
-using ClouderyApi.Models.Identity;
+using ClouderyApi.Modules.Identity.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Data;
