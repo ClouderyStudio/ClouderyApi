@@ -202,7 +202,7 @@
 |---|---|---|---|---|
 | Stage 0 | 安全网（测试） | 后续重构可回归 | 中 | 无 |
 | Stage 1 | 值对象 + 充血模型 | 规则收口、消除重复常量 | 中 | 无 | ✅ 已完成（MHOP） |
-| Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 |
+| Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 | ✅ 已完成（M3 + M4） |
 | Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） |
 | Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox |
 | Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 |
@@ -262,7 +262,7 @@
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 
-### Stage 2 — 应用层抽取、控制器瘦身 🔶 M3 已完成（MHOP）；Cloudery/Zhuxs（M4）进行中
+### Stage 2 — 应用层抽取、控制器瘦身 ✅ 已完成（M3 = MHOP；M4 = Cloudery / Zhuxs / Identity）
 - **目标**：控制器只做 HTTP；用例编排进 Application 层。
 - **改动清单（MHOP）**：
   1. ForumAppService 承接 MhopForumController 的读写 / 状态流转 / 点赞 / 我的列表，映射移入 Application/Mhop/Mapping。
@@ -284,17 +284,27 @@
   - `e302bd3` 瓶子管理控制器去除 DbContext 直连（统计/用户名查询下沉为 BottleAppService.CountVisibleMessagesAsync / LoadUsernamesAsync）。
   - `0bcbd89` SurvivalCraft 配置键修复（附录 A.1/A.2）：改读 `Env:SCKEY_API_BASE` / `Env:SCKEY_BEARER_TOKEN`（旧键回退）、命名 HttpClient `ServerController.HttpClientName = "SckeyServer"`、令牌非空才发 `Authorization: Bearer`；新增 ServerControllerContractTests 5 例，**行为变化：令牌过去从未发出，现在会发出**。
   - `43a8e2c` Cloudery/Identity 契约基线测试（新增 35 个测试 + `ClouderyApi.Tests/TestData/swagger-routes.snapshot.txt` 路由快照）。
-  - 验证口径：全量 **180 passed / 0 failed**；build 0 error，唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603。
+  - 验证口径：全量 **185 passed / 0 failed**（145 既有 + 5 SurvivalCraft + 35 契约基线）；build 0 error，唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603。
   - 注意：本机 MySQL（127.0.0.1:3307）`max_connections=151` 被多个代理共用，**并发跑全量套件会假失败**（`MySqlException : Too many connections`），验证必须单跑。
-- **改动清单（Cloudery / Zhuxs）**：
-  1. MembersAppService、ExamPaperAppService（含试卷评分领域逻辑）、ExamResultAppService、Zhuxs 各 AppService。
-  2. 为 Member / Whitelist / Application / Term / ExamPaper 补输出 DTO，停止返回 EF 实体。
-  3. ConfigureApiBehaviorOptions 统一 400 契约，移除死掉的 ModelState 检查。
+- **M4 里程碑记录（Cloudery / Zhuxs / Identity 应用层，已完成，10 次提交，均仅本地未推送）**：
+  - `1257c3d` 输出 DTO（`ClouderyApi/Models/Cloudery/DTOs/{MemberOut,ExamPaperDtos,ExamGradeDtos}.cs`、`ClouderyApi/Models/Zhuxs/DTOs/{WhitelistOut,TermOut,ApplicationOut}.cs`；属性声明顺序与实体逐字一致、PascalCase、无 `[JsonPropertyName]`）。
+  - `7f8ba4d` 一次性注册 8 个应用服务（`MembersAppService` / `ExamPaperAppService` / `ExamResultAppService` / `WhitelistsAppService` / `TermsAppService` / `ApplicationsAppService` / `UserSyncService` 为 Scoped，`ResultAnalysisAppService` 为 Singleton）。
+  - `57714ce` MembersAppService；`d1aad6c` 判分算法抽为纯函数 `ClouderyApi/UseCases/Cloudery/Domain/ExamPaperGrader.cs`（`public static ExamGradeResult Grade(ExamPaper, GradeRequest)`，函数体与旧 ExamPapersController.cs:65-141 逐字相同）；`7798ac7` ExamPaperAppService；`2507d48` ExamResultAppService；`d318b7a` ResultAnalysisAppService。
+  - `e8f3b40` WhitelistsAppService；`8135a17` TermsAppService；`b111b84` ApplicationsAppService（三者查询排序原样：`OrderBy(Code).Take(1000)` / `OrderByDescending(RecordDate).Take(1000)` / `OrderByDescending(SubmissionDate).Take(1000)`；`DbUpdateException` → 模块内 `ClouderyApi/UseCases/Zhuxs/ZhuxsWriteConflictException.cs`，避开全局 `MhopApiExceptionFilter` 的 `{detail}` 渲染，控制器仍映射 409 `{success=false,message="记录冲突"}`）。
+  - `7edf21a` `ClouderyApi/UseCases/Identity/UserSyncService.cs`（`public async Task<User?> SyncAsync(CasdoorUser casdoorUser, CancellationToken cancellationToken = default)`，逻辑与原 AuthController.cs:207-251 逐字等价）。**偏差**：未抽 AuthAppService —— 余下 config/state/callback/me/logout/status 是 OAuth/Cookie 协议本身，且 `ClouderyApi.UseCases.Mhop.AuthAppService` 已同名（同名会 CS0104）。
+  - 契约等价证据：机械脚本以 `43a8e2c` 为基线对比 Members / ExamPapers / ExamResults / ResultAnalysis / Whitelists / Terms / Applications 七个控制器的 HTTP 特性、CJK 文案、`CreatedAtAction` 名称 **全部 0 差异**；AuthController 写 Cookie 的 6 条 claim 与 24 行 Cookie 逻辑逐字不变（CJK 30→25 的 5 条差额全部落在 `UserSyncService.cs`）；`Controllers/{Cloudery,Zhuxs,Auth}` grep `DbContext|EntityFrameworkCore|IQueryable` 0 命中。
+  - 验证口径：第 7–8 刀、第 9–10 刀集成后各单跑一次全量，均 **185 passed / 0 failed**；build 0 error，唯一既有警告 CS8603 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)`。
+  - 明确未做（单独立项）：`ConfigureApiBehaviorOptions` 统一 400 契约 + 删除死 ModelState 检查 —— 全局变更会同时改变已冻结的 MHOP 400 形状。
+- **改动清单（Cloudery / Zhuxs）✅ 已落地**：
+  1. ✅ MembersAppService、ExamPaperAppService（含试卷评分领域逻辑）、ExamResultAppService、Whitelists/Terms/ApplicationsAppService。
+  2. ✅ 为 Member / Whitelist / Application / Term / ExamPaper 补输出 DTO，停止返回 EF 实体。
+  3. ⏸ ConfigureApiBehaviorOptions 统一 400 契约、移除死 ModelState 检查 —— **未做，单独立项**。
 - **验证**：Stage 0 测试 + 重构前后 swagger.json 路由 / schema 对比（除描述外应无差异）。
 - **风险**：最高（改动面最大）。按“一个控制器一个提交”推进。
 - **回滚**：逐控制器回退。
 
 ### Stage 3 — 按限界上下文重组目录
+- **前置条件**：Stage 2（含 M4）已收尾，施工图 docs/DDD-STAGE3-MODULE-MAP.md 的现状普查已按 M4 后的真实文件数刷新。
 - **目标**：把类型分层改为模块化单体（第 4.1 节）。
 - **改动清单**：建立 Modules/{Mhop,Cloudery,Zhuxs,Identity}/{Domain,Application,Infrastructure,Api} 与 Shared/；移动文件、更新命名空间；同步迁移文件中的 [DbContext] 引用（或让 DbContext 留在 ClouderyApi.Data）。
 - **可选**：引入 NetArchTest 架构测试，强制依赖方向与模块隔离。
@@ -359,7 +369,7 @@
 
 ## 9. 提交与里程碑建议
 - 每个 Stage 一个（或一组）独立提交，提交信息沿用现有中文约定（refactor(scope): ...）。
-- 建议里程碑：M1 = Stage 0；M2 = Stage 1；M3 = Stage 2（MHOP）；M4 = Stage 2（Cloudery/Zhuxs）；M5 = Stage 3；M6 = Stage 4 + Stage 5。
+- 建议里程碑：M1 = Stage 0 ✅；M2 = Stage 1 ✅；M3 = Stage 2（MHOP）✅；M4 = Stage 2（Cloudery/Zhuxs/Identity）✅；M5 = Stage 3；M6 = Stage 4 + Stage 5。
 - 每完成一个里程碑提交一次，**不推送**由你决定。
 
 ---
