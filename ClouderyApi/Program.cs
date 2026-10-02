@@ -5,6 +5,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Shared.Ai;
+using ClouderyApi.Shared.Options;
 using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Identity.Application;
@@ -124,6 +125,9 @@ builder.Services.AddScoped<ForumAppService>();
 builder.Services.AddScoped<AuthAppService>();
 builder.Services.AddScoped<AdminAppService>();
 builder.Services.AddHostedService<MhopBottleTimeoutService>();
+
+// ===== 横切配置（Options 模式，见 docs/DDD-STAGE5-CROSS-CUTTING.md §5.2）=====
+builder.Services.Configure<CasdoorSettings>(builder.Configuration.GetSection(CasdoorSettings.SectionName));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Casdoor.Client;
 using ClouderyApi.Modules.Mhop.Infrastructure;
+using ClouderyApi.Shared.Options;
 using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Modules.Mhop.Application;
@@ -17,26 +18,28 @@ public sealed class CasdoorAppService
     private const int StateTtlSeconds = 600;
 
     private readonly IConfiguration _configuration;
+    private readonly CasdoorSettings _casdoor;
     private readonly MhopOptions _options;
     private readonly IHttpClientFactory _httpClientFactory;
 
     public CasdoorAppService(
-        IConfiguration configuration, IOptions<MhopOptions> options, IHttpClientFactory httpClientFactory)
+        IConfiguration configuration, IOptions<CasdoorSettings> casdoor, IOptions<MhopOptions> options, IHttpClientFactory httpClientFactory)
     {
         _configuration = configuration;
+        _casdoor = casdoor.Value;
         _options = options.Value;
         _httpClientFactory = httpClientFactory;
     }
 
-    public string? Endpoint => _configuration["Casdoor:Endpoint"];
+    public string? Endpoint => _casdoor.Endpoint;
 
-    public string? OrganizationName => _configuration["Casdoor:OrganizationName"];
+    public string? OrganizationName => _casdoor.OrganizationName;
 
-    public string? ApplicationName => _configuration["Casdoor:ApplicationName"];
+    public string? ApplicationName => _casdoor.ApplicationName;
 
-    public string? ClientId => _configuration["Casdoor:ClientId"];
+    public string? ClientId => _casdoor.ClientId;
 
-    public string Scope => _configuration.GetSection("Casdoor:Scopes").Get<string[]>() is { Length: > 0 } scopes
+    public string Scope => _casdoor.Scopes is { Length: > 0 } scopes
         ? string.Join(' ', scopes)
         : "openid profile email";
 
@@ -47,7 +50,7 @@ public sealed class CasdoorAppService
         _options.Casdoor.Enabled
         && !string.IsNullOrWhiteSpace(Endpoint)
         && !string.IsNullOrWhiteSpace(ClientId)
-        && !string.IsNullOrWhiteSpace(_configuration["Casdoor:ClientSecret"]);
+        && !string.IsNullOrWhiteSpace(_casdoor.ClientSecret);
 
     /// <summary>
     /// 计算前端回调地址：优先取 Mhop:Casdoor:RedirectUri；否则取白名单内的 Origin + 固定 SPA 回调路径；
@@ -102,10 +105,10 @@ public sealed class CasdoorAppService
             Endpoint = Endpoint,
             OrganizationName = OrganizationName,
             ApplicationName = ApplicationName,
-            ApplicationType = _configuration["Casdoor:ApplicationType"],
+            ApplicationType = _casdoor.ApplicationType,
             ClientId = ClientId,
-            ClientSecret = _configuration["Casdoor:ClientSecret"],
-            CallbackPath = _configuration["Casdoor:CallbackPath"],
+            ClientSecret = _casdoor.ClientSecret,
+            CallbackPath = _casdoor.CallbackPath,
         };
 #pragma warning restore CS8601
 

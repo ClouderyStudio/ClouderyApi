@@ -5,8 +5,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Configuration;
+using ClouderyApi.Shared.Options;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Modules.Identity.Api;
 
@@ -22,22 +23,23 @@ public class AuthController : ControllerBase
     public AuthController(
         ILogger<AuthController> logger,
         UserSyncService userSync,
-        IConfiguration configuration,
+        IOptions<CasdoorSettings> casdoorSettings,
         IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _userSync = userSync;
 
+        var settings = casdoorSettings.Value;
 #pragma warning disable CS8601 // 引用类型赋值可能为 null（来自配置）
         _options = new CasdoorOptions
         {
-            Endpoint = configuration["Casdoor:Endpoint"],
-            OrganizationName = configuration["Casdoor:OrganizationName"],
-            ApplicationName = configuration["Casdoor:ApplicationName"],
-            ApplicationType = configuration["Casdoor:ApplicationType"],
-            ClientId = configuration["Casdoor:ClientId"],
-            ClientSecret = configuration["Casdoor:ClientSecret"],
-            CallbackPath = configuration["Casdoor:CallbackPath"],
+            Endpoint = settings.Endpoint,
+            OrganizationName = settings.OrganizationName,
+            ApplicationName = settings.ApplicationName,
+            ApplicationType = settings.ApplicationType,
+            ClientId = settings.ClientId,
+            ClientSecret = settings.ClientSecret,
+            CallbackPath = settings.CallbackPath,
         };
 #pragma warning restore CS8601
 
