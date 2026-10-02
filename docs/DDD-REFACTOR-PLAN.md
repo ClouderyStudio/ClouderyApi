@@ -204,8 +204,8 @@
 | Stage 1 | 值对象 + 充血模型 | 规则收口、消除重复常量 | 中 | 无 | ✅ 已完成（MHOP） |
 | Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 | ✅ 已完成（M3 + M4） |
 | Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） | ✅ 已完成（7 次提交） |
-| Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox |
-| Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 |
+| Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox | ✅ 已完成（5 步 + 2 次守卫测试） |
+| Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 | 待启动（8 项需批准） |
 
 ### Stage 0 — 建立安全网 ✅ 已完成（提交 ac6c00c）
 - **实际做法**：新增 ClouderyApi.Tests（xUnit + Microsoft.AspNetCore.Mvc.Testing）；**未用 Testcontainers**，改为 `CLOUDERY_TEST_MYSQL` 指向真实 MySQL（本地用便携 mysqld，CI 用 mysql:8.0 service），每个测试类自建/自删一次性库 `cloudery_test_<16位>`（TestSupport/MySqlTestServer.cs、IntegrationTestBase.cs）。
@@ -318,15 +318,20 @@
 - **说明**：本文 Stage 1 / Stage 2 章节引用的路径是当时的真实路径（如 `ClouderyApi/Models/Mhop/*`、`ClouderyApi/UseCases/*`、`ClouderyApi/Data/ClouderyApiContext.cs(51,22)` 警告仍有效），Stage 3 之后统一位于 `ClouderyApi/Modules/<Ctx>/<Layer>/`；旧→新完整映射见 docs/DDD-STAGE3-MODULE-MAP.md。
 - **未做**：NetArchTest 架构测试（可选项，未引入）；拆分 `ClouderyApiContext` 属 Stage 5。
 
-### Stage 4 — 领域事件与事务边界
-> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（下文 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号在 Stage 1–3 后已失效，以施工图为准）。
+### Stage 4 — 领域事件与事务边界 ✅ 已完成（路线 A：进程内派发；5 步 + 2 次接线守卫 + 1 次缺陷记录）
+> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（第 5 步实测后已在 §四/§五 回填「内容审核那一处事务不适用」的结论）。以下 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号为方案撰写时的旧值，现以施工图为准。
 - **目标**：解耦副作用、显式事务。
-- **改动清单**：
-  1. 聚合内 AddDomainEvent：ContentPublished / ContentRejected / ContentRecalled、BottlePicked / BottleEnded / BottleReported、UserPermissionsChanged。
-  2. 在 SaveChangesAsync 覆盖中收集并派发（进程内），或引入 outbox 表（需 EF 迁移）。
-  3. 用事件订阅替换控制器的命令式副作用（MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191）。
-  4. 多写用例包显式事务，对齐 MhopBottleService.cs:115。
-- **风险**：中高；outbox 需要迁移。
+- **M6 里程碑记录（均仅本地未推送）**：
+  - `bb2c66b` 第 1 步 事件基座：新增 `ClouderyApi/Shared/Domain/`（`IDomainEvent` / `IDomainEventHandler<T>` / `IHasDomainEvents` / `IDomainEventDispatcher` / `DomainEventDispatcher` + `NullDomainEventDispatcher`）；5 个 Mhop 聚合以 `[NotMapped]` 事件列表实现接口（不用实体基类，避免 EF 把基类纳入类型层级/要求主键）；`MhopDbContext.SaveChangesAsync` 覆写「收集 → base.Save → 派发 → 全部成功后清空」；暂无订阅者，行为不变。
+  - `2a30ee3` 第 2 步 内容事件（+ `78b34aa` 9 条接线守卫）：Post/Reply 的审核、发布、驳回、撤回、提审、编辑登记事件；订阅者接管 `ForumAppService` 的 6 处排队与 `AdminAppService.cs:112` 的同步连带（保留「已有 AI 回复则同步写库 / 无则排队」分叉）。
+  - `d562fa6` 第 3 步 瓶子事件（+ `48c774f` 补 3 条守卫）：`BottleThrown` / `BottleMessageSent`；`BottleAppService` 不再注入 `MhopContentReviewService`。
+  - `8fc5b09` 第 4 步 用户事件：`UserRoleChanged` / `UserPermissionsChanged` / `UserStatusChanged` / `UserBadgeChanged`（订阅者暂空）+ 5 条守卫。
+  - `ea74382` 第 5 步 事务收口：`MhopAiService.QueueForumReply` 用显式事务包住「写 AI 回复 → 写 mhop_ai_logs」两次 Save；新增 `ClouderyApi.Tests/MhopAiReplyWriteTests.cs` 2 条（该写入路径此前零覆盖；变异验证：注释掉 `CommitAsync` 后两条均失败）。
+  - `0f46803` 附录 D：记录投瓶 sentinel 缺陷（未修，需批准后单独立项）。
+- **刻意未做**：outbox 表（路线 A 的投递语义不比现状 `Task.Run` 差，且不引入迁移风险）；管理员重审（`MhopBottleAdminController.cs:154/191` 的 `rescreen:true`）与每小时轮询重排不事件化（显式命令 / 运维补偿，不派生自状态迁移）；对象存储清理保持「先落库再尽力清理」不入事务；`MhopContentReviewService.cs:75-85` 因 `EnsureForumReplyAsync` 自建 DI scope（另取 DbContext/连接，且常见路径只是排队）无法并入同一事务，已实测并在施工图 §四 注明。
+- **验证口径**：每步 build 0 error（唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603）+ 主树单飞 `dotnet test` 全绿；Stage 4 收尾 **203 passed / 0 failed**（185 + 11 接线守卫 + 5 用户事件 + 2 AI 写入）；`has-pending-model-changes`（MhopDbContext）No changes、无新迁移、swagger 路由快照未变。
+- **风险残留**：内容侧事件丢失不可逆（瓶子侧有每小时轮询兜底 `RequeueStaleBottleReviews`）；投瓶 AI 初筛因既有 sentinel 缺陷从未执行（附录 D）。
+- **回滚**：逐提交 `git revert`；整体放弃基座时先 revert 订阅步骤再 revert 基座步骤。
 
 ### Stage 5 — 横切与工程化（可并行）
 > 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE5-CROSS-CUTTING.md（含 8 项会改变对外行为的改造清单，实施前需用户批准）。
@@ -378,7 +383,7 @@
 
 ## 9. 提交与里程碑建议
 - 每个 Stage 一个（或一组）独立提交，提交信息沿用现有中文约定（refactor(scope): ...）。
-- 建议里程碑：M1 = Stage 0 ✅；M2 = Stage 1 ✅；M3 = Stage 2（MHOP）✅；M4 = Stage 2（Cloudery/Zhuxs/Identity）✅；M5 = Stage 3；M6 = Stage 4 + Stage 5。
+- 建议里程碑：M1 = Stage 0 ✅；M2 = Stage 1 ✅；M3 = Stage 2（MHOP）✅；M4 = Stage 2（Cloudery/Zhuxs/Identity）✅；M5 = Stage 3 ✅；M6 = Stage 4 ✅；M7 = Stage 5。
 - 每完成一个里程碑提交一次，**不推送**由你决定。
 
 ---
