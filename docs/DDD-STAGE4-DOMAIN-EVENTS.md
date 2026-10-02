@@ -84,11 +84,13 @@
 |---|---|---|---|
 | 审核通过 + AI 连带 | `AdminAppService.cs:108` + `:112` | 审核写入；`EnsureForumReplyAsync` 在已有 AI 回复时会再写库（`MhopAiService.cs:318-323`） | 连带移到提交后订阅者，但**保留同步 await 语义**（见 §六） |
 | AI 回复 + 审计日志 | `MhopAiService.cs:402` + `:413` | 回复落库；随后 AI 日志落库 | 用 `BeginTransactionAsync` 包住两处 Save，不得改变失败时是否留半条回复 |
-| AI 审核发布 + AI 回复 | `MhopContentReviewService.cs:75-81` + `:85` | ExecuteUpdate 发布；`EnsureForumReplyAsync` 可能再写 | 同上 |
+| AI 审核发布 + AI 回复 | `MhopContentReviewService.cs:75-81` + `:85` | ExecuteUpdate 发布；`EnsureForumReplyAsync` 可能再写 | **实测不适用，保持现状**：`EnsureForumReplyAsync` 自建 DI scope（`MhopAiService.cs:303-305`），另取 DbContext / 连接，无法并入同一事务；且常见路径只是排队（`:332`） |
 | 对象存储清理 | `MhopContentService.cs:53/71/110`、`AuthAppService.cs:210`、`ForumAppService.cs:416/468` | 不参与事务，属「先落库再尽力清理」 | **保持现状**（`MhopContentService.cs:7-11` 注释明确），不得借加事务把它们挪进事务 |
 | 瓶子捞取 | `BottleAppService.cs:105-137` | 已是显式事务 | 保持，作为写法对齐样板 |
 
-写法：`await using var tx = await _db.Database.BeginTransactionAsync();` … `await tx.CommitAsync();`，失败路径沿用现有 try/catch + rollback（参考 `BottleAppService.cs:142/147`）。**不得**改变任何对外状态码/文案（例：`BottleAppService.cs:453` 的 409「该瓶子不在待审核状态」、`MhopBottleController.cs:38-48` 的 409 `{detail}`）。
+写法：`await using var tx = await _db.Database.BeginTransactionAsync();` … `await tx.CommitAsync();`，失败路径沿用现有 try/catch + rollback（参考 `BottleAppService.cs:142/147`）。
+
+事务带来的唯一有意语义变化：`MhopAiService` 中若审计日志写入失败，AI 回复也一并回滚（此前会留下一条没有日志的回复）；异常仍由既有 catch 记录，对外契约不变。**不得**改变任何对外状态码/文案（例：`BottleAppService.cs:453` 的 409「该瓶子不在待审核状态」、`MhopBottleController.cs:38-48` 的 409 `{detail}`）。
 
 ## 五、执行顺序（每步独立提交、可编译、可回滚）
 
@@ -96,7 +98,7 @@
 2. 内容事件：在 `MhopPost`/`MhopReply` 的 Publish/Reject/Withdraw/SubmitForReview/ApplyAuthorEdit 登记事件，订阅者接管 `ForumAppService.cs:178/203/415/440/467/491` 与 `AdminAppService.cs:112`。提交：`refactor(mhop): 内容副作用改为领域事件`。验收：`MhopForumWriteContractTests.cs:67`、`DomainContentTests` 全绿；确认发帖响应不等待 AI 审核；敏感词命中仍不排队（`ForumAppService.cs:198-203`）。
 3. 瓶子事件：`BottleAppService.cs:82/250` 与 `MhopBottleAdminController.cs:154/191` 改事件。提交：`refactor(mhop): 瓶子副作用改为领域事件`。验收：`DomainBottleTests` 16 条全绿；瓶子路由快照不变；**瓶子 HTTP 路径无契约测试（待实测/建议补）**，需人工对比 JSON/文案。
 4. 用户事件：登记 `UserPermissionsChanged` 等，订阅者暂空。提交：`refactor(mhop): 用户权限变更登记领域事件`。验收：`MhopAdminAuthorizationTests` 5 条全绿；行为零变更。
-5. 事务收口：`MhopAiService.cs:402/413`、`MhopContentReviewService.cs:75-85` 包显式事务。提交：`refactor(mhop): AI 回复与审核写入收口事务`。验收：`SmokeTests` 与写路径契约测试全绿；并发捞取/审核不回归。
+5. 事务收口：`MhopAiService.cs:402/413`（AI 回复 + 审计日志，同连接、同 scope）包显式事务；`MhopContentReviewService.cs:75-85` **经实测不适用**（跨 DI scope，见 §四）。提交：`refactor(mhop): AI 回复与审核写入收口事务`。验收：写路径契约测试全绿；并发捞取/审核不回归。
 
 统一验收：`dotnet build ClouderyApi.sln --nologo -v q` 0 error；`dotnet test ClouderyApi.Tests` 全绿（**本机 MySQL `max_connections` 有限，串行跑，勿并发多实例**）；`dotnet ef migrations list --context MhopDbContext` 无新增（走 A 路线时每步都应无新增）。
 

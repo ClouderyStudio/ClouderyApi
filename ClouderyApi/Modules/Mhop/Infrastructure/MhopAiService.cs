@@ -398,6 +398,9 @@ public sealed class MhopAiService
                     Crisis = crisis,
                     CreatedAt = DateTime.UtcNow,
                 };
+                // 回复与审计日志属于同一逻辑写入（同连接、同 DI scope）：
+                // 用显式事务保证两者一起提交，避免只落库回复而丢失调用日志。
+                await using var tx = await db.Database.BeginTransactionAsync();
                 db.MhopReplies.Add(reply);
                 await db.SaveChangesAsync();
                 db.MhopAiLogs.Add(new MhopAiLog
@@ -411,6 +414,7 @@ public sealed class MhopAiService
                     CreatedAt = DateTime.UtcNow,
                 });
                 await db.SaveChangesAsync();
+                await tx.CommitAsync();
             }
             catch (Exception ex)
             {
