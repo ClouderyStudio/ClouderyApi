@@ -1,33 +1,28 @@
-using ClouderyApi.Data;
-using ClouderyApi.Models.Cloudery;
 using ClouderyApi.Models.Cloudery.DTOs;
 using ClouderyApi.Controllers.Filters;
+using ClouderyApi.UseCases.Cloudery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Controllers.Cloudery;
 
 [Route("cloudery/[controller]")]
 [ApiController]
 [Authorize]
-public class MembersController(ClouderyApiContext context) : ControllerBase
+public class MembersController(MembersAppService members) : ControllerBase
 {
     [HttpGet]
     [AllowAnonymous]
-    public async Task<ActionResult<IEnumerable<Member>>> GetClouderyMember()
+    public async Task<ActionResult<IEnumerable<MemberOut>>> GetClouderyMember()
     {
-        return await context.ClouderyMembers
-            .OrderBy(x => x.Name)
-            .Take(1000)
-            .ToListAsync();
+        return await members.ListAsync();
     }
 
     [HttpGet("{id}")]
     [AllowAnonymous]
-    public async Task<ActionResult<Member>> GetClouderyMember(string id)
+    public async Task<ActionResult<MemberOut>> GetClouderyMember(string id)
     {
-        var clouderyMember = await context.ClouderyMembers.FindAsync(id);
+        var clouderyMember = await members.FindAsync(id);
         if (clouderyMember == null) return NotFound();
         return clouderyMember;
     }
@@ -39,56 +34,33 @@ public class MembersController(ClouderyApiContext context) : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "参数校验失败" });
 
-        var clouderyMember = await context.ClouderyMembers.FindAsync(id);
-        if (clouderyMember == null) return NotFound();
-
-        clouderyMember.Name = dto.Name;
-        clouderyMember.Position = dto.Position;
-        clouderyMember.Description = dto.Description;
-        clouderyMember.Socials = dto.Socials;
-
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (await context.ClouderyMembers.AnyAsync(e => e.Id == id)) throw;
-            return NotFound();
-        }
-        return NoContent();
+        return await members.UpdateAsync(id, dto) ? NoContent() : NotFound();
     }
 
     [HttpPost]
     [AdminOnly]
-    public async Task<ActionResult<Member>> PostClouderyMember([FromBody] MemberDto dto)
+    public async Task<ActionResult<MemberOut>> PostClouderyMember([FromBody] MemberDto dto)
     {
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "参数校验失败" });
 
-        var clouderyMember = new Member
+        MemberOut created;
+        try
         {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = dto.Name,
-            Position = dto.Position,
-            Description = dto.Description,
-            Socials = dto.Socials
-        };
-
-        context.ClouderyMembers.Add(clouderyMember);
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateException)
+            created = await members.CreateAsync(dto);
+        }
+        catch (ClouderyWriteConflictException)
         {
             return Conflict(new { success = false, message = "记录冲突" });
         }
-        return CreatedAtAction("GetClouderyMember", new { id = clouderyMember.Id }, clouderyMember);
+
+        return CreatedAtAction("GetClouderyMember", new { id = created.Id }, created);
     }
 
     [HttpDelete("{id}")]
     [AdminOnly]
     public async Task<IActionResult> DeleteClouderyMember(string id)
     {
-        var clouderyMember = await context.ClouderyMembers.FindAsync(id);
-        if (clouderyMember == null) return NotFound();
-        context.ClouderyMembers.Remove(clouderyMember);
-        await context.SaveChangesAsync();
-        return NoContent();
+        return await members.DeleteAsync(id) ? NoContent() : NotFound();
     }
 }
