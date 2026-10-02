@@ -40,6 +40,11 @@ builder.Services.AddDbContext<ClouderyApiContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
 });
 
+// Stage 5 §5.1 第一步：两个域的持久化边界指向同一个过渡期上下文（零迁移）。
+// 物理拆分（第二步）时把下面的实现换成独立 DbContext 即可，应用层无需改动。
+builder.Services.AddScoped<IClouderyDbContext>(sp => sp.GetRequiredService<ClouderyApiContext>());
+builder.Services.AddScoped<IZhuxsDbContext>(sp => sp.GetRequiredService<ClouderyApiContext>());
+
 builder.Services.AddDbContext<IdentityDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
 

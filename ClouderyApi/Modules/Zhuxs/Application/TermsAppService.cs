@@ -10,7 +10,7 @@ namespace ClouderyApi.Modules.Zhuxs.Application;
 /// 开发进度（zhuxs/terms）用例：读接口匿名可访问，写操作仅管理员。
 /// 列表按 RecordDate 倒序并截断 1000 条；主键由服务端生成。
 /// </summary>
-public class TermsAppService(ClouderyApiContext db)
+public class TermsAppService(IZhuxsDbContext db)
 {
     /// <summary>按记录日期倒序的列表（最多 1000 条）。</summary>
     public async Task<List<TermOut>> ListAsync(CancellationToken cancellationToken = default)

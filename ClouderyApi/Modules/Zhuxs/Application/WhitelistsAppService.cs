@@ -10,7 +10,7 @@ namespace ClouderyApi.Modules.Zhuxs.Application;
 /// 白名单（邀请码）用例（zhuxs/whitelists），仅管理员可访问。
 /// 读写都用仓储式筛选：列表按 Code 排序并截断 1000 条，主键由服务端生成（客户端不可指定）。
 /// </summary>
-public class WhitelistsAppService(ClouderyApiContext db)
+public class WhitelistsAppService(IZhuxsDbContext db)
 {
     /// <summary>按邀请码排序的列表（最多 1000 条，避免无界返回全表）。</summary>
     public async Task<List<WhitelistOut>> ListAsync(CancellationToken cancellationToken = default)

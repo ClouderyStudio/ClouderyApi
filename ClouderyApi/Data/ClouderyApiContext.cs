@@ -1,11 +1,18 @@
+using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Modules.Cloudery.Domain;
+using ClouderyApi.Modules.Zhuxs.Application;
 using ClouderyApi.Modules.Zhuxs.Domain;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace ClouderyApi.Data;
 
-public class ClouderyApiContext(DbContextOptions<ClouderyApiContext> options) : DbContext(options)
+/// <summary>
+/// Cloudery 与 Zhuxs 两个域的过渡期共享上下文：同时实现两个持久化边界接口，
+/// 物理拆分（Stage 5 §5.1 第二步）前应用层已不再直接依赖本类型。
+/// </summary>
+public class ClouderyApiContext(DbContextOptions<ClouderyApiContext> options)
+    : DbContext(options), IClouderyDbContext, IZhuxsDbContext
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new();
 

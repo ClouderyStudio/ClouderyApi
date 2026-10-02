@@ -13,7 +13,7 @@ public sealed class ExamResultRejectedException(string message) : Exception(mess
 /// 登录用户的云端测评结果。结果正文整体存 JSON，服务端只负责归属、幂等、排序与配额，
 /// 不解析站点存档的内部结构 —— 站点加字段不需要改这里。
 /// </summary>
-public sealed class ExamResultService(ClouderyApiContext db)
+public sealed class ExamResultService(IClouderyDbContext db)
 {
     /// <summary>每个用户最多保留的记录数（与站点本机存档的 MAX_TOTAL 对齐）</summary>
     public const int MaxRecordsPerUser = 200;

@@ -10,7 +10,7 @@ namespace ClouderyApi.Modules.Cloudery.Application;
 /// 成员管理用例（cloudery/members）：列表/详情公开可读，写操作由控制器上的 [AdminOnly] 把关。
 /// 只回传输出 DTO，不再把 EF 实体交给控制器。
 /// </summary>
-public sealed class MembersAppService(ClouderyApiContext db)
+public sealed class MembersAppService(IClouderyDbContext db)
 {
     public async Task<List<MemberOut>> ListAsync(CancellationToken cancellationToken = default)
     {

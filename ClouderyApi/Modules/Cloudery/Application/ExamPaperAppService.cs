@@ -28,7 +28,7 @@ public sealed record ExamPaperWriteResult(ExamPaperWriteOutcome Outcome, ExamPap
 /// 内部测试试卷用例（exam/ExamPapers）：公开读（不含答案）、管理端读写与判分编排。
 /// 入参为 ExamPaperInput（Id 由服务端生成、UpdatedAt 由服务端盖章），出参一律为视图 DTO。
 /// </summary>
-public sealed class ExamPaperAppService(ClouderyApiContext db)
+public sealed class ExamPaperAppService(IClouderyDbContext db)
 {
     /// <summary>公开列表（不含 Answer / Note）。</summary>
     public async Task<List<ExamPaperView>> ListAsync(CancellationToken cancellationToken = default)

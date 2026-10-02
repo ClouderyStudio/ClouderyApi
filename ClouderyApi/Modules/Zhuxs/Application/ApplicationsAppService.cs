@@ -10,7 +10,7 @@ namespace ClouderyApi.Modules.Zhuxs.Application;
 /// 报名申请（zhuxs/applications）用例：读接口匿名可访问，写操作仅管理员。
 /// 列表按提交时间倒序并截断 1000 条；主键与审核状态由服务端掌管。
 /// </summary>
-public class ApplicationsAppService(ClouderyApiContext db)
+public class ApplicationsAppService(IZhuxsDbContext db)
 {
     /// <summary>按提交时间倒序的列表（最多 1000 条）。</summary>
     public async Task<List<ApplicationOut>> ListAsync(CancellationToken cancellationToken = default)
