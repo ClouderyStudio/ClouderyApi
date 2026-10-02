@@ -1,7 +1,7 @@
 # ClouderyApi
 
 ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服务（目标框架 **.NET 10**）。
-它为多个关联子项目提供统一接口：云术（Cloudery）团队站、栖所（Qisoul）情绪记录社区、竹像素（Zhuxs）白名单与申请系统、SurvivalCraft 服务器接口、公益心理辅助平台 **MHOP**（匿名倾诉论坛 / AI 陪伴 / 心理量表评估 / 管理后台），以及若干通用工具接口。
+它为多个关联子项目提供统一接口：云术（Cloudery）团队站、竹像素（Zhuxs）白名单与申请系统、SurvivalCraft 服务器接口、公益心理辅助平台 **MHOP**（匿名倾诉论坛 / AI 陪伴 / 心理量表评估 / 管理后台），以及若干通用工具接口。
 
 ## 功能概览
 
@@ -12,11 +12,6 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 内部试卷 | `/exam/ExamPapers` | 内部测试试卷（心理学项目）整卷 JSON 存于 `ExamPapers` 表；公开读（**不含答案/解析**）+ `POST /{id}/grade` 服务端判分，写操作需管理员；`/exam/ExamPapers/{id}/full`（管理员）读取含答案全量 |
 | 结果解读 | `/exam/result-analysis` | 量表结果的 AI 解读（按量表类型分流提示词），模型不可用时回退本地文本；公开接口，按 IP 限流 8 次 / 300 秒 |
 | 云端结果 | `/exam/results` | 登录用户的测评结果云端存档（多平台共享）：列表 / 单条上传 / 批量同步 / 按 Id 或 clientKey 删除 / 清空，按 Casdoor 用户隔离；未登录返回 401 |
-| 情绪记录 | `/qisoul/mood` | 情绪打卡（类型、标签、强度 1-5、情绪日记、备注、标签） |
-| 帖子 | `/qisoul/post` | 社区文章（分类、图标、点赞、评论数、编辑） |
-| 评论 | `/qisoul/comment` | 帖子评论，支持嵌套回复 |
-| 便签 | `/qisoul/sticky` | 便签（内容、图标、颜色、点赞） |
-| 统计 | `/qisoul/stats` | 情绪数据分析：累计天数、连续天数、今日情绪、趋势与分布 |
 | 白名单 | `/zhuxs/whitelists` | 竹像素白名单（邀请码）管理 |
 | 申请 | `/zhuxs/applications` | 入服申请审核（是否通过、申请时间、FAQ 问答） |
 | 周目 | `/zhuxs/terms` | 周目信息（名称、起止时间、版本、模组数、人数、模组文件） |
@@ -32,8 +27,8 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 ## 技术栈
 
 - **ASP.NET Core**（net10.0），控制器 `[ApiController]` 风格 REST API
-- **Entity Framework Core**，主要使用 **MySQL** 驱动（`MySql.EntityFrameworkCore`），同时引入 SQL Server 提供程序与迁移
-- 三个 `DbContext`：`ClouderyApiContext`（云术 / 竹像素域，含 JSON 列转换）、`QisoulDbContext`（栖所域，含索引、默认值、导航属性配置）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
+- **Entity Framework Core**，使用 **MySQL** 驱动（`MySql.EntityFrameworkCore`）
+- 三个 `DbContext`：`ClouderyApiContext`（云术 / 竹像素域，含 JSON 列转换）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
 - **Casdoor** OAuth2 认证（`Casdoor.AspNetCore` + `Casdoor.Client`），Cookie 会话，会话有效期 7 天且支持滚动续期
 - **MHOP 认证**：手写 HS256 JWT（`Authorization: Bearer`）+ PBKDF2-SHA256 密码哈希，兼容原有协议；并提供 **Casdoor 统一身份认证（OAuth2 授权码 / OIDC）** 登录，成功后同样签发 MHOP JWT
 - **共享大模型客户端**：`Services/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
@@ -58,24 +53,24 @@ ClouderyApi/
 │   ├── Filters/AdminOnlyAttribute.cs   # 管理员角色鉴权过滤器（另有按 IP 限流的 IpRateLimitAttribute）
 │   ├── MHOP/                      # 见下方「MHOP 模块」：Common / Auth / Forum / Assessment / Admin / Upload
 │   ├── Misc/LongLinkController.cs
-│   ├── Qisoul/                    # Mood / Post / Comment / Sticky / Stats
 │   ├── SurvivalCraft/ServerController.cs
 │   └── Zhuxs/                     # Applications / Terms / Whitelists
 ├── Data/
 │   ├── ClouderyApiContext.cs
-│   ├── QisoulDbContext.cs
-│   ├── MhopDbContext.cs          # MHOP 域（表名 mhop_ 前缀）
-│   └── MhopDbContextFactory.cs   # MHOP 设计时工厂（dotnet ef）
+│   ├── IdentityDbContext.cs        # 身份域（本地登录用户 Users 表）
+│   ├── IdentityDbContextFactory.cs # 身份域设计时工厂（dotnet ef）
+│   ├── MhopDbContext.cs            # MHOP 域（表名 mhop_ 前缀）
+│   └── MhopDbContextFactory.cs     # MHOP 设计时工厂（dotnet ef）
 ├── Models/
 │   ├── Cloudery/                 # Member（实体）+ MemberDto、ExamPaper（含嵌套类型）、ExamResult（测评结果云端存档）
 │   ├── Mhop/                     # MHOP 实体（MhopUser/Post/Reply/Like/Assessment/AiLog）+ DTOs
-│   ├── Qisoul/                   # 实体 + DTOs + UserLike（点赞去重表）
+│   ├── Identity/                 # User（本地登录用户实体）
 │   └── Zhuxs/                    # 实体 + DTOs
 ├── Services/
 │   ├── Ai/                         # 共享大模型客户端与危机文本（LlmOptions / ILlmClient / LlmClient / CrisisSupport）
 │   ├── Cloudery/                   # ResultAnalysisService（量表结果 AI 解读）/ ExamResultService（云端结果同步）
 │   └── Mhop/                       # MHOP 业务：AI 服务、内容审核、对象存储等
-├── Migrations/                    # QisoulDbContext（SQL Server）迁移；Migrations/ClouderyApi/ 为 ClouderyApiContext（MySQL，含 ExamPapers、ExamResults 迁移）；Migrations/Mhop/ 为 MhopDbContext（MySQL）
+├── Migrations/                    # 各 Context 独立迁移目录：Migrations/Identity/（IdentityDbContext，MySQL）、Migrations/ClouderyApi/（ClouderyApiContext，MySQL，含 ExamPapers、ExamResults）、Migrations/Mhop/（MhopDbContext，MySQL）
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
 
@@ -84,7 +79,7 @@ ClouderyApi/
 ### 环境要求
 
 - [.NET SDK 10.0](https://dotnet.microsoft.com/download)
-- MySQL（`MySql.EntityFrameworkCore` 驱动）或 SQL Server
+- MySQL（`MySql.EntityFrameworkCore` 驱动）
 - 一个可用的 **Casdoor** 实例（用于登录）
 
 ### 配置
@@ -123,11 +118,11 @@ OpenAPI 描述文档（开发环境）：`http://localhost:5171/openapi/v1.json`
 
 ### 数据库迁移
 
-两个 `DbContext` 各自维护迁移：`QisoulDbContext`（SQL Server）在 `Migrations/`，`ClouderyApiContext`（MySQL）在 `Migrations/ClouderyApi/`。生成并应用迁移：
+三个 `DbContext` 各自维护迁移：`IdentityDbContext`（MySQL）在 `Migrations/Identity/`，`ClouderyApiContext`（MySQL）在 `Migrations/ClouderyApi/`，`MhopDbContext`（MySQL）在 `Migrations/Mhop/`。生成并应用迁移：
 
 ```bash
-dotnet ef migrations add <Name> --context QisoulDbContext
-dotnet ef database update --context QisoulDbContext
+dotnet ef migrations add <Name> --context IdentityDbContext --output-dir Migrations/Identity
+dotnet ef database update --context IdentityDbContext
 
 dotnet ef migrations add <Name> --context ClouderyApiContext
 dotnet ef database update --context ClouderyApiContext
@@ -141,6 +136,8 @@ dotnet ef database update --context MhopDbContext
 > 内部试卷表迁移 `AddExamPapers` 仅新增 `ExamPapers` 表（整卷 JSON 存单列，兼容既有 schema）。存在多个 `DbContext` 时，`dotnet ef` 命令需显式指定 `--context`。
 
 > 云端测评结果迁移 `AddExamResults` 仅新增 `ExamResults` 表与索引 `IX_ExamResults_UserId_ClientKey`（唯一）、`IX_ExamResults_UserId_SavedAt`，兼容既有 schema。
+
+> 身份域 baseline 迁移 `InitialIdentity` 的 `Up()` 使用 `CREATE TABLE IF NOT EXISTS`：全新库正常创建 `Users` 表，历史库中已存在的用户表则原样保留（保留既有用户 Id 与测评结果归属）；其 `Down()` 有意不删表。
 
 ## 配置说明（Program.cs 要点）
 
@@ -294,7 +291,7 @@ MHOP 支持直接使用现有 Casdoor 统一身份账号登录，复用项目根
 - ⚠️ **必须在 Casdoor 应用的 Redirect URIs 中登记该回调地址**（例如 `https://你的MHOP域名/auth/casdoor/callback`），否则 Casdoor 会拒绝授权。
 - 前端：登录页新增「使用统一身份认证登录」按钮，回调页为 `/auth/casdoor/callback`。
 
-### 数据表（`mhop_` 前缀，与栖所等已有域隔离）
+### 数据表（`mhop_` 前缀，与其它已有域隔离）
 
 ```
 mhop_users       用户（唯一索引：Username / Email / Phone）
@@ -422,8 +419,8 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 
 - 所有需授权的写操作依赖 Cookie 会话与 CSRF 校验；请确保生产环境走 HTTPS（Cookie 为 `Secure`）。
 - 敏感数据（白名单/周目/申请/成员/内部试卷）的写操作由 `AdminOnlyAttribute` 限管理员（配置 `Authorization:Admins`），主键由服务端生成并校验 `ModelState`（防越权与 over-posting）。
-- 用户内容（帖子/评论/心情/便签）由前端渲染边界防御 XSS（markdown 经 DOMPurify 净化、纯文本经 Vue `{{}}` 转义），服务端保持原样返回；会话 Cookie 已设 `HttpOnly=true`。
-- 点赞基于 `UserLike` 去重表实现幂等切换，评论数在增删后重新统计，避免并发计数不一致。
+- 用户内容（MHOP 帖子 / 回复）由前端渲染边界防御 XSS（markdown 经 DOMPurify 净化、纯文本经 Vue `{{}}` 转义），服务端保持原样返回；会话 Cookie 已设 `HttpOnly=true`。
+- 点赞基于 `mhop_likes` 去重表实现幂等切换，避免并发计数不一致。
 - 内置按 IP 的固定窗口限流（每 60 秒 300 次），缓解接口被刷与爆破。
 - 已按代码审查移除公开的骂人接口 `/misc/maren`。
 - 长链跳转接口严格校验目标为 http/https 绝对地址，防止 `javascript:`、`data:` 等危险协议。
@@ -439,4 +436,4 @@ AGPL-3.0 是基于网络服务的强 Copyleft 协议：你可以自由使用、�
 
 ---
 
-*ClouderyApi — 为 Cloudery 生态（云术 / 栖所 / 竹像素 / MHOP）提供统一后端能力的开源 Web API 服务。*
+*ClouderyApi — 为 Cloudery 生态（云术 / 竹像素 / MHOP）提供统一后端能力的开源 Web API 服务。*

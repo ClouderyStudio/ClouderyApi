@@ -5,7 +5,7 @@ namespace ClouderyApi.Models.Mhop;
 
 /// <summary>
 /// MHOP 平台用户（论坛 / 心理评估 / 管理后台共用）。对应 Python 后端的 users 表。
-/// 表名加 mhop_ 前缀，避免与栖所（Qisoul）等已有域的 Users 表冲突。
+/// 表名加 mhop_ 前缀，避免与身份域及其它已有域的 Users 表冲突。
 /// </summary>
 [Table("mhop_users")]
 public class MhopUser

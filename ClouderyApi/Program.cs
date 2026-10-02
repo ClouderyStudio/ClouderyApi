@@ -27,7 +27,7 @@ builder.Services.AddDbContext<ClouderyApiContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
 });
 
-builder.Services.AddDbContext<QisoulDbContext>(options =>
+builder.Services.AddDbContext<IdentityDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
 
 // ===== 通用大模型（OpenAI 兼容）配置 =====
@@ -106,7 +106,6 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
         "https://localhost:5173",
         "http://localhost:5175",
         "https://localhost:5174",
-        "https://qisoul.cldery.com",
         "https://mhop.cldery.com",
         "https://cldery.com",
         "https://www.cldery.com"

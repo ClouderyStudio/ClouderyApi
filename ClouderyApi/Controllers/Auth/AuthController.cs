@@ -1,6 +1,6 @@
 using Casdoor.Client;
 using ClouderyApi.Data;
-using ClouderyApi.Models.Qisoul;
+using ClouderyApi.Models.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
@@ -19,11 +19,11 @@ public class AuthController : ControllerBase
     private readonly CasdoorOptions _options;
     private readonly CasdoorClient _client;
     private readonly ILogger<AuthController> _logger;
-    private readonly QisoulDbContext _context;
+    private readonly IdentityDbContext _context;
 
     public AuthController(
         ILogger<AuthController> logger,
-        QisoulDbContext context,
+        IdentityDbContext context,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory)
     {
