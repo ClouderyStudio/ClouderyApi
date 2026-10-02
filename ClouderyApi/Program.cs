@@ -128,6 +128,7 @@ builder.Services.AddHostedService<MhopBottleTimeoutService>();
 
 // ===== 横切配置（Options 模式，见 docs/DDD-STAGE5-CROSS-CUTTING.md §5.2）=====
 builder.Services.Configure<CasdoorSettings>(builder.Configuration.GetSection(CasdoorSettings.SectionName));
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.SectionName));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))

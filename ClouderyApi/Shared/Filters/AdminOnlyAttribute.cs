@@ -1,7 +1,8 @@
+using ClouderyApi.Shared.Options;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Shared.Filters;
 
@@ -24,9 +25,9 @@ public class AdminOnlyAttribute : Attribute, IAuthorizationFilter
 
         var casdoorId = user.FindFirst("CasdoorId")?.Value;
         var admins = context.HttpContext.RequestServices
-            .GetService<IConfiguration>()?
-            .GetSection("Authorization:Admins")
-            .Get<string[]>()
+            .GetRequiredService<IOptions<AdminOptions>>()
+            .Value
+            .Admins
             ?? System.Array.Empty<string>();
 
         if (string.IsNullOrEmpty(casdoorId) ||
