@@ -29,8 +29,8 @@ public sealed class MhopContentService
         var replyIds = replies.Select(r => r.Id).ToList();
 
         var likes = await _db.MhopLikes.Where(l =>
-            (l.TargetType == "post" && l.TargetId == post.Id)
-            || (replyIds.Count > 0 && l.TargetType == "reply" && replyIds.Contains(l.TargetId)))
+            (l.TargetType == LikeTargetType.PostValue && l.TargetId == post.Id)
+            || (replyIds.Count > 0 && l.TargetType == LikeTargetType.ReplyValue && replyIds.Contains(l.TargetId)))
             .ToListAsync(cancellationToken);
 
         var logs = replyIds.Count == 0
@@ -62,7 +62,7 @@ public sealed class MhopContentService
         var images = MhopImageRefs.Parse(reply.Images);
 
         _db.MhopLikes.RemoveRange(await _db.MhopLikes
-            .Where(l => l.TargetType == "reply" && l.TargetId == reply.Id).ToListAsync(cancellationToken));
+            .Where(l => l.TargetType == LikeTargetType.ReplyValue && l.TargetId == reply.Id).ToListAsync(cancellationToken));
         _db.MhopAiLogs.RemoveRange(await _db.MhopAiLogs
             .Where(l => l.ReplyId == reply.Id).ToListAsync(cancellationToken));
         _db.MhopReplies.Remove(reply);
@@ -86,8 +86,8 @@ public sealed class MhopContentService
 
         var likes = await _db.MhopLikes
             .Where(l => l.UserId == user.Id
-                        || (postIds.Count > 0 && l.TargetType == "post" && postIds.Contains(l.TargetId))
-                        || (replyIds.Count > 0 && l.TargetType == "reply" && replyIds.Contains(l.TargetId)))
+                        || (postIds.Count > 0 && l.TargetType == LikeTargetType.PostValue && postIds.Contains(l.TargetId))
+                        || (replyIds.Count > 0 && l.TargetType == LikeTargetType.ReplyValue && replyIds.Contains(l.TargetId)))
             .ToListAsync(cancellationToken);
 
         var logs = await _db.MhopAiLogs

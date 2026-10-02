@@ -120,8 +120,8 @@ public class MhopForumController : MhopControllerBase
 
         var current = await _current.GetOptionalAsync();
         var users = await LoadAuthorMapAsync(posts, replies);
-        var likeCounts = await LikeCountMapAsync("post", postIds);
-        var liked = await LikedSetAsync(current?.Id, "post", postIds);
+        var likeCounts = await LikeCountMapAsync(LikeTargetType.Post, postIds);
+        var liked = await LikedSetAsync(current?.Id, LikeTargetType.Post, postIds);
 
         var items = posts.Select(p => ToPostOut(
             p,
@@ -161,10 +161,10 @@ public class MhopForumController : MhopControllerBase
         var current = await _current.GetOptionalAsync();
         var users = await LoadAuthorMapAsync([post], replies);
         var replyIds = replies.Select(r => r.Id).ToList();
-        var replyLikeCounts = await LikeCountMapAsync("reply", replyIds);
-        var replyLiked = await LikedSetAsync(current?.Id, "reply", replyIds);
-        var postLikes = await LikeCountMapAsync("post", [post.Id]);
-        var postLiked = await LikedSetAsync(current?.Id, "post", [post.Id]);
+        var replyLikeCounts = await LikeCountMapAsync(LikeTargetType.Reply, replyIds);
+        var replyLiked = await LikedSetAsync(current?.Id, LikeTargetType.Reply, replyIds);
+        var postLikes = await LikeCountMapAsync(LikeTargetType.Post, [post.Id]);
+        var postLiked = await LikedSetAsync(current?.Id, LikeTargetType.Post, [post.Id]);
 
         var detail = new PostDetailOut();
         CopyPostFields(detail, ToPostOut(post, users, replies, current?.Id, postLikes, postLiked));
@@ -225,10 +225,9 @@ public class MhopForumController : MhopControllerBase
     public async Task<IActionResult> ToggleLike([FromBody] LikeIn body)
     {
         var current = await _current.RequireAsync();
-        if (body.TargetType is not ("post" or "reply"))
-            throw new MhopApiException(400, "非法点赞对象");
+        var target = LikeTargetType.Parse(body.TargetType);
 
-        if (body.TargetType == "post")
+        if (target.IsPost)
         {
             var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == body.TargetId);
             if (post is null || post.Status is ContentStatus.Rejected or ContentStatus.Draft)
@@ -244,35 +243,34 @@ public class MhopForumController : MhopControllerBase
         }
 
         var existing = await _db.MhopLikes.FirstOrDefaultAsync(l =>
-            l.UserId == current.Id && l.TargetType == body.TargetType && l.TargetId == body.TargetId);
+            l.UserId == current.Id && l.TargetType == target.Value && l.TargetId == body.TargetId);
 
         var liked = existing is null;
         if (existing is not null) _db.MhopLikes.Remove(existing);
         else _db.MhopLikes.Add(new MhopLike
         {
             UserId = current.Id,
-            TargetType = body.TargetType,
+            TargetType = target.Value,
             TargetId = body.TargetId,
             CreatedAt = DateTime.UtcNow,
         });
         await _db.SaveChangesAsync();
 
         var count = await _db.MhopLikes.CountAsync(l =>
-            l.TargetType == body.TargetType && l.TargetId == body.TargetId);
+            l.TargetType == target.Value && l.TargetId == body.TargetId);
         return MhopOk(new { liked, like_count = count });
     }
 
     [HttpGet("likes/mine")]
     public async Task<IActionResult> MyLikes([FromQuery(Name = "target_type")] string targetType)
     {
-        if (targetType is not ("post" or "reply"))
-            throw new MhopApiException(400, "非法点赞对象");
+        var target = LikeTargetType.Parse(targetType);
 
         var current = await _current.GetOptionalAsync();
         if (current is null) return MhopOk(new { ids = Array.Empty<int>() });
 
         var ids = await _db.MhopLikes
-            .Where(l => l.UserId == current.Id && l.TargetType == targetType)
+            .Where(l => l.UserId == current.Id && l.TargetType == target.Value)
             .Select(l => l.TargetId)
             .ToListAsync();
         return MhopOk(new { ids });
@@ -338,7 +336,7 @@ public class MhopForumController : MhopControllerBase
             ? new List<MhopReply>()
             : await _db.MhopReplies.Where(r => postIds.Contains(r.PostId)).ToListAsync();
         var repliesByPost = replies.GroupBy(r => r.PostId).ToDictionary(g => g.Key, g => g.ToList());
-        var likeCounts = await LikeCountMapAsync("post", postIds);
+        var likeCounts = await LikeCountMapAsync(LikeTargetType.Post, postIds);
 
         var items = posts.Select(p =>
         {
@@ -392,7 +390,7 @@ public class MhopForumController : MhopControllerBase
         var posts = postIds.Count == 0
             ? new Dictionary<int, MhopPost>()
             : await _db.MhopPosts.AsNoTracking().Where(p => postIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
-        var likeCounts = await LikeCountMapAsync("reply", replies.Select(r => r.Id).ToList());
+        var likeCounts = await LikeCountMapAsync(LikeTargetType.Reply, replies.Select(r => r.Id).ToList());
 
         var items = replies.Select(r =>
         {
@@ -593,22 +591,22 @@ public class MhopForumController : MhopControllerBase
             .ToDictionaryAsync(u => u.Id);
     }
 
-    private async Task<Dictionary<int, int>> LikeCountMapAsync(string targetType, List<int> ids)
+    private async Task<Dictionary<int, int>> LikeCountMapAsync(LikeTargetType target, List<int> ids)
     {
         if (ids.Count == 0) return new Dictionary<int, int>();
         var rows = await _db.MhopLikes
-            .Where(l => l.TargetType == targetType && ids.Contains(l.TargetId))
+            .Where(l => l.TargetType == target.Value && ids.Contains(l.TargetId))
             .GroupBy(l => l.TargetId)
             .Select(g => new { Id = g.Key, Count = g.Count() })
             .ToListAsync();
         return rows.ToDictionary(x => x.Id, x => x.Count);
     }
 
-    private async Task<HashSet<int>> LikedSetAsync(int? userId, string targetType, List<int> ids)
+    private async Task<HashSet<int>> LikedSetAsync(int? userId, LikeTargetType target, List<int> ids)
     {
         if (!userId.HasValue || ids.Count == 0) return new HashSet<int>();
         var list = await _db.MhopLikes
-            .Where(l => l.UserId == userId.Value && l.TargetType == targetType && ids.Contains(l.TargetId))
+            .Where(l => l.UserId == userId.Value && l.TargetType == target.Value && ids.Contains(l.TargetId))
             .Select(l => l.TargetId)
             .ToListAsync();
         return list.ToHashSet();

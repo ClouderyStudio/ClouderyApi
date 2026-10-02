@@ -239,12 +239,16 @@
   - 授权类 403（`仅超级管理员可操作管理员账号`）仍留在控制器的 GuardStaffTarget：DomainRuleException 一律映射 400，不能改变状态码。
   - `dotnet ef migrations has-pending-model-changes --context MhopDbContext` = 「No changes have been made to the model since the last migration.」。
   - 新增纯单测 ClouderyApi.Tests/DomainUserTests.cs（24 用例，无 HTTP / 无库）。
+- **进展（点赞目标类型已完成）**：
+  - 新增值对象 `LikeTargetType`（ClouderyApi/Models/Mhop/LikeTargetType.cs）：`readonly record struct`，`PostValue` / `ReplyValue` 常量（复用 MhopContentKind 的词汇）、`Post` / `Reply` 单例、`IsPost` / `IsValid` / `TryParse` / `Parse`（非法值抛 `DomainRuleException("非法点赞对象")`，替换控制器里手写的 400 MhopApiException，JSON 与状态码逐字不变）。
+  - `MhopContentKind` 从 Services/Mhop/MhopContentPolicy.cs 移到 ClouderyApi/Models/Mhop/MhopContentKind.cs（领域词汇，依赖方向 Services → Models；两个使用方已 import 该命名空间，无需改动）。
+  - 清理 "post" / "reply" 字面量：MhopForumController 的 LikeCountMapAsync / LikedSetAsync 改为收 `LikeTargetType` 参数、ToggleLike / MyLikes 改为 `LikeTargetType.Parse`，MhopContentService（4 处）与 MhopAiService（2 处）的点赞清理查询改用常量。
+  - 新增纯单测 ClouderyApi.Tests/DomainLikeTargetTests.cs（13 用例，无 HTTP / 无库）。
 - **关键取舍**：暂不给 `Content` / `Board` / `Images` 加 EF 值转换（原第 5 条），因为 `Contains` / `==` / `GroupBy` / `ExecuteUpdateAsync` 触点太广、易改变可翻译性；先以「构造即校验 + 实体方法」收口规则，列与迁移保持不变。
 - **改动清单（剩余）**：
-  1. `LikeTargetType` 值对象（"post" / "reply" 字面量：MhopForumController.cs:252-291、MhopContentService.cs:32/65、MhopAiService.cs:321/351）；`AiFlag` 已由 MhopModerationOutcome 常量接管，不再单独包值对象。
-  2. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
-  3. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`）。
-- **验证**：dotnet build 0 error；dotnet test **105 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24），约 43s。
+  1. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
+  2. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`，先易后难、逐个校验 JSON 与状态码不变）。
+- **验证**：dotnet build 0 error；dotnet test **118 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24 + DomainLikeTargetTests 13），约 43s。
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 

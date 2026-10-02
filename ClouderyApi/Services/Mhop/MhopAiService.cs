@@ -318,7 +318,7 @@ public sealed class MhopAiService
                     db.MhopAiLogs.RemoveRange(await db.MhopAiLogs
                         .Where(l => l.ReplyId.HasValue && extraIds.Contains(l.ReplyId.Value)).ToListAsync());
                     db.MhopLikes.RemoveRange(await db.MhopLikes
-                        .Where(l => l.TargetType == "reply" && extraIds.Contains(l.TargetId)).ToListAsync());
+                        .Where(l => l.TargetType == LikeTargetType.ReplyValue && extraIds.Contains(l.TargetId)).ToListAsync());
                     db.MhopReplies.RemoveRange(extra);
                     await db.SaveChangesAsync();
                     _logger.LogInformation("帖子 {PostId} 清理历史重复 AI 回复 {Count} 条", postId, extra.Count);
@@ -349,7 +349,7 @@ public sealed class MhopAiService
                 db.MhopAiLogs.RemoveRange(await db.MhopAiLogs
                     .Where(l => l.ReplyId.HasValue && ids.Contains(l.ReplyId.Value)).ToListAsync());
                 db.MhopLikes.RemoveRange(await db.MhopLikes
-                    .Where(l => l.TargetType == "reply" && ids.Contains(l.TargetId)).ToListAsync());
+                    .Where(l => l.TargetType == LikeTargetType.ReplyValue && ids.Contains(l.TargetId)).ToListAsync());
                 db.MhopReplies.RemoveRange(stale);
                 await db.SaveChangesAsync();
                 _logger.LogInformation("清理帖子 {PostId} 的历史 AI 回复 {Count} 条后重新生成", postId, stale.Count);
