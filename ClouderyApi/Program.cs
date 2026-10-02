@@ -1,3 +1,4 @@
+using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
@@ -74,6 +75,10 @@ builder.Services.Configure<MhopOptions>(builder.Configuration.GetSection(MhopOpt
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<MhopDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
+
+// Stage 4 领域事件基座：SaveChanges 提交后进程内派发（选型 A，零迁移）；当前无订阅者，行为不变。
+builder.Services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
+
 builder.Services.AddSingleton<MhopPasswordHasher>();
 builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();
 builder.Services.AddSingleton<MhopOnlineTracker>();

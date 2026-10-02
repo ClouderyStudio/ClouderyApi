@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
 namespace ClouderyApi.Modules.Mhop.Domain;
@@ -33,7 +34,7 @@ public static class MhopUserStatus
 /// 角色与账号状态的转换规则收在本聚合内，非法转换抛 <see cref="DomainRuleException"/>。
 /// </summary>
 [Table("mhop_users")]
-public class MhopUser
+public class MhopUser : IHasDomainEvents
 {
     /// <summary>Badge 列宽（与 [MaxLength] 保持一致）。</summary>
     public const int MaxBadgeLength = 64;
@@ -90,6 +91,21 @@ public class MhopUser
     public string Badge { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // ---------------- 领域事件承载 ----------------
+    // 用接口 + [NotMapped] 集合而非实体基类：避免 EF 把基类纳入类型层级、要求主键或引入判别列。
+
+    private readonly List<IDomainEvent> _domainEvents = new();
+
+    /// <summary>尚未派发的领域事件；[NotMapped] 保证 EF 不把它当列。</summary>
+    [NotMapped]
+    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents;
+
+    /// <inheritdoc />
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
+    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     /// <summary>是否后台人员（普通管理员或超级管理员）。</summary>
     public bool IsStaff => MhopUserRole.IsStaff(Role);

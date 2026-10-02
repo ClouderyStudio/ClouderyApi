@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 
+using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
 namespace ClouderyApi.Modules.Mhop.Domain;
@@ -37,7 +38,7 @@ public static class MhopBottleEndReason
 /// 用户关联仅存 Id 并建索引（与 MhopPost 一致，不建外键，避免账号删除级联）。
 /// </summary>
 [Table("mhop_bottles")]
-public class MhopBottle
+public class MhopBottle : IHasDomainEvents
 {
     [Key]
     public int Id { get; set; }
@@ -111,6 +112,21 @@ public class MhopBottle
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<MhopBottleMessage> Messages { get; set; } = new List<MhopBottleMessage>();
+
+    // ---------------- 领域事件承载 ----------------
+    // 用接口 + [NotMapped] 集合而非实体基类：避免 EF 把基类纳入类型层级、要求主键或引入判别列。
+
+    private readonly List<IDomainEvent> _domainEvents = new();
+
+    /// <summary>尚未派发的领域事件；[NotMapped] 保证 EF 不把它当列。</summary>
+    [NotMapped]
+    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents;
+
+    /// <inheritdoc />
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
+    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     // ---------------- 领域行为 ----------------
 

@@ -1,13 +1,14 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 
 namespace ClouderyApi.Modules.Mhop.Domain;
 
 /// <summary>匿名倾诉论坛主题帖。对应 Python 后端的 posts 表。</summary>
 [Table("mhop_posts")]
-public class MhopPost
+public class MhopPost : IHasDomainEvents
 {
     [Key]
     public int Id { get; set; }
@@ -53,6 +54,21 @@ public class MhopPost
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<MhopReply> Replies { get; set; } = new List<MhopReply>();
+
+    // ---------------- 领域事件承载 ----------------
+    // 用接口 + [NotMapped] 集合而非实体基类：避免 EF 把基类纳入类型层级、要求主键或引入判别列。
+
+    private readonly List<IDomainEvent> _domainEvents = new();
+
+    /// <summary>尚未派发的领域事件；[NotMapped] 保证 EF 不把它当列。</summary>
+    [NotMapped]
+    public IReadOnlyList<IDomainEvent> DomainEvents => _domainEvents;
+
+    /// <inheritdoc />
+    public void ClearDomainEvents() => _domainEvents.Clear();
+
+    /// <summary>供实体行为登记领域事件（第 2 步起使用）。</summary>
+    private void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
 
     // ---------------- 领域行为 ----------------
 

@@ -1,3 +1,4 @@
+using ClouderyApi.Shared.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -26,6 +27,7 @@ public class MhopDbContextFactory : IDesignTimeDbContextFactory<MhopDbContext>
             .UseMySQL(connectionString)
             .Options;
 
-        return new MhopDbContext(options);
+        // 设计时无事件可派发：注入空派发器，满足构造函数签名且不产生任何副作用
+        return new MhopDbContext(options, NullDomainEventDispatcher.Instance);
     }
 }

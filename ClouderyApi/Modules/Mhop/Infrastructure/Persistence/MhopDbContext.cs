@@ -1,4 +1,5 @@
 using ClouderyApi.Modules.Mhop.Domain;
+using ClouderyApi.Shared.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
@@ -7,8 +8,10 @@ namespace ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 /// MHOP 公益心理辅助平台数据上下文（从 Python FastAPI + SQLAlchemy 后端迁移）。
 /// 使用与 ClouderyApi 相同的 MySQL 连接串，表名统一加 mhop_ 前缀以隔离域。
 /// </summary>
-public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(options)
+public class MhopDbContext(DbContextOptions<MhopDbContext> options, IDomainEventDispatcher dispatcher) : DbContext(options)
 {
+    private readonly IDomainEventDispatcher _dispatcher = dispatcher;
+
     public DbSet<MhopUser> MhopUsers => Set<MhopUser>();
     public DbSet<MhopPost> MhopPosts => Set<MhopPost>();
     public DbSet<MhopReply> MhopReplies => Set<MhopReply>();
@@ -130,5 +133,23 @@ public class MhopDbContext(DbContextOptions<MhopDbContext> options) : DbContext(
             e.HasIndex(m => m.SenderUserId);
             e.HasIndex(m => m.CreatedAt);
         });
+    }
+
+    /// <summary>
+    /// 覆写提交：先收集待派发领域事件，提交成功后再进程内派发，最后清空。
+    /// 无事件时不解析订阅者、零 IO；派发在事务提交之后，订阅者看到的都是已落库状态。
+    /// </summary>
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var sources = ChangeTracker.Entries<IHasDomainEvents>()
+            .Select(entry => entry.Entity)
+            .Where(entity => entity.DomainEvents.Count > 0)
+            .ToList();
+
+        var result = await base.SaveChangesAsync(cancellationToken);
+
+        await _dispatcher.DispatchAsync(sources, cancellationToken);
+
+        return result;
     }
 }
