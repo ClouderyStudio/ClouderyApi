@@ -23,7 +23,6 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
-          --max-connections=500
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
@@ -34,6 +33,9 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore --configuration Release ClouderyApi.sln -warnaserror
+    - name: 提高测试库连接上限
+      # 同 deploy.yml：mysql 服务容器默认 151，抬高到 500 避免 Too many connections。
+      run: mysql -h 127.0.0.1 -uroot -proot -e "SET GLOBAL max_connections=500;"
     - name: Test
       env:
         # 集成测试需要真实 MySQL（MySQL 的 RAND() 与条件 UPDATE 无法用内存库替代）
