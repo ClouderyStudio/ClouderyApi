@@ -42,16 +42,7 @@ public sealed class MembersAppService(ClouderyApiContext db)
         member.Description = dto.Description;
         member.Socials = dto.Socials;
 
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            // 记录已被删除 → 404；否则维持原有的抛错语义（交给全局异常处理）。
-            if (await db.ClouderyMembers.AnyAsync(x => x.Id == id, cancellationToken)) throw;
-            return false;
-        }
+        await db.SaveChangesAsync(cancellationToken);
 
         return true;
     }

@@ -31,9 +31,6 @@ public class MembersController(MembersAppService members) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> PutClouderyMember(string id, [FromBody] MemberDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         return await members.UpdateAsync(id, dto) ? NoContent() : NotFound();
     }
 
@@ -41,9 +38,6 @@ public class MembersController(MembersAppService members) : ControllerBase
     [AdminOnly]
     public async Task<ActionResult<MemberOut>> PostClouderyMember([FromBody] MemberDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         MemberOut created;
         try
         {

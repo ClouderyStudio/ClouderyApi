@@ -26,7 +26,7 @@ public sealed record ExamPaperWriteResult(ExamPaperWriteOutcome Outcome, ExamPap
 
 /// <summary>
 /// 内部测试试卷用例（exam/ExamPapers）：公开读（不含答案）、管理端读写与判分编排。
-/// 入参仍为 ExamPaper 实体（请求体绑定与校验语义不得改变），出参一律为视图 DTO。
+/// 入参为 ExamPaperInput（Id 由服务端生成、UpdatedAt 由服务端盖章），出参一律为视图 DTO。
 /// </summary>
 public sealed class ExamPaperAppService(ClouderyApiContext db)
 {
@@ -61,16 +61,20 @@ public sealed class ExamPaperAppService(ClouderyApiContext db)
         return paper is null ? null : ExamPaperGrader.Grade(paper, request);
     }
 
-    /// <summary>新增试卷：Id 留空时由服务端生成；UpdatedAt 由服务端盖章。</summary>
-    public async Task<ExamPaperWriteResult> CreateAsync(ExamPaper paper, CancellationToken cancellationToken = default)
+    /// <summary>新增试卷：Id 由服务端生成；UpdatedAt 由服务端盖章。</summary>
+    public async Task<ExamPaperWriteResult> CreateAsync(ExamPaperInput input, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(paper.Id))
-            paper.Id = Guid.NewGuid().ToString("N");
+        var paper = new ExamPaper
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = input.Name,
+            Sections = input.Sections,
+            UpdatedAt = DateTime.UtcNow,
+        };
 
         if (await db.ExamPapers.AnyAsync(p => p.Id == paper.Id, cancellationToken))
             return new(ExamPaperWriteOutcome.DuplicateId, null);
 
-        paper.UpdatedAt = DateTime.UtcNow;
         db.ExamPapers.Add(paper);
         try
         {
@@ -85,22 +89,15 @@ public sealed class ExamPaperAppService(ClouderyApiContext db)
     }
 
     /// <summary>整卷覆盖：只改 Name / Sections / UpdatedAt。</summary>
-    public async Task<ExamPaperWriteOutcome> UpdateAsync(string id, ExamPaper paper, CancellationToken cancellationToken = default)
+    public async Task<ExamPaperWriteOutcome> UpdateAsync(string id, ExamPaperInput input, CancellationToken cancellationToken = default)
     {
         var existing = await db.ExamPapers.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (existing == null) return ExamPaperWriteOutcome.NotFound;
 
-        existing.Name = paper.Name;
-        existing.Sections = paper.Sections;
+        existing.Name = input.Name;
+        existing.Sections = input.Sections;
         existing.UpdatedAt = DateTime.UtcNow;
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return ExamPaperWriteOutcome.ConcurrencyConflict;
-        }
+        await db.SaveChangesAsync(cancellationToken);
 
         return ExamPaperWriteOutcome.Ok;
     }

@@ -54,9 +54,8 @@ public sealed class CookieAuthorizationContractTests : IntegrationTestBase
     {
         SignIn(AuthCookie.TestAdminCasdoorId);
 
-        var (created, _) = await JsonHttp.PostJsonAsync(Client, "/exam/ExamPapers", new
+        var (created, createdBody) = await JsonHttp.PostJsonAsync(Client, "/exam/ExamPapers", new
         {
-            id = "contract-paper",
             name = "契约试卷",
             sections = new[]
             {
@@ -79,12 +78,13 @@ public sealed class CookieAuthorizationContractTests : IntegrationTestBase
             },
         });
         Assert.Equal(HttpStatusCode.Created, created);
+        var paperId = createdBody.RootElement.GetProperty("id").GetString()!;
 
-        var (fullStatus, full) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/contract-paper/full");
+        var (fullStatus, full) = await JsonHttp.GetJsonAsync(Client, $"/exam/ExamPapers/{paperId}/full");
         Assert.Equal(HttpStatusCode.OK, fullStatus);
         Assert.Equal("B", full.RootElement.GetProperty("sections")[0].GetProperty("questions")[0].GetProperty("answer").GetString());
 
-        var (publicStatus, view) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/contract-paper");
+        var (publicStatus, view) = await JsonHttp.GetJsonAsync(Client, $"/exam/ExamPapers/{paperId}");
         Assert.Equal(HttpStatusCode.OK, publicStatus);
         var question = view.RootElement.GetProperty("sections")[0].GetProperty("questions")[0];
         Assert.False(question.TryGetProperty("answer", out _));

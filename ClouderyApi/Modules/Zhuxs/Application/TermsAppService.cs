@@ -43,15 +43,7 @@ public class TermsAppService(ClouderyApiContext db)
         term.Information = dto.Information;
         term.Files = dto.Files;
 
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (await db.ZhuxsTerms.AnyAsync(e => e.Id == id, cancellationToken)) throw;
-            return false;
-        }
+        await db.SaveChangesAsync(cancellationToken);
 
         return true;
     }

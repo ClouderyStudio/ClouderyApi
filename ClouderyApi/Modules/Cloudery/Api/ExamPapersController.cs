@@ -49,9 +49,9 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     // ---- 写操作（管理员） ----
     [HttpPost]
     [AdminOnly]
-    public async Task<ActionResult<ExamPaperFullView>> PostExamPaper([FromBody] ExamPaper paper)
+    public async Task<ActionResult<ExamPaperFullView>> PostExamPaper([FromBody] ExamPaperInput input)
     {
-        var result = await papers.CreateAsync(paper);
+        var result = await papers.CreateAsync(input);
         switch (result.Outcome)
         {
             case ExamPaperWriteOutcome.DuplicateId:
@@ -65,9 +65,9 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
 
     [HttpPut("{id}")]
     [AdminOnly]
-    public async Task<IActionResult> PutExamPaper(string id, [FromBody] ExamPaper paper)
+    public async Task<IActionResult> PutExamPaper(string id, [FromBody] ExamPaperInput input)
     {
-        return (await papers.UpdateAsync(id, paper)) switch
+        return (await papers.UpdateAsync(id, input)) switch
         {
             ExamPaperWriteOutcome.NotFound => NotFound(new { success = false, message = "未找到该试卷" }),
             ExamPaperWriteOutcome.ConcurrencyConflict => Conflict(new { success = false, message = "并发冲突" }),

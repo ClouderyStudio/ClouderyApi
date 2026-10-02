@@ -15,6 +15,16 @@ public class ExamPaperFullView
     public DateTime UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// 写接口入参（POST / PUT）：只接受 name / sections，Id 由服务端生成、UpdatedAt 由服务端盖章，
+/// 客户端即使传 id / updatedAt 也被忽略（防 over-posting）。属性名与实体一致，400 校验键不变。
+/// </summary>
+public class ExamPaperInput
+{
+    public required string Name { get; set; }
+    public required List<ExamSection> Sections { get; set; }
+}
+
 public class ExamSectionFullView
 {
     public required string Title { get; set; }

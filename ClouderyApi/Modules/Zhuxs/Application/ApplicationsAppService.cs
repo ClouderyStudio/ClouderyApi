@@ -42,15 +42,7 @@ public class ApplicationsAppService(ClouderyApiContext db)
         if (dto.Passed.HasValue)
             application.Passed = dto.Passed.Value;
 
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (await db.ZhuxsApplications.AnyAsync(e => e.Id == id, cancellationToken)) throw;
-            return false;
-        }
+        await db.SaveChangesAsync(cancellationToken);
 
         return true;
     }

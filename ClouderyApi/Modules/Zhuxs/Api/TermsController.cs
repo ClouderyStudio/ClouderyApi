@@ -31,9 +31,6 @@ public class TermsController(TermsAppService terms) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> PutZhuxsTerm(string id, [FromBody] TermDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         return await terms.UpdateAsync(id, dto) ? NoContent() : NotFound();
     }
 
@@ -41,9 +38,6 @@ public class TermsController(TermsAppService terms) : ControllerBase
     [AdminOnly]
     public async Task<ActionResult<TermOut>> PostZhuxsTerm([FromBody] TermDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         TermOut created;
         try
         {

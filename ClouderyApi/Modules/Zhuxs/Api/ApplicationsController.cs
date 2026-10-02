@@ -31,9 +31,6 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
     [AdminOnly]
     public async Task<IActionResult> PutZhuxsApplication(string id, [FromBody] ApplicationDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         return await applications.UpdateAsync(id, dto) ? NoContent() : NotFound();
     }
 
@@ -41,9 +38,6 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
     [AdminOnly]
     public async Task<ActionResult<ApplicationOut>> PostZhuxsApplication([FromBody] ApplicationDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         ApplicationOut created;
         try
         {

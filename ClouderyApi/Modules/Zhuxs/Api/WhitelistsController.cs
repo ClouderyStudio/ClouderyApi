@@ -33,9 +33,6 @@ public class WhitelistsController(WhitelistsAppService whitelists) : ControllerB
     [HttpPost]
     public async Task<ActionResult<WhitelistOut>> PostWhitelist([FromBody] WhitelistDto dto)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new { success = false, message = "参数校验失败" });
-
         WhitelistOut created;
         try
         {

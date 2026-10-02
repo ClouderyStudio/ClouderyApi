@@ -5,7 +5,7 @@ using ClouderyApi.Tests.TestSupport;
 namespace ClouderyApi.Tests;
 
 /// <summary>
-/// 试卷接口契约：公开视图剥离 answer/note、管理端 full 返回含答案的 EF 实体、
+/// 试卷接口契约：公开视图剥离 answer/note、管理端 full 返回含答案的完整视图、
 /// 评分算法（single/multiple/essay/judge、多选顺序无关、essay 不计正确）与 404/409 文案。
 /// 路由 exam/ExamPapers 使用 MVC 默认 camelCase（不是 MHOP 的蛇形）。
 /// </summary>
@@ -16,7 +16,7 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
             "Cookie",
             AuthCookie.CreateHeader(Factory.Services, AuthCookie.TestAdminCasdoorId));
 
-    private static object BuildPaper(string id) => new
+    private static object BuildPaper(string? id = null) => new
     {
         id,
         name = "契约测试试卷",
@@ -38,19 +38,21 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
         updatedAt = "2026-01-01T00:00:00Z",
     };
 
-    private async Task CreatePaperAsync(string id)
+    private async Task<string> CreatePaperAsync()
     {
-        var response = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/exam/ExamPapers", BuildPaper(id));
+        var response = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/exam/ExamPapers", BuildPaper());
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var (_, body) = await JsonHttp.ReadAsync(response);
+        return body.RootElement.GetProperty("id").GetString()!;
     }
 
     [Fact]
     public async Task Public_view_hides_answers_while_full_view_exposes_them()
     {
         SignInAsAdmin();
-        await CreatePaperAsync("paper-view");
+        var paperId = await CreatePaperAsync();
 
-        var (status, publicBody) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/paper-view");
+        var (status, publicBody) = await JsonHttp.GetJsonAsync(Client, $"/exam/ExamPapers/{paperId}");
         Assert.Equal(HttpStatusCode.OK, status);
         var publicQuestion = publicBody.RootElement.GetProperty("sections")[0].GetProperty("questions")[0];
         Assert.Equal(
@@ -59,7 +61,7 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
         Assert.False(publicQuestion.TryGetProperty("answer", out _));
         Assert.False(publicQuestion.TryGetProperty("note", out _));
 
-        var full = await Client.GetAsync("/exam/ExamPapers/paper-view/full");
+        var full = await Client.GetAsync($"/exam/ExamPapers/{paperId}/full");
         Assert.Equal(HttpStatusCode.OK, full.StatusCode);
         var (_, fullBody) = await JsonHttp.ReadAsync(full);
         var fullQuestion = fullBody.RootElement.GetProperty("sections")[0].GetProperty("questions")[0];
@@ -71,12 +73,12 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
     public async Task List_serializes_paper_view_in_declared_order()
     {
         SignInAsAdmin();
-        await CreatePaperAsync("paper-list");
+        var paperId = await CreatePaperAsync();
 
         var (status, body) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers");
 
         Assert.Equal(HttpStatusCode.OK, status);
-        var item = body.RootElement.EnumerateArray().Single(e => e.GetProperty("id").GetString() == "paper-list");
+        var item = body.RootElement.EnumerateArray().Single(e => e.GetProperty("id").GetString() == paperId);
         Assert.Equal(new[] { "id", "name", "sections" }, item.EnumerateObject().Select(p => p.Name).ToArray());
         var section = item.GetProperty("sections")[0];
         Assert.Equal(new[] { "title", "pointsPerQuestion", "questions" }, section.EnumerateObject().Select(p => p.Name).ToArray());
@@ -87,9 +89,9 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
     public async Task Grade_mixed_answers_matches_documented_scoring()
     {
         SignInAsAdmin();
-        await CreatePaperAsync("paper-grade");
+        var paperId = await CreatePaperAsync();
 
-        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/ExamPapers/paper-grade/grade", new
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, $"/exam/ExamPapers/{paperId}/grade", new
         {
             answers = new Dictionary<string, object?>
             {
@@ -128,9 +130,9 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
     public async Task Grade_without_answers_reports_every_question_unanswered()
     {
         SignInAsAdmin();
-        await CreatePaperAsync("paper-empty");
+        var paperId = await CreatePaperAsync();
 
-        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/ExamPapers/paper-empty/grade",
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, $"/exam/ExamPapers/{paperId}/grade",
             new { answers = new Dictionary<string, object?>() });
 
         Assert.Equal(HttpStatusCode.OK, status);
@@ -145,15 +147,19 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Post_duplicate_id_returns_409_and_put_unknown_returns_404()
+    public async Task Post_ignores_client_supplied_id_and_put_unknown_returns_404()
     {
         SignInAsAdmin();
-        await CreatePaperAsync("paper-dup");
 
-        var duplicate = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/exam/ExamPapers", BuildPaper("paper-dup"));
-        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
-        var (_, duplicateBody) = await JsonHttp.ReadAsync(duplicate);
-        Assert.Equal("试卷ID已存在", duplicateBody.RootElement.GetProperty("message").GetString());
+        var created = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/exam/ExamPapers", BuildPaper("paper-dup"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var (_, createdBody) = await JsonHttp.ReadAsync(created);
+        var generatedId = createdBody.RootElement.GetProperty("id").GetString();
+        Assert.NotNull(generatedId);
+        Assert.NotEqual("paper-dup", generatedId);
+
+        var (ignoredIdStatus, _) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/paper-dup");
+        Assert.Equal(HttpStatusCode.NotFound, ignoredIdStatus);
 
         var put = await JsonHttp.SendAsync(Client, HttpMethod.Put, "/exam/ExamPapers/missing", BuildPaper("missing"));
         Assert.Equal(HttpStatusCode.NotFound, put.StatusCode);
