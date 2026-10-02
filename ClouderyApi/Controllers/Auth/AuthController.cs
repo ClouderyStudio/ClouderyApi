@@ -1,10 +1,8 @@
 using Casdoor.Client;
-using ClouderyApi.Data;
-using ClouderyApi.Models.Identity;
+using ClouderyApi.UseCases.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
@@ -19,16 +17,16 @@ public class AuthController : ControllerBase
     private readonly CasdoorOptions _options;
     private readonly CasdoorClient _client;
     private readonly ILogger<AuthController> _logger;
-    private readonly IdentityDbContext _context;
+    private readonly UserSyncService _userSync;
 
     public AuthController(
         ILogger<AuthController> logger,
-        IdentityDbContext context,
+        UserSyncService userSync,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
-        _context = context;
+        _userSync = userSync;
 
 #pragma warning disable CS8601 // 引用类型赋值可能为 null（来自配置）
         _options = new CasdoorOptions
@@ -145,7 +143,7 @@ public class AuthController : ControllerBase
             _logger.LogInformation("Casdoor 用户 {UserId} 登录成功", casdoorUser.Id);
 
             // ===== 新增：同步用户到本地数据库 =====
-            var user = await SyncUserToDatabase(casdoorUser);
+            var user = await _userSync.SyncAsync(casdoorUser);
 
             if (user == null)
             {
@@ -198,55 +196,6 @@ public class AuthController : ControllerBase
         {
             _logger.LogError(ex, "处理 OAuth 回调时发生异常");
             return StatusCode(500, new { success = false, message = "服务器内部错误" });
-        }
-    }
-
-    /// <summary>
-    /// 同步 Casdoor 用户到本地数据库
-    /// </summary>
-    private async Task<User?> SyncUserToDatabase(CasdoorUser casdoorUser)
-    {
-        try
-        {
-            // 1. 检查用户是否已存在（通过 CasdoorId）
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.CasdoorId == casdoorUser.Id);
-
-            if (existingUser != null)
-            {
-                // 更新用户信息
-                existingUser.Username = casdoorUser.Name ?? casdoorUser.Email?.Split('@')[0] ?? "用户";
-                existingUser.Email = casdoorUser.Email;
-                existingUser.Avatar = casdoorUser.Avatar;
-                existingUser.LastLoginAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-                _logger.LogInformation("更新用户信息: {UserId}", existingUser.Id);
-                return existingUser;
-            }
-
-            // 2. 创建新用户
-            var newUser = new User
-            {
-                Id = Guid.NewGuid(),
-                Username = casdoorUser.Name ?? casdoorUser.Email?.Split('@')[0] ?? "用户",
-                Email = casdoorUser.Email,
-                Avatar = casdoorUser.Avatar,
-                CasdoorId = casdoorUser.Id ?? string.Empty,
-                CreatedAt = DateTime.UtcNow,
-                LastLoginAt = DateTime.UtcNow
-            };
-
-            _context.Users.Add(newUser);
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("创建新用户: {UserId}, CasdoorId: {CasdoorId}", newUser.Id, newUser.CasdoorId);
-            return newUser;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "同步用户到数据库失败");
-            return null;
         }
     }
 
