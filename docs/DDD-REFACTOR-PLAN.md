@@ -201,7 +201,7 @@
 | 阶段 | 主题 | 主要收益 | 风险 | EF 迁移 |
 |---|---|---|---|---|
 | Stage 0 | 安全网（测试） | 后续重构可回归 | 中 | 无 |
-| Stage 1 | 值对象 + 充血模型 | 规则收口、消除重复常量 | 中 | 无 |
+| Stage 1 | 值对象 + 充血模型 | 规则收口、消除重复常量 | 中 | 无 | ✅ 已完成（MHOP） |
 | Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 |
 | Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） |
 | Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox |
@@ -213,7 +213,8 @@
 - **未能自动化**：漂流瓶 throw→pick→messages→end/report 依赖 LLM/存储，暂以读契约覆盖（后续可加 stub）。
 - **踩坑记录**：临时诊断文件 DiagTests.cs 用于 dump 认证方案与响应，验证后已删除；不要在没有把握时重现。
 
-### Stage 1 — 值对象与充血模型（MHOP 优先，进行中）
+### Stage 1 — 值对象与充血模型 ✅ 已完成（MHOP 模块，6 次提交）
+- **本阶段提交**：d7c1fc8 内容聚合 / b1bff0f 漂流瓶聚合 / 57f23eb 用户聚合 / 79a2388 点赞目标类型 / bb237f6 心理评估计分 / 096e1da 业务异常统一（均本地提交、未推送）。
 - **目标**：把规则收回模型，消除原始类型与重复常量。
 - **进展（内容聚合已完成）**：
   - `ContentStatus`（ClouderyApi/Models/Mhop/ContentStatus.cs）成为唯一来源：删除了 MhopForumController.cs 的 4 个私有常量、Services/Mhop/MhopContentStatus.cs（原文件已删除），并把 forum / admin / MhopContentReviewService / MhopAiService / MhopSeeder 里的 `0/1/2/3` 字面量全部换成常量（漂流瓶消息状态 1/2 已由 MhopBottleMessageStatus 接管）。
@@ -250,9 +251,13 @@
   - MhopAssessmentController.Submit 从「内联 40 行计分 + 4 处 400 MhopApiException」瘦身为「取 trim 后的自由文本 → MhopModeration.DetectCrisis → AssessmentScoring.Evaluate → 解构 score / level / levelCode / crisis」；异常类型换成 DomainRuleException，经 MhopApiExceptionFilter 仍映射为 400 `{detail}`，文案与顺序逐字不变。
   - 边界职责划分：关键词危机筛查仍在服务层（MhopModeration），领域层以 `bool crisis` 入参接收后合并量表危机题，领域不反向依赖服务层；自由文本由控制器 trim 后传入（领域不 trim），已由单测钉住。
   - 新增纯单测 ClouderyApi.Tests/DomainAssessmentTests.cs（27 用例，无 HTTP / 无库；含 PHQ-9 分档边界 0/4/5/9/10/14/15/19/20/27、危机题命中、自由文本分支、量表目录契约）。
+- **进展（业务异常统一已完成，Stage 1 收尾）**：
+  - 纯规则类的 400 业务失败（36 处）由 `MhopApiException(400, "…")` 改为 `DomainRuleException("…")`：MhopUploadController 2、MhopUploadService 6、MhopForumController 4、MhopCasdoorController 2、MhopObjectStorage 1、MhopAuthController 10、MhopAdminController 11；文案逐字保留，仍由 MhopApiExceptionFilter 映射为 400 `{detail}`。
+  - 带状态码的业务失败保持 `MhopApiException`（401/403/404/409/422/429/500/502/503，共 65 处），因为领域异常没有状态码语义。
+  - `MhopUploadService.cs:82,97` 两处存储守卫 catch 增加 `catch (DomainRuleException) { throw; }`，否则领域异常会落进通用 catch 被改写为「不支持的图片格式」/「图片存储服务暂时不可用」。
+  - 全量回归 145 用例全绿，证明状态码与 JSON 未变。
 - **关键取舍**：暂不给 `Content` / `Board` / `Images` 加 EF 值转换（原第 5 条），因为 `Contains` / `==` / `GroupBy` / `ExecuteUpdateAsync` 触点太广、易改变可翻译性；先以「构造即校验 + 实体方法」收口规则，列与迁移保持不变。
-- **改动清单（剩余）**：
-  1. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`，先易后难、逐个校验 JSON 与状态码不变；401/403/404/409 等带状态码的仍保留 MhopApiException）。
+- **改动清单**：全部完成 ✅（内容 / 漂流瓶 / 用户 / 点赞目标类型 / 心理评估计分 / 业务异常统一；Stage 1 仅覆盖 MHOP 模块，Cloudery、Zhuxs 等模块的同类收口留待 Stage 2 一并处理）。
 - **验证**：dotnet build 0 error；dotnet test **145 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24 + DomainLikeTargetTests 13 + DomainAssessmentTests 27），约 44s。
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。

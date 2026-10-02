@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using ClouderyApi.Data;
+using ClouderyApi.Models;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
@@ -69,9 +70,9 @@ public class MhopCasdoorController : MhopControllerBase
         if (!_casdoor.Enabled)
             throw new MhopApiException(503, "统一身份认证暂不可用，请联系管理员");
         if (string.IsNullOrWhiteSpace(body.Code))
-            throw new MhopApiException(400, "授权码不能为空");
+            throw new DomainRuleException("授权码不能为空");
         if (!_casdoor.ValidateState(body.State))
-            throw new MhopApiException(400, "state 校验失败，请重新发起登录");
+            throw new DomainRuleException("state 校验失败，请重新发起登录");
 
         var redirectUri = string.IsNullOrWhiteSpace(body.RedirectUri)
             ? _casdoor.ResolveRedirectUri(Request)

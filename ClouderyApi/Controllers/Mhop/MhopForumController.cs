@@ -1,4 +1,5 @@
 using ClouderyApi.Data;
+using ClouderyApi.Models;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
@@ -91,7 +92,7 @@ public class MhopForumController : MhopControllerBase
         if (!string.IsNullOrWhiteSpace(board))
         {
             if (!MhopBoards.Slugs.Contains(board))
-                throw new MhopApiException(400, "板块不存在");
+                throw new DomainRuleException("板块不存在");
             query = query.Where(p => p.Board == board);
         }
 
@@ -239,7 +240,7 @@ public class MhopForumController : MhopControllerBase
             if (reply is null || reply.Status == ContentStatus.Rejected)
                 throw new MhopApiException(404, "内容不存在或已被移除");
             if (reply.Status != ContentStatus.Published || reply.Recalled)
-                throw new MhopApiException(400, "该回复暂不可点赞");
+                throw new DomainRuleException("该回复暂不可点赞");
         }
 
         var existing = await _db.MhopLikes.FirstOrDefaultAsync(l =>
@@ -323,7 +324,7 @@ public class MhopForumController : MhopControllerBase
         var query = _db.MhopPosts.Where(p => p.UserId == current.Id);
         if (status.HasValue)
         {
-            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new MhopApiException(400, "非法状态");
+            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new DomainRuleException("非法状态");
             query = query.Where(p => p.Status == status.Value);
         }
 
@@ -378,7 +379,7 @@ public class MhopForumController : MhopControllerBase
         var query = _db.MhopReplies.Where(r => r.UserId == current.Id);
         if (status.HasValue)
         {
-            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new MhopApiException(400, "非法状态");
+            if (status.Value is < ContentStatus.Pending or > ContentStatus.Draft) throw new DomainRuleException("非法状态");
             query = query.Where(r => r.Status == status.Value);
         }
 

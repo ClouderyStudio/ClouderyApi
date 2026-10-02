@@ -1,4 +1,5 @@
 using Aliyun.OSS;
+using ClouderyApi.Models;
 
 namespace ClouderyApi.Services.Mhop;
 
@@ -46,7 +47,7 @@ public static class MhopUploadPaths
     {
         var normalized = (key ?? string.Empty).Replace('\\', '/').TrimStart('/');
         if (normalized.Length == 0 || normalized.Contains("..", StringComparison.Ordinal))
-            throw new MhopApiException(400, "非法的文件名");
+            throw new DomainRuleException("非法的文件名");
         return normalized;
     }
 }

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using ClouderyApi.Data;
+using ClouderyApi.Models;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
@@ -48,11 +49,11 @@ public class MhopAuthController : MhopControllerBase
     {
         var username = (body.Username ?? string.Empty).Trim();
         if (username.Length < 2 || username.Length > 32)
-            throw new MhopApiException(400, "用户名长度需为 2-32 个字符");
+            throw new DomainRuleException("用户名长度需为 2-32 个字符");
         if (string.IsNullOrEmpty(body.Password) || body.Password.Length < 6 || body.Password.Length > 64)
-            throw new MhopApiException(400, "密码长度需为 6-64 位");
+            throw new DomainRuleException("密码长度需为 6-64 位");
         if (await _db.MhopUsers.AnyAsync(u => u.Username == username))
-            throw new MhopApiException(400, "用户名已存在");
+            throw new DomainRuleException("用户名已存在");
 
         var user = new MhopUser
         {
@@ -88,7 +89,7 @@ public class MhopAuthController : MhopControllerBase
     {
         var email = (body.Email ?? string.Empty).Trim().ToLowerInvariant();
         if (!MhopEmailCodeService.ValidEmail(email))
-            throw new MhopApiException(400, "邮箱格式不正确");
+            throw new DomainRuleException("邮箱格式不正确");
 
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         if (!_emailCodes.CheckIpRate(ip))
@@ -135,9 +136,9 @@ public class MhopAuthController : MhopControllerBase
     {
         var email = (body.Email ?? string.Empty).Trim().ToLowerInvariant();
         if (!MhopEmailCodeService.ValidEmail(email))
-            throw new MhopApiException(400, "邮箱格式不正确");
+            throw new DomainRuleException("邮箱格式不正确");
         if (!_emailCodes.VerifyCode(email, body.Code ?? string.Empty))
-            throw new MhopApiException(400, "验证码错误或已过期");
+            throw new DomainRuleException("验证码错误或已过期");
 
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Email == email);
         var isNew = false;
@@ -194,9 +195,9 @@ public class MhopAuthController : MhopControllerBase
         var user = await _current.RequireAsync();
         var username = (body.Username ?? string.Empty).Trim();
         if (username.Length < 2)
-            throw new MhopApiException(400, "用户名至少 2 个字符");
+            throw new DomainRuleException("用户名至少 2 个字符");
         if (await _db.MhopUsers.AnyAsync(u => u.Username == username && u.Id != user.Id))
-            throw new MhopApiException(400, "用户名已被占用");
+            throw new DomainRuleException("用户名已被占用");
 
         user.Username = username;
         var previousAvatar = user.Avatar;
@@ -216,9 +217,9 @@ public class MhopAuthController : MhopControllerBase
         var user = await _current.RequireAsync();
         var phone = (body.Phone ?? string.Empty).Trim();
         if (!PhonePattern.IsMatch(phone))
-            throw new MhopApiException(400, "手机号格式不正确");
+            throw new DomainRuleException("手机号格式不正确");
         if (await _db.MhopUsers.AnyAsync(u => u.Phone == phone && u.Id != user.Id))
-            throw new MhopApiException(400, "该手机号已被其他账号绑定");
+            throw new DomainRuleException("该手机号已被其他账号绑定");
 
         user.Phone = phone;
         await _db.SaveChangesAsync();

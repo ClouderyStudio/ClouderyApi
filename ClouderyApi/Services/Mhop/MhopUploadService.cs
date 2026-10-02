@@ -1,6 +1,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
+using ClouderyApi.Models;
 
 namespace ClouderyApi.Services.Mhop;
 
@@ -37,10 +38,10 @@ public sealed class MhopUploadService
 
     public async Task<string> SaveAsync(IFormFile file, string subDirectory, CancellationToken cancellationToken = default)
     {
-        if (file.Length > MaxSize) throw new MhopApiException(400, "图片大小不能超过 5MB");
+        if (file.Length > MaxSize) throw new DomainRuleException("图片大小不能超过 5MB");
         if (string.IsNullOrEmpty(file.ContentType) || !AllowedTypes.Contains(file.ContentType))
-            throw new MhopApiException(400, "仅支持 JPG/PNG/WebP/GIF 格式");
-        if (subDirectory is not ("avatars" or "posts")) throw new MhopApiException(400, "非法的上传类型");
+            throw new DomainRuleException("仅支持 JPG/PNG/WebP/GIF 格式");
+        if (subDirectory is not ("avatars" or "posts")) throw new DomainRuleException("非法的上传类型");
 
         byte[] bytes;
         using (var memory = new MemoryStream())
@@ -48,7 +49,7 @@ public sealed class MhopUploadService
             await file.CopyToAsync(memory, cancellationToken);
             bytes = memory.ToArray();
         }
-        if (bytes.Length > MaxSize) throw new MhopApiException(400, "图片大小不能超过 5MB");
+        if (bytes.Length > MaxSize) throw new DomainRuleException("图片大小不能超过 5MB");
 
         var square = subDirectory == "avatars";
         byte[] webp;
@@ -57,7 +58,7 @@ public sealed class MhopUploadService
         {
             using var image = Image.Load(bytes);
             if ((long)image.Width * image.Height > MaxPixels)
-                throw new MhopApiException(400, "图片尺寸过大");
+                throw new DomainRuleException("图片尺寸过大");
 
             if (square)
             {
@@ -83,10 +84,14 @@ public sealed class MhopUploadService
         {
             throw;
         }
+        catch (DomainRuleException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "图片处理失败，拒绝上传");
-            throw new MhopApiException(400, "不支持的图片格式");
+            throw new DomainRuleException("不支持的图片格式");
         }
 
         var key = subDirectory + "/" + Guid.NewGuid().ToString("N") + ".webp";
@@ -95,6 +100,10 @@ public sealed class MhopUploadService
             return await _storage.PutAsync(key, webp, "image/webp", cancellationToken);
         }
         catch (MhopApiException)
+        {
+            throw;
+        }
+        catch (DomainRuleException)
         {
             throw;
         }

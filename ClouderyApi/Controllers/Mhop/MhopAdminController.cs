@@ -1,4 +1,5 @@
 using ClouderyApi.Data;
+using ClouderyApi.Models;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
@@ -123,7 +124,7 @@ public class MhopAdminController : MhopControllerBase
         {
             "approve" => true,
             "reject" => false,
-            _ => throw new MhopApiException(400, "非法操作"),
+            _ => throw new DomainRuleException("非法操作"),
         };
         if (approved) post.Publish(body.Note);
         else post.Reject(body.Note);
@@ -144,7 +145,7 @@ public class MhopAdminController : MhopControllerBase
         var post = await _db.MhopPosts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == postId);
         if (post is null) throw new MhopApiException(404, "帖子不存在");
         if (post.Status != ContentStatus.Published)
-            throw new MhopApiException(400, "仅公开中的帖子可以生成 AI 自动回复");
+            throw new DomainRuleException("仅公开中的帖子可以生成 AI 自动回复");
 
         await _ai.RegenerateForumReplyAsync(post.Id, post.Content, post.Crisis);
         return MhopOk(new { ok = true });
@@ -218,7 +219,7 @@ public class MhopAdminController : MhopControllerBase
         {
             "approve" => true,
             "reject" => false,
-            _ => throw new MhopApiException(400, "非法操作"),
+            _ => throw new DomainRuleException("非法操作"),
         };
         if (approved) reply.Publish(body.Note);
         else reply.Reject(body.Note);
@@ -233,10 +234,10 @@ public class MhopAdminController : MhopControllerBase
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null) throw new MhopApiException(404, "回复不存在");
-        if (!reply.IsAi) throw new MhopApiException(400, "仅支持撤回 AI 回复；人类回复请使用驳回");
+        if (!reply.IsAi) throw new DomainRuleException("仅支持撤回 AI 回复；人类回复请使用驳回");
 
         var reason = (body.Reason ?? string.Empty).Trim();
-        if (reason.Length == 0) throw new MhopApiException(400, "请填写撤回原因");
+        if (reason.Length == 0) throw new DomainRuleException("请填写撤回原因");
 
         reply.Recall(reason);
         await _db.SaveChangesAsync();
@@ -250,7 +251,7 @@ public class MhopAdminController : MhopControllerBase
     {
         var reply = await _db.MhopReplies.FirstOrDefaultAsync(r => r.Id == replyId);
         if (reply is null) throw new MhopApiException(404, "回复不存在");
-        if (!reply.IsAi) throw new MhopApiException(400, "仅支持恢复 AI 回复");
+        if (!reply.IsAi) throw new DomainRuleException("仅支持恢复 AI 回复");
 
         reply.Restore();
         await _db.SaveChangesAsync();
@@ -313,7 +314,7 @@ public class MhopAdminController : MhopControllerBase
     public async Task<IActionResult> SetUserStatus(int userId, [FromBody] StatusIn body)
     {
         if (!MhopUserStatus.IsValid(body.Status))
-            throw new MhopApiException(400, "非法状态");
+            throw new DomainRuleException("非法状态");
 
         var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
@@ -385,7 +386,7 @@ public class MhopAdminController : MhopControllerBase
                 return MhopOk(new { ok = true, role = MhopUserRole.Admin, permissions = restoredPerms.Codes });
 
             default:
-                throw new MhopApiException(400, "非法操作");
+                throw new DomainRuleException("非法操作");
         }
     }
 
@@ -400,7 +401,7 @@ public class MhopAdminController : MhopControllerBase
         GuardStaffTarget(admin, user);
 
         var newPassword = (body.Password ?? string.Empty).Trim();
-        if (newPassword.Length < 6) throw new MhopApiException(400, "密码至少 6 位");
+        if (newPassword.Length < 6) throw new DomainRuleException("密码至少 6 位");
 
         user.PasswordHash = _hasher.Hash(newPassword);
         await _db.SaveChangesAsync();
@@ -415,9 +416,9 @@ public class MhopAdminController : MhopControllerBase
         var admin = await _current.RequirePermAsync(MhopAdminPermissions.Users);
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) throw new MhopApiException(404, "用户不存在");
-        if (user.Id == admin.Id) throw new MhopApiException(400, "不能删除当前登录的账号");
+        if (user.Id == admin.Id) throw new DomainRuleException("不能删除当前登录的账号");
         if (user.IsSuperAdmin)
-            throw new MhopApiException(400, "超级管理员账号不可删除");
+            throw new DomainRuleException("超级管理员账号不可删除");
         GuardStaffTarget(admin, user);
 
         var (posts, replies) = await _content.DeleteUserAsync(user, HttpContext.RequestAborted);

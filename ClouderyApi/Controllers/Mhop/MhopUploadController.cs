@@ -1,3 +1,4 @@
+using ClouderyApi.Models;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,7 +22,7 @@ public class MhopUploadController : MhopControllerBase
     public async Task<IActionResult> UploadAvatar(IFormFile? file)
     {
         await _current.RequireAsync();
-        if (file is null || file.Length == 0) throw new MhopApiException(400, "请选择要上传的图片");
+        if (file is null || file.Length == 0) throw new DomainRuleException("请选择要上传的图片");
         var url = await _uploads.SaveAsync(file, "avatars", HttpContext.RequestAborted);
         return MhopOk(new { url });
     }
@@ -30,7 +31,7 @@ public class MhopUploadController : MhopControllerBase
     public async Task<IActionResult> UploadImage(IFormFile? file)
     {
         await _current.RequireAsync();
-        if (file is null || file.Length == 0) throw new MhopApiException(400, "请选择要上传的图片");
+        if (file is null || file.Length == 0) throw new DomainRuleException("请选择要上传的图片");
         var url = await _uploads.SaveAsync(file, "posts", HttpContext.RequestAborted);
         return MhopOk(new { url });
     }
