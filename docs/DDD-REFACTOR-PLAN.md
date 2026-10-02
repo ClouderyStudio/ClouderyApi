@@ -203,7 +203,7 @@
 | Stage 0 | 安全网（测试） | 后续重构可回归 | 中 | 无 |
 | Stage 1 | 值对象 + 充血模型 | 规则收口、消除重复常量 | 中 | 无 | ✅ 已完成（MHOP） |
 | Stage 2 | 应用层抽取、控制器瘦身 | 消除 118 处 _db.、去重 | 高 | 无 | ✅ 已完成（M3 + M4） |
-| Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） |
+| Stage 3 | 目录按限界上下文重组 | 模块边界清晰 | 中 | 无（除非移动 DbContext 命名空间，也不需要） | ✅ 已完成（7 次提交） |
 | Stage 4 | 领域事件 + 事务边界 | 解耦副作用、保证一致性 | 中高 | 可选 outbox |
 | Stage 5 | 横切 / 工程化 | 可观测、可测试、修缺陷 | 低中 | 拆上下文时才需要 |
 
@@ -303,15 +303,23 @@
 - **风险**：最高（改动面最大）。按“一个控制器一个提交”推进。
 - **回滚**：逐控制器回退。
 
-### Stage 3 — 按限界上下文重组目录
-- **前置条件**：Stage 2（含 M4）已收尾，施工图 docs/DDD-STAGE3-MODULE-MAP.md 的现状普查已按 M4 后的真实文件数刷新。
-- **目标**：把类型分层改为模块化单体（第 4.1 节）。
-- **改动清单**：建立 Modules/{Mhop,Cloudery,Zhuxs,Identity}/{Domain,Application,Infrastructure,Api} 与 Shared/；移动文件、更新命名空间；同步迁移文件中的 [DbContext] 引用（或让 DbContext 留在 ClouderyApi.Data）。
-- **可选**：引入 NetArchTest 架构测试，强制依赖方向与模块隔离。
-- **验证**：编译 + 测试 + dotnet ef migrations list 三上下文正常。
-- **风险**：机械但触点广；建议放在 Stage 1/2 之后，避免冲突。
+### Stage 3 — 按限界上下文重组目录 ✅ 已完成（7 次提交，零行为变更）
+- **前置条件**：Stage 2（含 M4）已收尾；施工图 docs/DDD-STAGE3-MODULE-MAP.md 已按 M4 后的真实文件数刷新。
+- **目标**：把类型分层改为模块化单体（第 4.1 节），只移动文件与改命名空间，HTTP 路由 / JSON 契约 / 鉴权语义一律不变。
+- **M5 里程碑记录（7 次提交，均仅本地未推送）**：
+  - `4d2ebd4` 第 1 步 Shared 抽取：10 个 git mv（`Models/DomainRuleException.cs`、`Services/Mhop/{MhopApiException,MhopApiExceptionFilter,MhopJson}.cs`、`Controllers/Filters/{AdminOnly,IpRateLimit}Attribute.cs`、`Services/Ai/*`（4））→ `ClouderyApi/Shared/{Exceptions,Json,Filters,Ai}/`，命名空间 `ClouderyApi.Shared.*`，类型名不变（44 files +60/-32）。
+  - `f1bdfd3` 第 2 步 Cloudery + Zhuxs → `Modules/{Cloudery,Zhuxs}/{Domain,Application,Application/Mapping,Api,Api/Contracts}`（50 files +132/-124，42 renames）。
+  - `e76e220` 第 3 步 Identity → `Modules/Identity/{Domain,Application,Api}`（7 files +9/-9，3 renames）。
+  - `2c533a3` / `739fd23` / `786b7e6` 第 4 步 Mhop 三分：领域 53 files/20 renames、应用层 28/14、接口与基础设施 44/30（`MhopControllerBase`/`MhopAdminAttribute` 随控制器进 `Api/`，7 个 DTO 进 `Api/Contracts/`）。
+  - `8aec30c` 第 5 步 DbContext 与剩余控制器：`MhopDbContext(+Factory)` → `Modules/Mhop/Infrastructure/Persistence/`、`IdentityDbContext(+Factory)` → `Modules/Identity/Infrastructure/Persistence/`、`LongLinkController` → `Modules/Link/Api/`、`ServerController` → `Modules/SurvivalCraft/Api/`（34 files +36/-32，6 renames）。
+- **收尾状态**：`ClouderyApi/Controllers/`、`Models/`、`Services/`、`UseCases/` 已清空；`ClouderyApi/Data/` 只剩 `ClouderyApi/Data/ClouderyApiContext.cs`（Cloudery 与 Zhuxs 共用，Stage 5 才拆分）；ClouderyApi 下 150 个 .cs、31 个命名空间（+ `Program.cs` 无 namespace），全部业务代码位于 `Modules/<Ctx>/<Layer>/`。
+- **机械等价证据**：第 1–3 步与第 5 步的全部 diff 只有 `using`/`namespace` 行（剔除后逐行比对零残差，第 5 步非 using 行数 = 0）；第 4 步唯一非 using 改动是 7 个 `Migrations/Mhop` 文件里 `modelBuilder.Entity("...")` 等 EF CLR 实体名字符串（176 行）；迁移文件 BOM 与行尾逐字节保持（`20260930124306_MhopBottles.Designer.cs`、`20261001035824_mssql.local_migration_832.Designer.cs` 本就无 BOM，现仍无）。
+- **验证口径**：每一步在主树单跑 `dotnet build` 0 error（唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603）+ `dotnet test` **185 passed / 0 failed**（必须单跑：本机 MySQL `max_connections=151` 被多代理共用，并发会假失败）；`dotnet ef migrations list` 三上下文正常、`has-pending-model-changes` 三上下文均 No changes；旧命名空间 grep 全 0；`using ClouderyApi.Data;` 仅剩 14 处真正使用 `ClouderyApiContext` 的位置（Program.cs、Cloudery/Zhuxs 应用层、Migrations/ClouderyApi、3 个测试文件）。
+- **说明**：本文 Stage 1 / Stage 2 章节引用的路径是当时的真实路径（如 `ClouderyApi/Models/Mhop/*`、`ClouderyApi/UseCases/*`、`ClouderyApi/Data/ClouderyApiContext.cs(51,22)` 警告仍有效），Stage 3 之后统一位于 `ClouderyApi/Modules/<Ctx>/<Layer>/`；旧→新完整映射见 docs/DDD-STAGE3-MODULE-MAP.md。
+- **未做**：NetArchTest 架构测试（可选项，未引入）；拆分 `ClouderyApiContext` 属 Stage 5。
 
 ### Stage 4 — 领域事件与事务边界
+> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（下文 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号在 Stage 1–3 后已失效，以施工图为准）。
 - **目标**：解耦副作用、显式事务。
 - **改动清单**：
   1. 聚合内 AddDomainEvent：ContentPublished / ContentRejected / ContentRecalled、BottlePicked / BottleEnded / BottleReported、UserPermissionsChanged。
@@ -321,6 +329,7 @@
 - **风险**：中高；outbox 需要迁移。
 
 ### Stage 5 — 横切与工程化（可并行）
+> 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE5-CROSS-CUTTING.md（含 8 项会改变对外行为的改造清单，实施前需用户批准）。
 - 拆分 ClouderyApiContext → ClouderyContext + ZhuxsContext（需 EF 迁移与历史表处置）；或先做代码级接口隔离。
 - Options 模式替换配置直读（AdminOnlyAttribute.cs:26-30、AuthController.cs:34-43、ServerController.cs:13-19、MhopCasdoorService.cs:30-40）。
 - 基于 policy 的授权替换 AdminOnlyAttribute 的 service-locator。
