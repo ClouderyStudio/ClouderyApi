@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
-namespace ClouderyApi.Services.Ai;
+namespace ClouderyApi.Shared.Ai;
 
 /// <summary>
 /// OpenAI 兼容 Chat Completions 客户端：实现整体来自 MhopAiService.ChatAsync（逐行等价搬迁）。

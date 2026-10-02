@@ -1,4 +1,4 @@
-using ClouderyApi.Models;
+using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
 

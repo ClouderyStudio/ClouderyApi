@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace ClouderyApi.Controllers.Filters;
+namespace ClouderyApi.Shared.Filters;
 
 /// <summary>
 /// 按客户端 IP 的固定窗口限流，用于成本敏感或易被刷的公开接口（如 AI 解读）。

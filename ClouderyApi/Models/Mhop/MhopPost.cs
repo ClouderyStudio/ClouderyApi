@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Models.Mhop;
 
 /// <summary>匿名倾诉论坛主题帖。对应 Python 后端的 posts 表。</summary>

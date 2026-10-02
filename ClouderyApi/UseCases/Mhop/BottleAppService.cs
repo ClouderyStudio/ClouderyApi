@@ -4,6 +4,8 @@ using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
 using ClouderyApi.Services.Mhop;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.UseCases.Mhop;
 
 /// <summary>

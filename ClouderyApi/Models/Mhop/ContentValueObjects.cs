@@ -1,3 +1,5 @@
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Models.Mhop;
 
 /// <summary>

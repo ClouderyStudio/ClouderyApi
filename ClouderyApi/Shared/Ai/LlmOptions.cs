@@ -1,4 +1,4 @@
-namespace ClouderyApi.Services.Ai;
+namespace ClouderyApi.Shared.Ai;
 
 /// <summary>
 /// 通用大模型配置（OpenAI 兼容 Chat Completions）。

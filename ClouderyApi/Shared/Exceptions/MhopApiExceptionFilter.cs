@@ -1,7 +1,7 @@
-using ClouderyApi.Models;
+using ClouderyApi.Shared.Json;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Shared.Exceptions;
 
 /// <summary>
 /// 全局异常过滤器：把 MhopApiException 转成前端约定的 { detail } 错误体。

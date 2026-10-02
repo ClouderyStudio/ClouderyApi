@@ -1,7 +1,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
-using ClouderyApi.Models;
+using ClouderyApi.Shared.Exceptions;
 
 namespace ClouderyApi.Services.Mhop;
 

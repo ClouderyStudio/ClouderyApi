@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Models.Mhop;
 
 /// <summary>漂流瓶状态。</summary>

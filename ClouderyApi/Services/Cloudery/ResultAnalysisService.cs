@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using ClouderyApi.Models.Cloudery.DTOs;
-using ClouderyApi.Services.Ai;
+using ClouderyApi.Shared.Ai;
 
 namespace ClouderyApi.Services.Cloudery;
 

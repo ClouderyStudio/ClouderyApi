@@ -1,4 +1,4 @@
-namespace ClouderyApi.Models;
+namespace ClouderyApi.Shared.Exceptions;
 
 /// <summary>
 /// 领域规则被违反：非法状态转换、内容为空、超长等。

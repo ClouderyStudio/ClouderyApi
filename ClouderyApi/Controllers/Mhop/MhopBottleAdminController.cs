@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.UseCases.Mhop;
 using ClouderyApi.UseCases.Mhop.Mapping;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Controllers.Mhop;
 
 /// <summary>

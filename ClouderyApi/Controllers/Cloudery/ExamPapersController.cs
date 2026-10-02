@@ -1,6 +1,6 @@
 using ClouderyApi.Models.Cloudery;
 using ClouderyApi.Models.Cloudery.DTOs;
-using ClouderyApi.Controllers.Filters;
+using ClouderyApi.Shared.Filters;
 using ClouderyApi.UseCases.Cloudery;
 using Microsoft.AspNetCore.Mvc;
 

@@ -1,6 +1,8 @@
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
 
+using ClouderyApi.Shared.Json;
+
 namespace ClouderyApi.Controllers.Mhop;
 
 /// <summary>

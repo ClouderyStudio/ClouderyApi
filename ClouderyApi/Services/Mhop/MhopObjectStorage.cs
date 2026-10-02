@@ -1,5 +1,5 @@
 using Aliyun.OSS;
-using ClouderyApi.Models;
+using ClouderyApi.Shared.Exceptions;
 
 namespace ClouderyApi.Services.Mhop;
 

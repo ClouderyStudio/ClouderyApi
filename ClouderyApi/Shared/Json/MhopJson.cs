@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Shared.Json;
 
 /// <summary>
 /// MHOP 响应序列化约定：蛇形字段名 + UTC 时间带 Z，与 Python FastAPI 的返回结构保持一致，

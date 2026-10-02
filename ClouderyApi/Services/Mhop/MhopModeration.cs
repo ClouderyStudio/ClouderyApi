@@ -1,4 +1,4 @@
-using ClouderyApi.Services.Ai;
+using ClouderyApi.Shared.Ai;
 
 namespace ClouderyApi.Services.Mhop;
 

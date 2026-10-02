@@ -1,4 +1,4 @@
-namespace ClouderyApi.Services.Ai;
+namespace ClouderyApi.Shared.Ai;
 
 /// <summary>
 /// 大模型调用入口。实现必须「失败不抛异常」：返回空文本 + 引擎标识 local，

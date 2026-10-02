@@ -1,3 +1,5 @@
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Models.Mhop;
 
 /// <summary>一次心理评估的计分结论：量表总分与分档（自由文本评估无分值）。</summary>

@@ -2,6 +2,8 @@ using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Services.Mhop;
 
 /// <summary>

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
-using ClouderyApi.Services.Ai;
+using ClouderyApi.Shared.Ai;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

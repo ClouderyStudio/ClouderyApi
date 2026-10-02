@@ -1,4 +1,4 @@
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.Shared.Exceptions;
 
 /// <summary>业务异常：由 MhopApiExceptionFilter 转换为 { detail } 响应，对应 Python 的 HTTPException。</summary>
 public sealed class MhopApiException : Exception

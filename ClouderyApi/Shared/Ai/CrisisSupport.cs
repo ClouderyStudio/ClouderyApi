@@ -1,4 +1,4 @@
-namespace ClouderyApi.Services.Ai;
+namespace ClouderyApi.Shared.Ai;
 
 /// <summary>
 /// 危机干预的公共口径：援助文案与危机词表由 MHOP（社区/漂流瓶/测评）与 Cloudery 结果分析共用，

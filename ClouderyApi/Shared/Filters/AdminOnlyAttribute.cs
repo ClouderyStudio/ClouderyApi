@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ClouderyApi.Controllers.Filters;
+namespace ClouderyApi.Shared.Filters;
 
 /// <summary>
 /// 管理员鉴权过滤器：仅放行已登录且 CasdoorId 属于配置项

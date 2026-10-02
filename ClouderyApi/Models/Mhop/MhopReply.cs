@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+using ClouderyApi.Shared.Exceptions;
+
 namespace ClouderyApi.Models.Mhop;
 
 /// <summary>主题帖回复（含 AI 自动回复）。对应 Python 后端的 replies 表。</summary>

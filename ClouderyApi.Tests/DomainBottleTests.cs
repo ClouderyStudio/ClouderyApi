@@ -1,4 +1,4 @@
-using ClouderyApi.Models;
+using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Models.Mhop;
 
 namespace ClouderyApi.Tests;
