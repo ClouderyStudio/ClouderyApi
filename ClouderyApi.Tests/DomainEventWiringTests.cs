@@ -24,6 +24,12 @@ public sealed class DomainEventWiringTests : IntegrationTestBase
     private static MhopReply NewReply(string content = "抱抱你")
         => MhopReply.NewAuthorReply(1, 7, false, ContentText.ForReply(content), [], false);
 
+    private static MhopBottle NewBottle(string content = "有人在海边吗")
+        => MhopBottle.Throw(7, content, false, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+    private static MhopBottleMessage NewMessage(string content = "在的")
+        => MhopBottleMessage.Create(1, 7, content, false, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
     // ---------------- 实体登记与撤销 ----------------
 
     [Fact]
@@ -40,6 +46,22 @@ public sealed class DomainEventWiringTests : IntegrationTestBase
         var reply = NewReply();
 
         Assert.IsType<ReplySubmittedForReview>(Assert.Single(reply.DomainEvents));
+    }
+
+    [Fact]
+    public void Throw_registers_bottle_thrown_event()
+    {
+        var bottle = NewBottle();
+
+        Assert.IsType<BottleThrown>(Assert.Single(bottle.DomainEvents));
+    }
+
+    [Fact]
+    public void Create_registers_bottle_message_sent_event()
+    {
+        var message = NewMessage();
+
+        Assert.IsType<BottleMessageSent>(Assert.Single(message.DomainEvents));
     }
 
     [Fact]
@@ -137,6 +159,8 @@ public sealed class DomainEventWiringTests : IntegrationTestBase
         Assert.NotEmpty(services.GetServices<IDomainEventHandler<PostSubmittedForReview>>());
         Assert.NotEmpty(services.GetServices<IDomainEventHandler<ReplySubmittedForReview>>());
         Assert.NotEmpty(services.GetServices<IDomainEventHandler<PostPublished>>());
+        Assert.NotEmpty(services.GetServices<IDomainEventHandler<BottleThrown>>());
+        Assert.NotEmpty(services.GetServices<IDomainEventHandler<BottleMessageSent>>());
     }
 
 }
