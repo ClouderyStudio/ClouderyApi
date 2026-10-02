@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Cloudery.Infrastructure.Persistence;
 using ClouderyApi.Modules.Cloudery.Domain;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +17,7 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
     private async Task SeedMemberAsync(string id, string name)
     {
         using var scope = Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ClouderyApiContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ClouderyContext>();
         db.ClouderyMembers.Add(new Member
         {
             Id = id,

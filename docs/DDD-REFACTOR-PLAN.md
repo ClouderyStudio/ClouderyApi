@@ -342,6 +342,16 @@
 - 启动期 Migrate/Seed 移出到部署步骤或受控后台任务（Program.cs:156-183）。
 - 每上下文独立 MigrationsHistoryTable；.editorconfig + analyzer；CI 测试门禁；限流分布式化（可选）。
 - 清理死代码 / 补 ExamPaper 输入 DTO。
+- **M7 里程碑记录（Stage 5，均仅本地未推送）**：
+  - Options 模式（5.2）：`e21e423` CasdoorSettings、`d29e9cf` AdminOptions、`9e33613` SckeyOptions、`0048adc` CorsSettings、`041a787` MhopOptions；`8892bf9` 修复 SCKEY 配置键不匹配（附录 A）。
+  - `55d8c79` 5.3 管理员鉴权改用 policy：新增 `ClouderyApi/Shared/Authorization/{AdminOnlyAttribute.cs,AdminOnlyAuthorization.cs}`，删 `ClouderyApi/Shared/Filters/AdminOnlyAttribute.cs`；401/403 形状逐字保留（已登录非管理员恒 403；未登录仅当端点授权元数据 ≤1 条时写 401 JSON，否则走框架默认挑战）。
+  - `5458500` 试卷写接口改用 `Modules/Cloudery/Api/Contracts/ExamPaperDtos.cs` 的 `ExamPaperInput`（拒 over-posting），并删除死 ModelState 7 处 + 死并发 catch 4 处。
+  - `e01384c` 7.x：仓库根 `.editorconfig` + CI `dotnet build -warnaserror`（此时已消除唯一警告 CS8603）。
+  - `bd88b5f` 5.1 第一步接口隔离：新增 `Modules/Cloudery/Application/IClouderyDbContext.cs`、`Modules/Zhuxs/Application/IZhuxsDbContext.cs`，6 个应用服务只依赖接口（零迁移）。
+  - 5.1 第二步物理拆分：新增 `Modules/Cloudery/Infrastructure/Persistence/ClouderyContext.cs` 与 `Modules/Zhuxs/Infrastructure/Persistence/ZhuxsContext.cs`（各带 `*ContextFactory` 设计时工厂），删 `ClouderyApi/Data/ClouderyApiContext.cs`；`Migrations/ClouderyApi/` → `Migrations/Cloudery/`（3 个既有迁移 + 快照改名），新增 `Migrations/Cloudery/20261002100506_AlignClouderySnapshot.cs`（仅对齐快照，Up/Down 空操作，避免误 DROP Zhuxs 表）；新增 `Migrations/Zhuxs/20261002100200_InitialZhuxs.cs` 幂等 baseline（`CREATE TABLE IF NOT EXISTS` 三张表，Down 空）+ 独立历史表 `__EFMigrationsHistory_Zhuxs`。
+  - **历史表决策**：`ClouderyContext` 沿用共享 `__EFMigrationsHistory`（其 3 个既有迁移已记录其中，换新表会被判「未应用」并在生产重跑 CREATE TABLE）；因此 5.5 只完成 Zhuxs 部分，Mhop/Identity/Cloudery 的完全独立历史表需一次性生产数据搬迁（按 MigrationId `INSERT ... SELECT`），未执行、留待发布窗口。生产影响为零：Cloudery/Identity 启动期从不迁移（仅 `MhopDbContext` 自动迁移）。
+  - **验证口径**：`dotnet build ClouderyApi.sln --configuration Release -warnaserror` 0 警告 0 错误；`--filter "FullyQualifiedName~ClouderyMembersContractTests|FullyQualifiedName~ZhuxsContractTests|FullyQualifiedName~ExamPapersContractTests|FullyQualifiedName~ExamResult"` → 29 passed / 0 failed（36s，按 m02529 只跑受影响范围）；两上下文 `has-pending-model-changes` 均 No changes。README 的 DbContext / 迁移章节已同步。
+  - **未做**：5.4 启动期 Migrate/Seed 移出（`Program.cs:179-190/192-206` → 受控服务 + `--migrate/--seed`，`Mhop:Seed` 默认改 false，deploy.yml 前置执行）；5.7 限流分布式化（可选项）。
 
 ---
 

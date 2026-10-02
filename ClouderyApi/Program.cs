@@ -1,19 +1,20 @@
 using ClouderyApi.Shared.Domain;
 using ClouderyApi.Shared.Exceptions;
 using Casdoor.AspNetCore.Authentication;
-using ClouderyApi.Data;
 using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Shared.Ai;
 using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Shared.Options;
 using ClouderyApi.Modules.Cloudery.Application;
+using ClouderyApi.Modules.Cloudery.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Identity.Application;
 using ClouderyApi.Modules.Mhop.Application;
 using ClouderyApi.Modules.Mhop.Application.Events;
 using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Modules.Zhuxs.Application;
+using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -35,15 +36,25 @@ builder.Services.AddHttpClient("SckeyServer"); // 供 ServerController 转发 SC
 
 builder.Services.AddOpenApi();
 
-builder.Services.AddDbContext<ClouderyApiContext>(options =>
+// Stage 5 §5.1 第二步：Cloudery / Zhuxs 各自独立上下文（同库、不同 DbContext）。
+// ClouderyContext 沿用既有 __EFMigrationsHistory（3 个既有迁移已记录其中，换新表会被判未应用）；
+// ZhuxsContext 的表早于 EF 迁移，改用独立历史表 + 幂等 baseline 迁移。
+builder.Services.AddDbContext<ClouderyContext>(options =>
 {
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
 });
 
-// Stage 5 §5.1 第一步：两个域的持久化边界指向同一个过渡期上下文（零迁移）。
-// 物理拆分（第二步）时把下面的实现换成独立 DbContext 即可，应用层无需改动。
-builder.Services.AddScoped<IClouderyDbContext>(sp => sp.GetRequiredService<ClouderyApiContext>());
-builder.Services.AddScoped<IZhuxsDbContext>(sp => sp.GetRequiredService<ClouderyApiContext>());
+builder.Services.AddDbContext<ZhuxsContext>(options =>
+{
+    options.UseMySQL(
+        builder.Configuration.GetConnectionString("DefaultConnection")!,
+        mySql => mySql.MigrationsHistoryTable(ZhuxsContext.MigrationsHistoryTableName));
+});
+
+// 应用服务只依赖 IClouderyDbContext / IZhuxsDbContext（Stage 5 §5.1 第一步），
+// 这里把两个边界接口分别绑定到拆分后的独立上下文。
+builder.Services.AddScoped<IClouderyDbContext>(sp => sp.GetRequiredService<ClouderyContext>());
+builder.Services.AddScoped<IZhuxsDbContext>(sp => sp.GetRequiredService<ZhuxsContext>());
 
 builder.Services.AddDbContext<IdentityDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));

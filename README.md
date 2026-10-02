@@ -28,7 +28,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 
 - **ASP.NET Core**（net10.0），控制器 `[ApiController]` 风格 REST API
 - **Entity Framework Core**，使用 **MySQL** 驱动（`MySql.EntityFrameworkCore`）
-- 三个 `DbContext`：`ClouderyApiContext`（云术 / 竹像素域，含 JSON 列转换）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
+- 四个 `DbContext`：`ClouderyContext`（云术域：成员 / 试卷 / 成绩，含 JSON 列转换与 `ExamResults` 唯一索引）、`ZhuxsContext`（竹像素域：白名单 / 条款 / 申请，独立迁移历史表）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
 - **Casdoor** OAuth2 认证（`Casdoor.AspNetCore` + `Casdoor.Client`），Cookie 会话，会话有效期 7 天且支持滚动续期
 - **MHOP 认证**：手写 HS256 JWT（`Authorization: Bearer`）+ PBKDF2-SHA256 密码哈希，兼容原有协议；并提供 **Casdoor 统一身份认证（OAuth2 授权码 / OIDC）** 登录，成功后同样签发 MHOP JWT
 - **共享大模型客户端**：`Services/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
@@ -70,7 +70,7 @@ ClouderyApi/
 │   ├── Ai/                         # 共享大模型客户端与危机文本（LlmOptions / ILlmClient / LlmClient / CrisisSupport）
 │   ├── Cloudery/                   # ResultAnalysisService（量表结果 AI 解读）/ ExamResultService（云端结果同步）
 │   └── Mhop/                       # MHOP 业务：AI 服务、内容审核、对象存储等
-├── Migrations/                    # 各 Context 独立迁移目录：Migrations/Identity/（IdentityDbContext，MySQL）、Migrations/ClouderyApi/（ClouderyApiContext，MySQL，含 ExamPapers、ExamResults）、Migrations/Mhop/（MhopDbContext，MySQL）
+├── Migrations/                    # 各 Context 独立迁移目录：Migrations/Identity/（IdentityDbContext）、Migrations/Cloudery/（ClouderyContext，含 ExamPapers、ExamResults 及快照对齐）、Migrations/Zhuxs/（ZhuxsContext，幂等 baseline，独立历史表 __EFMigrationsHistory_Zhuxs）、Migrations/Mhop/（MhopDbContext）
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
 
@@ -118,14 +118,17 @@ OpenAPI 描述文档（开发环境）：`http://localhost:5171/openapi/v1.json`
 
 ### 数据库迁移
 
-三个 `DbContext` 各自维护迁移：`IdentityDbContext`（MySQL）在 `Migrations/Identity/`，`ClouderyApiContext`（MySQL）在 `Migrations/ClouderyApi/`，`MhopDbContext`（MySQL）在 `Migrations/Mhop/`。生成并应用迁移：
+四个 `DbContext` 各自维护迁移：`IdentityDbContext` 在 `Migrations/Identity/`，`ClouderyContext` 在 `Migrations/Cloudery/`（沿用共享的 `__EFMigrationsHistory`，避免重跑既有迁移），`ZhuxsContext` 在 `Migrations/Zhuxs/`（独立历史表 `__EFMigrationsHistory_Zhuxs`），`MhopDbContext` 在 `Migrations/Mhop/`。生成并应用迁移：
 
 ```bash
 dotnet ef migrations add <Name> --context IdentityDbContext --output-dir Migrations/Identity
 dotnet ef database update --context IdentityDbContext
 
-dotnet ef migrations add <Name> --context ClouderyApiContext
-dotnet ef database update --context ClouderyApiContext
+dotnet ef migrations add <Name> --context ClouderyContext --output-dir Migrations/Cloudery
+dotnet ef database update --context ClouderyContext
+
+dotnet ef migrations add <Name> --context ZhuxsContext --output-dir Migrations/Zhuxs
+dotnet ef database update --context ZhuxsContext
 
 dotnet ef migrations add <Name> --context MhopDbContext --output-dir Migrations/Mhop
 dotnet ef database update --context MhopDbContext
@@ -242,9 +245,9 @@ dotnet ef database update --context MhopDbContext
 | `Models/Cloudery/DTOs/ExamResultDtos.cs` | `ExamResultIn` / `ExamResultSyncIn` / `ExamResultOut` / `ExamResultSyncOut` |
 | `Services/Cloudery/ExamResultService.cs` | 列表 / 同步 / 删除 / 清空，含配额校验与时间归一化 |
 | `Controllers/Cloudery/ExamResultsController.cs` | 路由 `exam/results` |
-| `Migrations/ClouderyApi/20261001091128_AddExamResults.cs` | 仅新增 `ExamResults` 表与两个索引，兼容既有 schema |
+| `Migrations/Cloudery/20261001091128_AddExamResults.cs` | 仅新增 `ExamResults` 表与两个索引，兼容既有 schema |
 
-> 部署前执行 `dotnet ef database update --context ClouderyApiContext`。`ClouderyApiContext` **不会**随启动自动迁移（只有 `MhopDbContext` 会自动迁移）。
+> 部署前执行 `dotnet ef database update --context ClouderyContext`。`ClouderyContext` / `ZhuxsContext` **不会**随启动自动迁移（只有 `MhopDbContext` 会自动迁移）。
 
 ## MHOP 模块（从 Python FastAPI 后端迁移）
 

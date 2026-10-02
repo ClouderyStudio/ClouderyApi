@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using ClouderyApi.Modules.Zhuxs.Domain;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,7 +19,7 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
     {
         using (var scope = Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<ClouderyApiContext>();
+            var db = scope.ServiceProvider.GetRequiredService<ZhuxsContext>();
             db.ZhuxsTerms.Add(new Term
             {
                 Id = Guid.NewGuid().ToString("N"),
@@ -67,7 +67,7 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
     {
         using (var scope = Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<ClouderyApiContext>();
+            var db = scope.ServiceProvider.GetRequiredService<ZhuxsContext>();
             db.ZhuxsApplications.Add(new Application
             {
                 Id = Guid.NewGuid().ToString("N"),

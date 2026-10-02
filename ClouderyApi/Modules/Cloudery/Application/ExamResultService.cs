@@ -1,5 +1,4 @@
 using System.Text.Json;
-using ClouderyApi.Data;
 using ClouderyApi.Modules.Cloudery.Domain;
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using Microsoft.EntityFrameworkCore;

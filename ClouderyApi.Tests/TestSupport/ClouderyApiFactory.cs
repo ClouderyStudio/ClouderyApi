@@ -1,5 +1,6 @@
 using System.Data;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Cloudery.Infrastructure.Persistence;
+using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -52,18 +53,22 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// 启动期只自动迁移 MhopDbContext；另外两个上下文的表在这里补齐。
-    /// ClouderyApiContext 的 Zhuxs* / ClouderyMembers 表早于 EF 迁移（迁移只覆盖 ExamPapers / ExamResults），
-    /// 所以直接按 EF 模型生成建表脚本，让测试库 schema 与当前模型一致。
+    /// ClouderyContext 的 ClouderyMembers 表早于 EF 迁移（迁移只覆盖 ExamPapers / ExamResults），
+    /// 所以直接按 EF 模型生成建表脚本，让测试库 schema 与当前模型一致；
+    /// ZhuxsContext 走自己的迁移（独立历史表 + 幂等 baseline），顺带验证 baseline 的真实建表能力。
     /// </summary>
     public async Task PrepareAuxiliarySchemasAsync()
     {
         using var scope = Services.CreateScope();
         var provider = scope.ServiceProvider;
 
-        var cloudery = provider.GetRequiredService<ClouderyApiContext>();
+        var cloudery = provider.GetRequiredService<ClouderyContext>();
         var connection = (MySqlConnection)cloudery.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync();
         new MySqlScript(connection, cloudery.Database.GenerateCreateScript()).Execute();
+
+        var zhuxs = provider.GetRequiredService<ZhuxsContext>();
+        await zhuxs.Database.MigrateAsync();
 
         var identity = provider.GetRequiredService<IdentityDbContext>();
         await identity.Database.MigrateAsync();

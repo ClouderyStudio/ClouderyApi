@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace ClouderyApi.Migrations.ClouderyApi
+namespace ClouderyApi.Migrations.Cloudery
 {
     /// <inheritdoc />
     public partial class mssqllocal_migration_995 : Migration
