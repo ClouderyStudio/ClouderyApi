@@ -327,10 +327,10 @@
   - `d562fa6` 第 3 步 瓶子事件（+ `48c774f` 补 3 条守卫）：`BottleThrown` / `BottleMessageSent`；`BottleAppService` 不再注入 `MhopContentReviewService`。
   - `8fc5b09` 第 4 步 用户事件：`UserRoleChanged` / `UserPermissionsChanged` / `UserStatusChanged` / `UserBadgeChanged`（订阅者暂空）+ 5 条守卫。
   - `ea74382` 第 5 步 事务收口：`MhopAiService.QueueForumReply` 用显式事务包住「写 AI 回复 → 写 mhop_ai_logs」两次 Save；新增 `ClouderyApi.Tests/MhopAiReplyWriteTests.cs` 2 条（该写入路径此前零覆盖；变异验证：注释掉 `CommitAsync` 后两条均失败）。
-  - `0f46803` 附录 D：记录投瓶 sentinel 缺陷（未修，需批准后单独立项）。
+  - `0f46803` 附录 D：记录投瓶 sentinel 缺陷（第 1 项已由后续提交 `c8a16ef` 修复，行为变更经用户批准）。
 - **刻意未做**：outbox 表（路线 A 的投递语义不比现状 `Task.Run` 差，且不引入迁移风险）；管理员重审（`MhopBottleAdminController.cs:154/191` 的 `rescreen:true`）与每小时轮询重排不事件化（显式命令 / 运维补偿，不派生自状态迁移）；对象存储清理保持「先落库再尽力清理」不入事务；`MhopContentReviewService.cs:75-85` 因 `EnsureForumReplyAsync` 自建 DI scope（另取 DbContext/连接，且常见路径只是排队）无法并入同一事务，已实测并在施工图 §四 注明。
 - **验证口径**：每步 build 0 error（唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603）+ 主树单飞 `dotnet test` 全绿；Stage 4 收尾 **203 passed / 0 failed**（185 + 11 接线守卫 + 5 用户事件 + 2 AI 写入）；`has-pending-model-changes`（MhopDbContext）No changes、无新迁移、swagger 路由快照未变。
-- **风险残留**：内容侧事件丢失不可逆（瓶子侧有每小时轮询兜底 `RequeueStaleBottleReviews`）；投瓶 AI 初筛因既有 sentinel 缺陷从未执行（附录 D）。
+- **风险残留**：内容侧事件丢失不可逆（瓶子侧有每小时轮询兜底 `RequeueStaleBottleReviews`）；投瓶 AI 初筛的 sentinel 缺陷已由 `c8a16ef` 修复（附录 D），修复后 AI 不可用时瓶子停在待审核。
 - **回滚**：逐提交 `git revert`；整体放弃基座时先 revert 订阅步骤再 revert 基座步骤。
 
 ### Stage 5 — 横切与工程化（可并行）
@@ -410,7 +410,8 @@
 5. **`Location` 使用声明大小写**：`CreatedAtAction` 生成 `/cloudery/Members/{id}`、`/exam/ExamPapers/{id}`（与请求的全小写路径不同，路由匹配不区分大小写）；Stage 2 若改路由必须同步。
 6. 未覆盖分支（无缺陷，仅测试缺口）：`MembersController` PUT 的并发 rethrow、Zhuxs 三控制器写成功路径与 `DbUpdateException`/`DbUpdateConcurrencyException`、Auth 的真实 Casdoor callback 成功路径、`ResultAnalysisService` 的 LLM 成功路径（测试把 `Llm__BaseUrl` 指向 `http://127.0.0.1:1` 强制 `engine="local"`）、`IpRateLimitAttribute` 的 429（静态字典 key=`ip|path`，会污染同路径测试）、`ExamResultService` 的 200 条/256KB 上限、`ExamPapers` 的 PUT/DELETE 成功（204）。
 
-## 附录 D：Stage 4 领域事件施工中暴露的既有缺陷（均未修）
+## 附录 D：Stage 4 领域事件施工中暴露的既有缺陷（第 1 项已修，其余未修）
 
 1. **`MhopBottle.Status` 的 EF sentinel 与数据库默认值冲突 → 投瓶 AI 初筛从未执行**：`ClouderyApi/Modules/Mhop/Infrastructure/Persistence/MhopDbContext.cs:104` 为 `e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting)`（=1），而 `MhopBottleStatus.Pending = 0`（`ClouderyApi/Modules/Mhop/Domain/MhopBottle.cs:15`）恰为 `int` 的 CLR 默认值。EF Core 把「值等于 sentinel」当作未赋值，INSERT 时省略 `status` 列，于是数据库默认值 1（漂流中）生效。实测（临时探针直插实体再读回，探针已删）：`inMemory=0 persisted=1 aiReviewedAt=null`。连带后果：`ClouderyApi/Modules/Mhop/Application/MhopContentReviewService.cs:163` 的 `if (!rescreen && bottle.Status != MhopBottleStatus.Pending) return;` 立即早退，**投瓶的 AI 初筛实际不执行**（瓶子以「漂流中」直接入库；敏感词与危机标记的同步拦截不受影响，仍在入库前生效）。
    领域事件化前后行为一致（事件化前是 Save 之后直接调 `QueueBottleReview`，队列读到的是同一份 `status=1`），因此不属 Stage 4 引入。修复候选：给该属性加 `.HasSentinel(-1)`（或改用 `ValueGeneratedNever()`），不动数据库默认值、预期无需迁移；但会把投瓶恢复为「先待审核、AI 通过后自动入海」，属**对外可见行为与时序变更**，需批准后单独立项，并与「瓶子 HTTP 路径无契约测试」的缺口一起补测试。
+    **修复（`c8a16ef`，用户已批准行为变更）**：给该属性追加 `.HasSentinel(-1)`（sentinel 取 -1，非合法状态），保持数据库默认值不变。模型快照无变化（`has-pending-model-changes --context MhopDbContext` = No changes），无需新迁移。行为变化：投瓶恢复「先待审核 → AI 通过后自动入海」；AI/LLM 不可用时瓶子停在待审核等待人工放行，与 MhopModeration 的既有降级语义一致。新增守卫 `ClouderyApi.Tests/MhopBottlePersistenceTests.cs` 2 条（写入 Pending 后新 scope 读回必须仍为 Pending；模型里 Status 的 Sentinel 必须为 -1）；变异验证：去掉 `.HasSentinel(-1)` 两条均失败。瓶子 HTTP 路径仍无契约测试（既有缺口，见附录 C 第 6 项）。
