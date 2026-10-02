@@ -1,5 +1,5 @@
 using Casdoor.Client;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Identity.Domain;
 using Microsoft.EntityFrameworkCore;
 

@@ -1,6 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Modules.Mhop.Api.Contracts;
 using ClouderyApi.Modules.Mhop.Infrastructure;

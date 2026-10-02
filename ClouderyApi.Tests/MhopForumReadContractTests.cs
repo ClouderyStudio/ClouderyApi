@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;

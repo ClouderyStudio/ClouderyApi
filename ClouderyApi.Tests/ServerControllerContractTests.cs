@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text;
-using ClouderyApi.Controllers.SurvivalCraft;
+using ClouderyApi.Modules.SurvivalCraft.Api;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

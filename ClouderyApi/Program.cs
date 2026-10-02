@@ -1,6 +1,8 @@
 using ClouderyApi.Shared.Exceptions;
 using Casdoor.AspNetCore.Authentication;
 using ClouderyApi.Data;
+using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Shared.Ai;
 using ClouderyApi.Modules.Cloudery.Application;
 using ClouderyApi.Modules.Mhop.Infrastructure;

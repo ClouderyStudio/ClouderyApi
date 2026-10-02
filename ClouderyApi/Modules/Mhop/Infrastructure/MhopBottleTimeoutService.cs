@@ -1,4 +1,4 @@
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ClouderyApi.Modules.Mhop.Application;

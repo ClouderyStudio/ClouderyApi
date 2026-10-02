@@ -1,5 +1,7 @@
 using System.Data;
 using ClouderyApi.Data;
+using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;

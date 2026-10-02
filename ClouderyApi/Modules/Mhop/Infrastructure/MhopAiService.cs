@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Shared.Ai;
 using Microsoft.EntityFrameworkCore;

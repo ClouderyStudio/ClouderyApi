@@ -1,7 +1,7 @@
 using ClouderyApi.Modules.Mhop.Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace ClouderyApi.Data;
+namespace ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 
 /// <summary>
 /// MHOP 公益心理辅助平台数据上下文（从 Python FastAPI + SQLAlchemy 后端迁移）。

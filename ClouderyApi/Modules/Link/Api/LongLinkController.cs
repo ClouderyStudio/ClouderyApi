@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ClouderyApi.Controllers.Misc;
+namespace ClouderyApi.Modules.Link.Api;
 
 [Route("misc/[controller]")]
 [ApiController]

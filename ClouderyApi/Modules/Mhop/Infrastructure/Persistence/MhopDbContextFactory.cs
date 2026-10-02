@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 
-namespace ClouderyApi.Data;
+namespace ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 
 /// <summary>
 /// 设计时工厂：让 dotnet ef 无需启动 Web 主机即可使用 MhopDbContext 生成迁移。

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Casdoor.Client;
-using ClouderyApi.Data;
+using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Shared.Exceptions;
 using ClouderyApi.Modules.Mhop.Domain;
 using ClouderyApi.Modules.Mhop.Api.Contracts;
