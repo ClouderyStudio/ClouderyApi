@@ -17,16 +17,16 @@ public sealed class CasdoorAppService
 {
     private const int StateTtlSeconds = 600;
 
-    private readonly IConfiguration _configuration;
     private readonly CasdoorSettings _casdoor;
+    private readonly CorsSettings _cors;
     private readonly MhopOptions _options;
     private readonly IHttpClientFactory _httpClientFactory;
 
     public CasdoorAppService(
-        IConfiguration configuration, IOptions<CasdoorSettings> casdoor, IOptions<MhopOptions> options, IHttpClientFactory httpClientFactory)
+        IOptions<CasdoorSettings> casdoor, IOptions<CorsSettings> cors, IOptions<MhopOptions> options, IHttpClientFactory httpClientFactory)
     {
-        _configuration = configuration;
         _casdoor = casdoor.Value;
+        _cors = cors.Value;
         _options = options.Value;
         _httpClientFactory = httpClientFactory;
     }
@@ -127,7 +127,7 @@ public sealed class CasdoorAppService
     private bool IsAllowedOrigin(string origin, HttpRequest request)
     {
         var normalized = origin.TrimEnd('/');
-        var allowed = _configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        var allowed = _cors.AllowedOrigins ?? [];
         if (allowed.Any(item => string.Equals(item.TrimEnd('/'), normalized, StringComparison.OrdinalIgnoreCase)))
             return true;
 

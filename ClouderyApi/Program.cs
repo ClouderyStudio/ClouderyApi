@@ -136,6 +136,7 @@ builder.Services.PostConfigure<SckeyOptions>(options =>
     options.ApiBase ??= builder.Configuration["SurvivalCraft:SCKEY_API_BASE"] ?? "https://api.sckey.net";
     options.BearerToken ??= builder.Configuration["SurvivalCraft:SCKEY_BEARER_TOKEN"] ?? "";
 });
+builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection(CorsSettings.SectionName));
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
