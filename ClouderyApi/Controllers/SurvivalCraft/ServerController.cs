@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -10,27 +11,29 @@ namespace ClouderyApi.Controllers.SurvivalCraft;
 [Authorize]
 public class ServerController : ControllerBase
 {
-    private static readonly IConfiguration _config = new ConfigurationBuilder()
-        .SetBasePath(Directory.GetCurrentDirectory())
-        .AddJsonFile("appsettings.json")
-        .Build();
+    /// <summary>转发 SCKEY 请求所用的命名 HttpClient（在 Program.cs 注册）。</summary>
+    public const string HttpClientName = "SckeyServer";
 
-    private static readonly string API_BASE = _config["SurvivalCraft:SCKEY_API_BASE"] ?? "https://api.sckey.net";
-    private static readonly string API_TOKEN = _config["SurvivalCraft:SCKEY_BEARER_TOKEN"] ?? "";
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
 
-    // 静态共享 HttpClient，避免每个请求新建导致套接字耗尽
-    private static readonly HttpClient _client = CreateClient();
-
-    private static HttpClient CreateClient()
+    public ServerController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
-        var client = new HttpClient();
-        if (!string.IsNullOrEmpty(API_TOKEN))
-        {
-            client.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", API_TOKEN);
-        }
-        return client;
+        _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
     }
+
+    // 配置键以 appsettings.json 实际定义的 Env:* 为准；旧代码读 SurvivalCraft:*，导致令牌恒为空、
+    // Authorization 头从未发出。旧键名保留为兼容回退。
+    private string ApiBase =>
+        _configuration["Env:SCKEY_API_BASE"]
+        ?? _configuration["SurvivalCraft:SCKEY_API_BASE"]
+        ?? "https://api.sckey.net";
+
+    private string ApiToken =>
+        _configuration["Env:SCKEY_BEARER_TOKEN"]
+        ?? _configuration["SurvivalCraft:SCKEY_BEARER_TOKEN"]
+        ?? "";
 
     /// <summary>
     /// 校验转发路径，防止路径穿越（SSRF 保护）
@@ -44,6 +47,19 @@ public class ServerController : ControllerBase
         return path.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.');
     }
 
+    /// <summary>向 SCKEY 后端发起请求；令牌非空时按 Bearer 方案附加 Authorization 头。</summary>
+    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string requestLink, HttpContent? content)
+    {
+        using var request = new HttpRequestMessage(method, requestLink);
+        if (content is not null) request.Content = content;
+
+        var token = ApiToken;
+        if (!string.IsNullOrEmpty(token))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return await _httpClientFactory.CreateClient(HttpClientName).SendAsync(request);
+    }
+
     /// <summary>
     /// 转发 POST 请求到 SCKEY 后端
     /// </summary>
@@ -54,12 +70,12 @@ public class ServerController : ControllerBase
         if (!IsValidServerPath(path))
             return BadRequest(new { success = false, message = "非法的服务器路径" });
 
-        var requestLink = API_BASE + $"/server/{path}";
+        var requestLink = ApiBase + $"/server/{path}";
         var content = new StringContent(body?.ToString() ?? "", Encoding.UTF8, "application/json");
 
         try
         {
-            var response = await _client.PostAsync(requestLink, content);
+            var response = await SendAsync(HttpMethod.Post, requestLink, content);
             var responseBody = await response.Content.ReadAsStringAsync();
             return StatusCode((int)response.StatusCode, responseBody);
         }
@@ -84,11 +100,11 @@ public class ServerController : ControllerBase
         if (!IsValidServerPath(path))
             return BadRequest(new { success = false, message = "非法的服务器路径" });
 
-        var requestLink = API_BASE + $"/server/{path}";
+        var requestLink = ApiBase + $"/server/{path}";
 
         try
         {
-            var response = await _client.GetAsync(requestLink);
+            var response = await SendAsync(HttpMethod.Get, requestLink, null);
             var responseBody = await response.Content.ReadAsStringAsync();
             return StatusCode((int)response.StatusCode, responseBody);
         }

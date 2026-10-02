@@ -20,6 +20,7 @@ var builder = WebApplication.CreateBuilder(
 builder.Services.AddControllers(options => options.Filters.Add<MhopApiExceptionFilter>());
 
 builder.Services.AddHttpClient("Casdoor"); // 供 AuthController 通过 IHttpClientFactory 使用
+builder.Services.AddHttpClient("SckeyServer"); // 供 ServerController 转发 SCKEY 请求
 
 builder.Services.AddOpenApi();
 
