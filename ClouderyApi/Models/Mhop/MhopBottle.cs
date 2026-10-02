@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
 
 namespace ClouderyApi.Models.Mhop;
 
@@ -108,4 +109,119 @@ public class MhopBottle
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<MhopBottleMessage> Messages { get; set; } = new List<MhopBottleMessage>();
+
+    // ---------------- 领域行为 ----------------
+
+    /// <summary>扔出一个瓶子：初始待审核（先送 AI 初筛，通过后自动入海）。</summary>
+    public static MhopBottle Throw(int userId, string content, bool crisis, DateTime now) => new()
+    {
+        UserId = userId,
+        Content = content,
+        Status = MhopBottleStatus.Pending,
+        Crisis = crisis,
+        LastMessageAt = now,
+        CreatedAt = now,
+        ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
+    };
+
+    public bool IsParty(int userId) => UserId == userId || PickerUserId == userId;
+
+    /// <summary>当前视角：扔瓶人 thrower / 捞瓶人 picker。</summary>
+    public string RoleOf(int userId) => UserId == userId ? "thrower" : "picker";
+
+    /// <summary>未读数：对方发出的、可见的、晚于本方最后已读时间的消息数。</summary>
+    public int UnreadCountFor(int userId)
+    {
+        var readAt = UserId == userId ? ThrowerLastReadAt : PickerLastReadAt;
+        return Messages.Count(m =>
+            m.Status == MhopBottleMessageStatus.Visible && m.SenderUserId != userId &&
+            (readAt is null || m.CreatedAt > readAt));
+    }
+
+    /// <summary>
+    /// 被捞起（捞起即视为已读瓶身）。并发「一瓶不被两人捞走」由调用方的
+    /// 「Id + Status=Drifting 条件更新」保证，实体方法只负责状态落地。
+    /// </summary>
+    public void Pick(int pickerId, DateTime now)
+    {
+        Status = MhopBottleStatus.Picked;
+        PickerUserId = pickerId;
+        PickedAt = now;
+        PickerLastReadAt = now;
+    }
+
+    /// <summary>任一方主动结束会话。</summary>
+    public void End(int byUserId)
+    {
+        Status = MhopBottleStatus.Ended;
+        EndReason = MhopBottleEndReason.Manual;
+        EndedByUserId = byUserId;
+    }
+
+    /// <summary>有新消息，推进 7 天超时判定基准。</summary>
+    public void TouchLastMessage(DateTime now) => LastMessageAt = now;
+
+    /// <summary>举报：同一用户对同一瓶只计一次；返回是否新增了举报。</summary>
+    public bool TryReport(int userId, string reason, DateTime now)
+    {
+        var reporterIds = ParseReportedBy(ReportedBy);
+        if (!reporterIds.Add(userId)) return false;
+
+        ReportedBy = JsonSerializer.Serialize(reporterIds);
+        ReportedCount = reporterIds.Count;
+        LastReportedAt = now;
+        ReportReason = reason;
+        return true;
+    }
+
+    /// <summary>违规下架（审核处置）。</summary>
+    public void MarkRemoved() => Status = MhopBottleStatus.Removed;
+
+    /// <summary>
+    /// 人工恢复：未捞过 → 回到海中；已建立对话且未结束 → 回到对话中；已结束 → 保持结束态。
+    /// 恢复后清空 AI 风险标记，避免重跑 AI 再次拦下。
+    /// </summary>
+    public void Restore()
+    {
+        Status = PickerUserId is null
+            ? MhopBottleStatus.Drifting
+            : EndReason is null ? MhopBottleStatus.Picked : Status;
+        if (Status != MhopBottleStatus.Removed) ClearAiFlag();
+    }
+
+    /// <summary>人工放行待审核的瓶子：放入海中，并留下人工结论。</summary>
+    public void Approve(DateTime now)
+    {
+        if (Status != MhopBottleStatus.Pending)
+            throw new DomainRuleException("该瓶子不在待审核状态");
+
+        Status = MhopBottleStatus.Drifting;
+        AiFlag = MhopModerationOutcome.Approved;
+        AiReviewedAt = now;
+    }
+
+    /// <summary>清空 AI 风险标记（不动人工处置理由 ReviewNote）。</summary>
+    public void ClearAiFlag()
+    {
+        AiFlag = MhopModerationOutcome.None;
+        AiReviewNote = string.Empty;
+    }
+
+    /// <summary>记录人工处置理由；空白忽略。</summary>
+    public void SetReviewNote(string? note)
+    {
+        if (!string.IsNullOrWhiteSpace(note)) ReviewNote = note.Trim();
+    }
+
+    private static HashSet<int> ParseReportedBy(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<int>>(json ?? "[]")?.ToHashSet() ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
 }

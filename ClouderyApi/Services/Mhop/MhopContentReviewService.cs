@@ -15,14 +15,11 @@ namespace ClouderyApi.Services.Mhop;
 /// 其它约定：
 ///   * 全部在后台独立 DI 作用域执行，不阻塞发布请求；
 ///   * 写入都用「Id + 内容未变」条件更新，避免覆盖用户改写或人工处置的结果；
-///   * 人工放行过的内容标记为 <see cref="ApprovedFlag"/>，后续重跑 AI 只更新理由、不再翻案；
+///   * 人工放行过的内容标记为 <see cref="MhopModerationOutcome.Approved"/>，后续重跑 AI 只更新理由、不再翻案；
 ///   * 单实例内限制并发大模型调用数，避免刷量把审核队列打爆。
 /// </summary>
 public sealed class MhopContentReviewService
 {
-    /// <summary>人工放行标记：写入后 AI 重跑不再把该内容判为违规。</summary>
-    public const string ApprovedFlag = "approved";
-
     /// <summary>同一时刻允许在途的大模型审核调用数（超出排队）。</summary>
     private const int MaxConcurrentAiCalls = 4;
 
@@ -219,7 +216,7 @@ public sealed class MhopContentReviewService
 
     /// <summary>
     /// 消息 AI 审核。与瓶身不同：消息已经发出去，所以违规的处置是「立即隐藏」而不是「拦在门外」。
-    /// 人工放行过（<see cref="ApprovedFlag"/>）的消息不再被隐藏，只更新理由留痕。
+    /// 人工放行过（<see cref="MhopModerationOutcome.Approved"/>）的消息不再被隐藏，只更新理由留痕。
     /// </summary>
     private async Task ReviewMessageAsync(int messageId, bool rescreen)
     {
@@ -235,7 +232,7 @@ public sealed class MhopContentReviewService
             if (!rescreen && message.AiReviewedAt is not null) return;
 
             var outcome = await ModerateAsync(message.Content, MhopContentKind.Message);
-            var approved = message.AiFlag == ApprovedFlag;
+            var approved = message.AiFlag == MhopModerationOutcome.Approved;
             var hide = outcome.Verdict == MhopModerationOutcome.Violation && !approved;
 
             using var writeScope = _scopes.CreateScope();
@@ -246,7 +243,7 @@ public sealed class MhopContentReviewService
                 await writeDb.MhopBottleMessages
                     .Where(m => m.Id == messageId && m.Content == message.Content)
                     .ExecuteUpdateAsync(s => s
-                        .SetProperty(m => m.AiFlag, approved ? ApprovedFlag : string.Empty)
+                        .SetProperty(m => m.AiFlag, approved ? MhopModerationOutcome.Approved : MhopModerationOutcome.None)
                         .SetProperty(m => m.AiReviewNote, string.Empty)
                         .SetProperty(m => m.AiReviewedAt, DateTime.UtcNow));
                 return;
@@ -260,7 +257,7 @@ public sealed class MhopContentReviewService
                     s.SetProperty(m => m.AiFlag, outcome.Verdict)
                         .SetProperty(m => m.AiReviewNote, note)
                         .SetProperty(m => m.AiReviewedAt, DateTime.UtcNow);
-                    if (hide) s.SetProperty(m => m.Status, 2);
+                    if (hide) s.SetProperty(m => m.Status, MhopBottleMessageStatus.Hidden);
                 });
             _logger.LogInformation(
                 "漂流瓶消息 AI 审核未通过（{Verdict}，{Action}）：message={MessageId} {Reason}",

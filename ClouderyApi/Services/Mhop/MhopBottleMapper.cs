@@ -32,7 +32,7 @@ public static class MhopBottleMapper
         Content = b.Content,
         Status = b.Status,
         Crisis = b.Crisis,
-        Role = MhopBottleService.RoleOf(b, viewerId),
+        Role = b.RoleOf(viewerId),
         Unread = unread,
         EndReason = b.EndReason,
         EndedByMe = b.EndedByUserId is int ender && ender == viewerId,
@@ -40,7 +40,7 @@ public static class MhopBottleMapper
         PickedAt = b.PickedAt,
         LastMessageAt = b.LastMessageAt,
         Messages = b.Messages
-            .Where(m => m.Status == 1 && m.Id > afterId)
+            .Where(m => m.Status == MhopBottleMessageStatus.Visible && m.Id > afterId)
             .OrderBy(m => m.Id)
             .Select(m => ToMessageOut(m, viewerId))
             .ToList(),
@@ -48,7 +48,7 @@ public static class MhopBottleMapper
 
     public static BottleSummaryOut ToSummaryOut(MhopBottle b, int viewerId)
     {
-        var visible = b.Messages.Where(m => m.Status == 1).ToList();
+        var visible = b.Messages.Where(m => m.Status == MhopBottleMessageStatus.Visible).ToList();
         var last = visible.OrderByDescending(m => m.Id).FirstOrDefault();
         return new BottleSummaryOut
         {
@@ -56,8 +56,8 @@ public static class MhopBottleMapper
             Preview = Truncate(b.Content, BottlePreviewLength),
             Status = b.Status,
             Crisis = b.Crisis,
-            Role = MhopBottleService.RoleOf(b, viewerId),
-            Unread = MhopBottleService.CountUnread(b, viewerId),
+            Role = b.RoleOf(viewerId),
+            Unread = b.UnreadCountFor(viewerId),
             MessageCount = visible.Count,
             // 没有消息时用瓶身做预览
             LastMessage = Truncate(last?.Content ?? b.Content, MessagePreviewLength),
@@ -87,7 +87,7 @@ public static class MhopBottleMapper
         PickerId = b.PickerUserId,
         PickerName = b.PickerUserId is int pid ? names.GetValueOrDefault(pid, $"用户{pid}") : string.Empty,
         MessageCount = messageCount
-            ?? b.Messages?.Count(m => m.Status == 1)
+            ?? b.Messages?.Count(m => m.Status == MhopBottleMessageStatus.Visible)
             ?? 0,
         EndReason = b.EndReason,
         CreatedAt = b.CreatedAt,

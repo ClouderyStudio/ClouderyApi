@@ -61,7 +61,7 @@ public class MhopBottleAdminController(
         var counts = bottleIds.Count == 0
             ? new Dictionary<int, int>()
             : await db.MhopBottleMessages.AsNoTracking()
-                .Where(m => bottleIds.Contains(m.BottleId) && m.Status == 1)
+                .Where(m => bottleIds.Contains(m.BottleId) && m.Status == MhopBottleMessageStatus.Visible)
                 .GroupBy(m => m.BottleId)
                 .Select(g => new { BottleId = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.BottleId, x => x.Count);
@@ -108,7 +108,7 @@ public class MhopBottleAdminController(
             ThrowerName = detail.ThrowerName,
             PickerId = detail.PickerId,
             PickerName = detail.PickerName,
-            MessageCount = messages.Count(m => m.Status == 1),
+            MessageCount = messages.Count(m => m.Status == MhopBottleMessageStatus.Visible),
             EndReason = detail.EndReason,
             CreatedAt = detail.CreatedAt,
             PickedAt = detail.PickedAt,
@@ -202,7 +202,7 @@ public class MhopBottleAdminController(
     public async Task<IActionResult> HideMessage(int messageId)
     {
         var admin = await current.RequirePermAsync(MhopAdminPermissions.Bottles);
-        await bottles.AdminSetMessageStatusAsync(messageId, 2, admin.Id);
+        await bottles.AdminSetMessageStatusAsync(messageId, MhopBottleMessageStatus.Hidden, admin.Id);
         return MhopOk(new { ok = true });
     }
 
@@ -211,7 +211,7 @@ public class MhopBottleAdminController(
     public async Task<IActionResult> RestoreMessage(int messageId)
     {
         var admin = await current.RequirePermAsync(MhopAdminPermissions.Bottles);
-        await bottles.AdminSetMessageStatusAsync(messageId, 1, admin.Id);
+        await bottles.AdminSetMessageStatusAsync(messageId, MhopBottleMessageStatus.Visible, admin.Id);
         return MhopOk(new { ok = true });
     }
 

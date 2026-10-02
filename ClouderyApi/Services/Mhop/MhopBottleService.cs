@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
@@ -71,21 +70,11 @@ public sealed class MhopBottleService
                 throw new MhopApiException(429, $"今天已经扔了 {ThrowDailyLimit} 个瓶子，明天再来吧");
 
             var now = DateTime.UtcNow;
-            var crisis = MhopModeration.DetectCrisis(content);
-            var bottle = new MhopBottle
-            {
-                UserId = user.Id,
-                Content = content,
-                // 先送 AI 自动审核：通过后自动放入海中，未通过则停留待审核并转人工
-                Status = MhopBottleStatus.Pending,
-                Crisis = crisis,
-                LastMessageAt = now,
-                CreatedAt = now,
-                ThrowerLastReadAt = now, // 瓶身是自己写的，无未读
-            };
+            // 先送 AI 自动审核：通过后自动放入海中，未通过则停留待审核并转人工
+            var bottle = MhopBottle.Throw(user.Id, content, MhopModeration.DetectCrisis(content), now);
             _db.MhopBottles.Add(bottle);
             await _db.SaveChangesAsync();
-            _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, crisis);
+            _logger.LogInformation("漂流瓶 {BottleId} 由用户 {UserId} 扔出，危机标记 {Crisis}", bottle.Id, user.Id, bottle.Crisis);
 
             _review.QueueBottleReview(bottle.Id);
             return bottle;
@@ -126,7 +115,7 @@ public sealed class MhopBottleService
                     var candidateId = await _db.Database
                         .SqlQuery<int>($"""
                             SELECT Id AS `Value` FROM mhop_bottles
-                            WHERE Status = 1 AND UserId <> {user.Id}
+                            WHERE Status = {MhopBottleStatus.Drifting} AND UserId <> {user.Id}
                             ORDER BY RAND() LIMIT 1
                             """)
                         .FirstOrDefaultAsync();
@@ -134,13 +123,13 @@ public sealed class MhopBottleService
 
                     var affected = await _db.Database.ExecuteSqlInterpolatedAsync($"""
                         UPDATE mhop_bottles
-                        SET Status = 2, PickerUserId = {user.Id}, PickedAt = {now}
-                        WHERE Id = {candidateId} AND Status = 1
+                        SET Status = {MhopBottleStatus.Picked}, PickerUserId = {user.Id}, PickedAt = {now}
+                        WHERE Id = {candidateId} AND Status = {MhopBottleStatus.Drifting}
                         """);
                     if (affected != 1) continue; // 被别人抢先，换一个
 
                     var bottle = await _db.MhopBottles.FirstAsync(b => b.Id == candidateId);
-                    bottle.PickerLastReadAt = now; // 捞起即视为已读瓶身
+                    bottle.Pick(user.Id, now);
                     await _db.SaveChangesAsync();
                     await tx.CommitAsync();
                     _logger.LogInformation("漂流瓶 {BottleId} 被用户 {UserId} 捞起", bottle.Id, user.Id);
@@ -208,9 +197,9 @@ public sealed class MhopBottleService
         var bottle = await _db.MhopBottles
             .Include(b => b.Messages)
             .FirstOrDefaultAsync(b => b.Id == bottleId);
-        if (bottle is null || !IsParty(bottle, userId)) return null;
+        if (bottle is null || !bottle.IsParty(userId)) return null;
 
-        var unread = CountUnread(bottle, userId);
+        var unread = bottle.UnreadCountFor(userId);
         if (markRead)
         {
             var now = DateTime.UtcNow;
@@ -231,7 +220,7 @@ public sealed class MhopBottleService
 
         await ApplyTimeoutAsync();
         var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
-        if (bottle is null || !IsParty(bottle, user.Id))
+        if (bottle is null || !bottle.IsParty(user.Id))
             throw new MhopApiException(404, "会话不存在");
         if (bottle.Status != MhopBottleStatus.Picked)
             throw new MhopApiException(409, bottle.Status == MhopBottleStatus.Removed ? "该内容因违规已被下架" : "对话已经结束");
@@ -250,16 +239,9 @@ public sealed class MhopBottleService
                 throw new MhopApiException(429, "发送太频繁了，稍后再试");
 
             var now = DateTime.UtcNow;
-            var message = new MhopBottleMessage
-            {
-                BottleId = bottle.Id,
-                SenderUserId = user.Id,
-                Content = content,
-                Crisis = MhopModeration.DetectCrisis(content),
-                CreatedAt = now,
-            };
+            var message = MhopBottleMessage.Create(bottle.Id, user.Id, content, MhopModeration.DetectCrisis(content), now);
             _db.MhopBottleMessages.Add(message);
-            bottle.LastMessageAt = now;
+            bottle.TouchLastMessage(now);
             await _db.SaveChangesAsync();
 
             _review.QueueMessageReview(message.Id);
@@ -278,13 +260,11 @@ public sealed class MhopBottleService
     {
         await ApplyTimeoutAsync();
         var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
-        if (bottle is null || !IsParty(bottle, userId))
+        if (bottle is null || !bottle.IsParty(userId))
             throw new MhopApiException(404, "会话不存在");
         if (bottle.Status != MhopBottleStatus.Picked) return false;
 
-        bottle.Status = MhopBottleStatus.Ended;
-        bottle.EndReason = MhopBottleEndReason.Manual;
-        bottle.EndedByUserId = userId;
+        bottle.End(userId);
         await _db.SaveChangesAsync();
         _logger.LogInformation("漂流瓶 {BottleId} 被用户 {UserId} 主动结束", bottleId, userId);
         return true;
@@ -301,16 +281,11 @@ public sealed class MhopBottleService
         try
         {
             var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
-            if (bottle is null || !IsParty(bottle, userId))
+            if (bottle is null || !bottle.IsParty(userId))
                 throw new MhopApiException(404, "会话不存在");
 
-            var reporterIds = ParseIdList(bottle.ReportedBy);
-            if (reporterIds.Add(userId))
+            if (bottle.TryReport(userId, reason, DateTime.UtcNow))
             {
-                bottle.ReportedBy = JsonSerializer.Serialize(reporterIds);
-                bottle.ReportedCount = reporterIds.Count;
-                bottle.LastReportedAt = DateTime.UtcNow;
-                bottle.ReportReason = reason;
                 await _db.SaveChangesAsync();
                 _logger.LogWarning("漂流瓶 {BottleId} 被用户 {UserId} 举报：{Reason}", bottleId, userId, reason);
             }
@@ -368,7 +343,7 @@ public sealed class MhopBottleService
         if (string.IsNullOrWhiteSpace(flag) && status is null)
         {
             query = query.Where(m =>
-                m.Status != 1
+                m.Status != MhopBottleMessageStatus.Visible
                 || m.AiFlag == MhopModerationOutcome.Suspect
                 || m.AiFlag == MhopModerationOutcome.Violation
                 || m.AiFlag == MhopModerationOutcome.Unavailable);
@@ -377,7 +352,7 @@ public sealed class MhopBottleService
         var total = await query.CountAsync();
         // 先看「已隐藏」和「疑似/违规」，再看「未定论」，最后按时间倒序
         var items = await query
-            .OrderByDescending(m => m.Status != 1)
+            .OrderByDescending(m => m.Status != MhopBottleMessageStatus.Visible)
             .ThenByDescending(m => m.AiFlag == MhopModerationOutcome.Violation || m.AiFlag == MhopModerationOutcome.Suspect)
             .ThenByDescending(m => m.Id)
             .Skip((page - 1) * size)
@@ -403,7 +378,7 @@ public sealed class MhopBottleService
             && b.Status != MhopBottleStatus.Removed);
         var flaggedMessages = await _db.MhopBottleMessages.CountAsync(m =>
             (m.AiFlag == MhopModerationOutcome.Suspect || m.AiFlag == MhopModerationOutcome.Violation)
-            && m.Status == 1);
+            && m.Status == MhopBottleMessageStatus.Visible);
         var reported = await _db.MhopBottles.CountAsync(b =>
             b.ReportedCount > 0 && b.Status != MhopBottleStatus.Removed);
         // 待审核：AI 未通过 / 尚未完成审核，等待人工处置
@@ -411,7 +386,7 @@ public sealed class MhopBottleService
         // AI 没给结论（模型不可用或拒答），需要人工兜底
         var unavailable = await _db.MhopBottles.CountAsync(b =>
             b.AiFlag == MhopModerationOutcome.Unavailable && b.Status == MhopBottleStatus.Pending);
-        var hiddenMessages = await _db.MhopBottleMessages.CountAsync(m => m.Status == 2);
+        var hiddenMessages = await _db.MhopBottleMessages.CountAsync(m => m.Status == MhopBottleMessageStatus.Hidden);
         return new MhopBottleAdminStats(
             Crisis: crisis,
             Reported: reported,
@@ -429,26 +404,19 @@ public sealed class MhopBottleService
 
         if (status == MhopBottleStatus.Removed)
         {
-            bottle.Status = MhopBottleStatus.Removed;
+            bottle.MarkRemoved();
         }
-        else if (status == MhopBottleStatus.Drifting || status == MhopBottleStatus.Picked)
+        else if (status is MhopBottleStatus.Drifting or MhopBottleStatus.Picked)
         {
             // 恢复：未被捞过的回到海中；已建立过对话的回到对话中（若曾结束则保持结束态）
-            bottle.Status = bottle.PickerUserId is null
-                ? MhopBottleStatus.Drifting
-                : bottle.EndReason is null ? MhopBottleStatus.Picked : bottle.Status;
-            if (bottle.Status != MhopBottleStatus.Removed)
-            {
-                bottle.AiFlag = string.Empty;
-                bottle.AiReviewNote = string.Empty;
-            }
+            bottle.Restore();
         }
         else
         {
             throw new MhopApiException(422, "不支持的处置状态");
         }
 
-        if (!string.IsNullOrWhiteSpace(note)) bottle.ReviewNote = note.Trim();
+        bottle.SetReviewNote(note);
         await _db.SaveChangesAsync();
         _logger.LogWarning("管理员 {AdminId} 处置漂流瓶 {BottleId} → 状态 {Status}", adminUserId, bottleId, bottle.Status);
     }
@@ -457,13 +425,17 @@ public sealed class MhopBottleService
     {
         var message = await _db.MhopBottleMessages.FirstOrDefaultAsync(m => m.Id == messageId)
             ?? throw new MhopApiException(404, "消息不存在");
-        if (status is not (1 or 2)) throw new MhopApiException(422, "不支持的消息状态");
-        message.Status = status;
-        if (status == 1)
+        if (status is not (MhopBottleMessageStatus.Visible or MhopBottleMessageStatus.Hidden))
+            throw new MhopApiException(422, "不支持的消息状态");
+
+        if (status == MhopBottleMessageStatus.Visible)
         {
             // 人工放行：打上 approved，AI 重跑审核不会再自动隐藏这条消息
-            message.AiFlag = MhopContentReviewService.ApprovedFlag;
-            message.AiReviewedAt ??= DateTime.UtcNow;
+            message.Show(DateTime.UtcNow);
+        }
+        else
+        {
+            message.Hide();
         }
         await _db.SaveChangesAsync();
         _logger.LogWarning("管理员 {AdminId} 处置漂流瓶消息 {MessageId} → 状态 {Status}", adminUserId, messageId, status);
@@ -477,41 +449,12 @@ public sealed class MhopBottleService
         if (bottle.Status != MhopBottleStatus.Pending)
             throw new MhopApiException(409, "该瓶子不在待审核状态");
 
-        bottle.Status = MhopBottleStatus.Drifting;
-        bottle.AiFlag = MhopContentReviewService.ApprovedFlag;
-        bottle.AiReviewedAt = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(note)) bottle.ReviewNote = note.Trim();
+        bottle.Approve(DateTime.UtcNow);
+        bottle.SetReviewNote(note);
         await _db.SaveChangesAsync();
         _logger.LogWarning("管理员 {AdminId} 人工放行漂流瓶 {BottleId}", adminUserId, bottleId);
     }
 
-    // ---------------- 辅助 ----------------
-
-    public static bool IsParty(MhopBottle b, int userId)
-        => b.UserId == userId || b.PickerUserId == userId;
-
-    public static string RoleOf(MhopBottle b, int userId)
-        => b.UserId == userId ? "thrower" : "picker";
-
-    public static int CountUnread(MhopBottle b, int userId)
-    {
-        var readAt = b.UserId == userId ? b.ThrowerLastReadAt : b.PickerLastReadAt;
-        return b.Messages.Count(m =>
-            m.Status == 1 && m.SenderUserId != userId &&
-            (readAt is null || m.CreatedAt > readAt));
-    }
-
-    private static HashSet<int> ParseIdList(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<List<int>>(json ?? "[]")?.ToHashSet() ?? [];
-        }
-        catch
-        {
-            return [];
-        }
-    }
 }
 /// <summary>漂流瓶后台统计口径。</summary>
 public sealed record MhopBottleAdminStats(

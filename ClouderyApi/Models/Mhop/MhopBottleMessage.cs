@@ -3,6 +3,16 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ClouderyApi.Models.Mhop;
 
+/// <summary>漂流瓶消息可见性。</summary>
+public static class MhopBottleMessageStatus
+{
+    /// <summary>正常：前台可见。</summary>
+    public const int Visible = 1;
+
+    /// <summary>违规被审核隐藏，前台不展示（AI 自动隐藏或人工隐藏）。</summary>
+    public const int Hidden = 2;
+}
+
 /// <summary>漂流瓶匿名对话中的单条文字消息。发送人身份仅存 Id，前台永远不暴露。</summary>
 [Table("mhop_bottle_messages")]
 public class MhopBottleMessage
@@ -20,8 +30,8 @@ public class MhopBottleMessage
     [MaxLength(1000)]
     public string Content { get; set; } = string.Empty;
 
-    /// <summary>1=正常；2=违规被审核隐藏（前台不展示）。</summary>
-    public int Status { get; set; } = 1;
+    /// <summary>见 MhopBottleMessageStatus。</summary>
+    public int Status { get; set; } = MhopBottleMessageStatus.Visible;
 
     public bool Crisis { get; set; }
 
@@ -44,4 +54,29 @@ public class MhopBottleMessage
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public MhopBottle? Bottle { get; set; }
+
+    // ---------------- 领域行为 ----------------
+
+    /// <summary>新建一条消息（初始可见、未审核）。</summary>
+    public static MhopBottleMessage Create(int bottleId, int senderUserId, string content, bool crisis, DateTime now)
+        => new()
+        {
+            BottleId = bottleId,
+            SenderUserId = senderUserId,
+            Content = content,
+            Status = MhopBottleMessageStatus.Visible,
+            Crisis = crisis,
+            CreatedAt = now,
+        };
+
+    /// <summary>隐藏：AI 自动隐藏或人工隐藏，前台不再下发。</summary>
+    public void Hide() => Status = MhopBottleMessageStatus.Hidden;
+
+    /// <summary>人工放行：恢复可见并打上 approved，AI 重跑不会再自动隐藏。</summary>
+    public void Show(DateTime now)
+    {
+        Status = MhopBottleMessageStatus.Visible;
+        AiFlag = MhopModerationOutcome.Approved;
+        AiReviewedAt ??= now;
+    }
 }
