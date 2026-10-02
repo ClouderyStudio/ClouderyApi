@@ -1,12 +1,13 @@
 using ClouderyApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ClouderyApi.UseCases.Mhop;
 
 namespace ClouderyApi.Services.Mhop;
 
 /// <summary>
 /// 漂流瓶兜底任务（每小时一轮）：
-/// 1. 把「对话中但 7 天无新消息」的会话置为已结束（正常访问时 MhopBottleService.ApplyTimeoutAsync 会惰性关闭）；
+/// 1. 把「对话中但 7 天无新消息」的会话置为已结束（正常访问时 BottleAppService.ApplyTimeoutAsync 会惰性关闭）；
 /// 2. 把「一直在待审核、却始终没拿到 AI 结论」的瓶子重新排队审核（进程中断等异常导致的审核任务丢失）。
 /// </summary>
 public sealed class MhopBottleTimeoutService(
@@ -24,7 +25,7 @@ public sealed class MhopBottleTimeoutService(
             {
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
-                var bottleService = scope.ServiceProvider.GetRequiredService<MhopBottleService>();
+                var bottleService = scope.ServiceProvider.GetRequiredService<BottleAppService>();
                 var closed = await bottleService.ApplyTimeoutAsync();
                 if (closed > 0)
                     logger.LogInformation("漂流瓶超时任务：自动结束 {Count} 个 7 天无消息的会话", closed);

@@ -4,6 +4,8 @@ using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ClouderyApi.UseCases.Mhop;
+using ClouderyApi.UseCases.Mhop.Mapping;
 
 namespace ClouderyApi.Controllers.Mhop;
 
@@ -15,7 +17,7 @@ namespace ClouderyApi.Controllers.Mhop;
 [Route("mhop/admin/bottles")]
 [MhopAdmin]
 public class MhopBottleAdminController(
-    MhopBottleService bottles,
+    BottleAppService bottles,
     MhopContentReviewService review,
     MhopDbContext db,
     MhopCurrentUserAccessor current) : MhopControllerBase

@@ -84,7 +84,7 @@ builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
 });
 builder.Services.AddScoped<MhopUploadService>();
 builder.Services.AddScoped<MhopContentService>();
-builder.Services.AddScoped<MhopBottleService>();
+builder.Services.AddScoped<BottleAppService>();
 builder.Services.AddScoped<AssessmentAppService>();
 builder.Services.AddScoped<ForumAppService>();
 builder.Services.AddScoped<AdminAppService>();

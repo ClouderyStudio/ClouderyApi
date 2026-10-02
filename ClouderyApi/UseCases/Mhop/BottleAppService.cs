@@ -2,15 +2,16 @@ using System.Collections.Concurrent;
 using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using Microsoft.EntityFrameworkCore;
+using ClouderyApi.Services.Mhop;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.UseCases.Mhop;
 
 /// <summary>
 /// 漂流瓶领域服务：投瓶/捞瓶/匿名对话的全部业务规则。
 /// 安全要点：捞瓶用条件更新抢占防并发双捞；频控；关键词同步拦截 + AI 异步初筛可降级；
 /// 7 天无消息惰性结束（另有后台定时任务兜底）；前台不暴露对方真实身份。
 /// </summary>
-public sealed class MhopBottleService
+public sealed class BottleAppService
 {
     public const int ThrowDailyLimit = 3;
     public const int PickDailyLimit = 10;
@@ -25,7 +26,7 @@ public sealed class MhopBottleService
 
     private readonly MhopDbContext _db;
     private readonly MhopContentReviewService _review;
-    private readonly ILogger<MhopBottleService> _logger;
+    private readonly ILogger<BottleAppService> _logger;
 
     // 频控防并发闸门：单实例部署下把同一用户的投瓶/捞瓶/发消息、同一瓶子的举报计数串行化，
     // 杜绝「先 count 后写」被同批并发请求打穿。多实例水平扩展时需改为分布式锁或数据库原子计数。
@@ -38,10 +39,10 @@ public sealed class MhopBottleService
     private static SemaphoreSlim BottleGate(int bottleId)
         => BottleGates.GetOrAdd(bottleId, _ => new SemaphoreSlim(1, 1));
 
-    public MhopBottleService(
+    public BottleAppService(
         MhopDbContext db,
         MhopContentReviewService review,
-        ILogger<MhopBottleService> logger)
+        ILogger<BottleAppService> logger)
     {
         _db = db;
         _review = review;

@@ -1,7 +1,7 @@
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 
-namespace ClouderyApi.Services.Mhop;
+namespace ClouderyApi.UseCases.Mhop.Mapping;
 
 /// <summary>
 /// 漂流瓶实体 → DTO 映射。

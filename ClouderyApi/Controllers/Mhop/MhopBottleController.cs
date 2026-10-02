@@ -1,6 +1,8 @@
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.UseCases.Mhop;
+using ClouderyApi.UseCases.Mhop.Mapping;
 
 namespace ClouderyApi.Controllers.Mhop;
 
@@ -11,7 +13,7 @@ namespace ClouderyApi.Controllers.Mhop;
 [ApiController]
 [Route("mhop/bottles")]
 public class MhopBottleController(
-    MhopBottleService bottles,
+    BottleAppService bottles,
     MhopCurrentUserAccessor current) : MhopControllerBase
 {
     private const string Hotline = "12356";
@@ -56,8 +58,8 @@ public class MhopBottleController(
             Items = items.Select(b => MhopBottleMapper.ToSummaryOut(b, user.Id)).ToList(),
             ThrownToday = thrown,
             PickedToday = picked,
-            ThrowLimit = MhopBottleService.ThrowDailyLimit,
-            PickLimit = MhopBottleService.PickDailyLimit,
+            ThrowLimit = BottleAppService.ThrowDailyLimit,
+            PickLimit = BottleAppService.PickDailyLimit,
             SeaCount = sea,
         });
     }
