@@ -1,0 +1,34 @@
+root = true
+
+# 仓库统一约定：UTF-8（无 BOM）、CRLF、4 空格缩进、文件末尾换行
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{json,yml,yaml,md}]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.cs]
+# 现代 C# 风格（仅约束新代码，不参与 CI 强校验）
+csharp_style_namespace_declarations = block_scoped:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+[*.{cs,vb}]
+# 可空性：告警级别，配合 CI 的 -warnaserror 生效
+dotnet_diagnostic.CS8600.severity = warning
+dotnet_diagnostic.CS8601.severity = warning
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8603.severity = warning
+dotnet_diagnostic.CS8604.severity = warning

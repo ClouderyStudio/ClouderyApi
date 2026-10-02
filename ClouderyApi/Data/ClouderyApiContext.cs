@@ -36,19 +36,19 @@ public class ClouderyApiContext(DbContextOptions<ClouderyApiContext> options) : 
             .Property(e => e.Sharables)
             .HasConversion(
                 v => JsonSerializer.Serialize(v, JsonSerializerOptions),
-                v => JsonSerializer.Deserialize<List<Sharable>>(v, JsonSerializerOptions));
+                v => JsonSerializer.Deserialize<List<Sharable>>(v, JsonSerializerOptions)!);
 
         modelBuilder.Entity<Member>()
             .Property(e => e.Socials)
             .HasConversion(
                 v => JsonSerializer.Serialize(v, JsonSerializerOptions),
-                v => JsonSerializer.Deserialize<List<Social>>(v, JsonSerializerOptions));
+                v => JsonSerializer.Deserialize<List<Social>>(v, JsonSerializerOptions)!);
 
         modelBuilder.Entity<ExamPaper>()
             .Property(e => e.Sections)
             .HasConversion(
                 v => JsonSerializer.Serialize(v, JsonSerializerOptions),
-                v => JsonSerializer.Deserialize<List<ExamSection>>(v, JsonSerializerOptions));
+                v => JsonSerializer.Deserialize<List<ExamSection>>(v, JsonSerializerOptions)!);
 
         // 一个人的同一条记录只应存在一份：站点把本机记录键当 clientKey 上传，
         // 重复同步（多标签页、断线重试）靠这个唯一索引落在更新而不是新增上。
