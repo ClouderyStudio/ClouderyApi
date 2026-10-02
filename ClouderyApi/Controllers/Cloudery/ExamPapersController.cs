@@ -1,10 +1,8 @@
-using ClouderyApi.Data;
 using ClouderyApi.Models.Cloudery;
 using ClouderyApi.Models.Cloudery.DTOs;
 using ClouderyApi.Controllers.Filters;
-using ClouderyApi.UseCases.Cloudery.Domain;
+using ClouderyApi.UseCases.Cloudery;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Controllers.Cloudery;
 
@@ -13,45 +11,28 @@ namespace ClouderyApi.Controllers.Cloudery;
 /// </summary>
 [Route("exam/[controller]")]
 [ApiController]
-public class ExamPapersController(ClouderyApiContext context) : ControllerBase
+public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
 {
-    private static ExamPaperView ToView(ExamPaper p) => new()
-    {
-        Id = p.Id,
-        Name = p.Name,
-        Sections = p.Sections.Select(s => new ExamSectionView
-        {
-            Title = s.Title,
-            PointsPerQuestion = s.PointsPerQuestion,
-            Questions = s.Questions.Select(q => new ExamQuestionView
-            {
-                Text = q.Text,
-                Options = q.Options,
-                Type = q.Type,
-            }).ToList(),
-        }).ToList(),
-    };
-
     /// <summary>公开读：列表（不含 Answer / Note）</summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ExamPaperView>>> GetExamPapers()
-        => (await context.ExamPapers.OrderBy(p => p.Id).ToListAsync()).Select(ToView).ToList();
+        => await papers.ListAsync();
 
     /// <summary>公开读：单份（不含 Answer / Note）</summary>
     [HttpGet("{id}")]
     public async Task<ActionResult<ExamPaperView>> GetExamPaper(string id)
     {
-        var paper = await context.ExamPapers.FindAsync(id);
+        var paper = await papers.FindViewAsync(id);
         if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
-        return ToView(paper);
+        return paper;
     }
 
     /// <summary>管理员读取全量（含答案/解析），供后台编辑；公开读不含答案</summary>
     [HttpGet("{id}/full")]
     [AdminOnly]
-    public async Task<ActionResult<ExamPaper>> GetExamPaperFull(string id)
+    public async Task<ActionResult<ExamPaperFullView>> GetExamPaperFull(string id)
     {
-        var paper = await context.ExamPapers.FindAsync(id);
+        var paper = await papers.FindFullAsync(id);
         if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
         return paper;
     }
@@ -60,50 +41,46 @@ public class ExamPapersController(ClouderyApiContext context) : ControllerBase
     [HttpPost("{id}/grade")]
     public async Task<ActionResult<ExamGradeResult>> Grade(string id, [FromBody] GradeRequest request)
     {
-        var paper = await context.ExamPapers.FindAsync(id);
-        if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
-
-        return ExamPaperGrader.Grade(paper, request);
+        var result = await papers.GradeAsync(id, request);
+        if (result == null) return NotFound(new { success = false, message = "未找到该试卷" });
+        return result;
     }
 
     // ---- 写操作（管理员） ----
     [HttpPost]
     [AdminOnly]
-    public async Task<ActionResult<ExamPaper>> PostExamPaper([FromBody] ExamPaper paper)
+    public async Task<ActionResult<ExamPaperFullView>> PostExamPaper([FromBody] ExamPaper paper)
     {
-        if (string.IsNullOrWhiteSpace(paper.Id))
-            paper.Id = Guid.NewGuid().ToString("N");
-        if (await context.ExamPapers.AnyAsync(p => p.Id == paper.Id))
-            return Conflict(new { success = false, message = "试卷ID已存在" });
-        paper.UpdatedAt = DateTime.UtcNow;
-        context.ExamPapers.Add(paper);
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateException) { return Conflict(new { success = false, message = "保存失败：ID 可能冲突" }); }
-        return CreatedAtAction("GetExamPaper", new { id = paper.Id }, paper);
+        var result = await papers.CreateAsync(paper);
+        switch (result.Outcome)
+        {
+            case ExamPaperWriteOutcome.DuplicateId:
+                return Conflict(new { success = false, message = "试卷ID已存在" });
+            case ExamPaperWriteOutcome.SaveFailed:
+                return Conflict(new { success = false, message = "保存失败：ID 可能冲突" });
+        }
+
+        return CreatedAtAction("GetExamPaper", new { id = result.Paper!.Id }, result.Paper);
     }
 
     [HttpPut("{id}")]
     [AdminOnly]
     public async Task<IActionResult> PutExamPaper(string id, [FromBody] ExamPaper paper)
     {
-        var existing = await context.ExamPapers.FindAsync(id);
-        if (existing == null) return NotFound(new { success = false, message = "未找到该试卷" });
-        existing.Name = paper.Name;
-        existing.Sections = paper.Sections;
-        existing.UpdatedAt = DateTime.UtcNow;
-        try { await context.SaveChangesAsync(); }
-        catch (DbUpdateConcurrencyException) { return Conflict(new { success = false, message = "并发冲突" }); }
-        return NoContent();
+        return (await papers.UpdateAsync(id, paper)) switch
+        {
+            ExamPaperWriteOutcome.NotFound => NotFound(new { success = false, message = "未找到该试卷" }),
+            ExamPaperWriteOutcome.ConcurrencyConflict => Conflict(new { success = false, message = "并发冲突" }),
+            _ => NoContent(),
+        };
     }
 
     [HttpDelete("{id}")]
     [AdminOnly]
     public async Task<IActionResult> DeleteExamPaper(string id)
     {
-        var paper = await context.ExamPapers.FindAsync(id);
-        if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
-        context.ExamPapers.Remove(paper);
-        await context.SaveChangesAsync();
-        return NoContent();
+        return await papers.DeleteAsync(id)
+            ? NoContent()
+            : NotFound(new { success = false, message = "未找到该试卷" });
     }
 }
