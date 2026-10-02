@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using ClouderyApi.Models.Cloudery.DTOs;
 using ClouderyApi.Services.Cloudery;
+using ClouderyApi.UseCases.Cloudery;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClouderyApi.Controllers.Cloudery;
@@ -14,7 +15,7 @@ namespace ClouderyApi.Controllers.Cloudery;
 /// </summary>
 [ApiController]
 [Route("exam/results")]
-public sealed class ExamResultsController(ExamResultService service) : ControllerBase
+public sealed class ExamResultsController(ExamResultAppService app) : ControllerBase
 {
     /// <summary>当前用户的云端记录（新的在前）</summary>
     [HttpGet]
@@ -22,7 +23,7 @@ public sealed class ExamResultsController(ExamResultService service) : Controlle
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
-        var results = await service.ListAsync(userId, cancellationToken);
+        var results = await app.ListAsync(userId, cancellationToken);
         return Ok(new { success = true, total = results.Count, results });
     }
 
@@ -42,15 +43,8 @@ public sealed class ExamResultsController(ExamResultService service) : Controlle
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
-        var records = body?.Records;
-        if (records is null || records.Count == 0)
-        {
-            // 只取回、不上传也是合法用法（换设备后第一次打开页面就是这种情形）
-            var only = await service.ListAsync(userId, cancellationToken);
-            return Ok(new ExamResultSyncOut { Success = true, Uploaded = 0, Total = only.Count, Results = only });
-        }
-
-        return await SyncCore(userId, records, cancellationToken);
+        // 只取回、不上传也是合法用法（换设备后第一次打开页面就是这种情形）
+        return await SyncCore(userId, body?.Records, cancellationToken);
     }
 
     /// <summary>删除一条记录（云端 Id 或站点本机记录键）</summary>
@@ -59,7 +53,7 @@ public sealed class ExamResultsController(ExamResultService service) : Controlle
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
-        var deleted = await service.DeleteAsync(userId, id, cancellationToken);
+        var deleted = await app.DeleteAsync(userId, id, cancellationToken);
         if (!deleted) return NotFound(new { success = false, message = "记录不存在" });
 
         return Ok(new { success = true, message = "已删除" });
@@ -71,15 +65,18 @@ public sealed class ExamResultsController(ExamResultService service) : Controlle
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
-        var deleted = await service.ClearAsync(userId, cancellationToken);
+        var deleted = await app.ClearAsync(userId, cancellationToken);
         return Ok(new { success = true, deleted, message = "云端记录已清空" });
     }
 
-    private async Task<IActionResult> SyncCore(Guid userId, List<ExamResultIn> records, CancellationToken cancellationToken)
+    private async Task<IActionResult> SyncCore(
+        Guid userId,
+        IReadOnlyList<ExamResultIn>? records,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var result = await service.SyncAsync(userId, records, cancellationToken);
+            var result = await app.SyncAsync(userId, records, cancellationToken);
             return Ok(result);
         }
         catch (ExamResultRejectedException ex)
