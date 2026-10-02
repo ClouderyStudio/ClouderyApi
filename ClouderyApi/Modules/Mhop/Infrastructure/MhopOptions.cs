@@ -31,11 +31,11 @@ public sealed class MhopOptions
     /// <summary>图片存储方式：本地磁盘或远端阿里云 OSS。</summary>
     public MhopStorageOptions Storage { get; set; } = new();
 
-    /// <summary>启动时自动执行 EF 迁移；留空（null）时按环境回退（Development 为 true）。</summary>
+    /// <summary>启动时自动执行 EF 迁移；留空（null）时按环境回退（Development 为 true）。生产请用 CLI：--migrate。</summary>
     public bool? AutoMigrate { get; set; }
 
-    /// <summary>启动时写入种子数据（默认 true）。</summary>
-    public bool Seed { get; set; } = true;
+    /// <summary>启动时写入种子数据（默认 false，生产请用 CLI：--seed）。</summary>
+    public bool Seed { get; set; }
 }
 
 /// <summary>图片存储配置（Mhop:Storage）：local=本机磁盘并由 /mhop/uploads 静态托管；oss=上传到远端阿里云 OSS。</summary>

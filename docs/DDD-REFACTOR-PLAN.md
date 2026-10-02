@@ -351,7 +351,9 @@
   - 5.1 第二步物理拆分：新增 `Modules/Cloudery/Infrastructure/Persistence/ClouderyContext.cs` 与 `Modules/Zhuxs/Infrastructure/Persistence/ZhuxsContext.cs`（各带 `*ContextFactory` 设计时工厂），删 `ClouderyApi/Data/ClouderyApiContext.cs`；`Migrations/ClouderyApi/` → `Migrations/Cloudery/`（3 个既有迁移 + 快照改名），新增 `Migrations/Cloudery/20261002100506_AlignClouderySnapshot.cs`（仅对齐快照，Up/Down 空操作，避免误 DROP Zhuxs 表）；新增 `Migrations/Zhuxs/20261002100200_InitialZhuxs.cs` 幂等 baseline（`CREATE TABLE IF NOT EXISTS` 三张表，Down 空）+ 独立历史表 `__EFMigrationsHistory_Zhuxs`。
   - **历史表决策**：`ClouderyContext` 沿用共享 `__EFMigrationsHistory`（其 3 个既有迁移已记录其中，换新表会被判「未应用」并在生产重跑 CREATE TABLE）；因此 5.5 只完成 Zhuxs 部分，Mhop/Identity/Cloudery 的完全独立历史表需一次性生产数据搬迁（按 MigrationId `INSERT ... SELECT`），未执行、留待发布窗口。生产影响为零：Cloudery/Identity 启动期从不迁移（仅 `MhopDbContext` 自动迁移）。
   - **验证口径**：`dotnet build ClouderyApi.sln --configuration Release -warnaserror` 0 警告 0 错误；`--filter "FullyQualifiedName~ClouderyMembersContractTests|FullyQualifiedName~ZhuxsContractTests|FullyQualifiedName~ExamPapersContractTests|FullyQualifiedName~ExamResult"` → 29 passed / 0 failed（36s，按 m02529 只跑受影响范围）；两上下文 `has-pending-model-changes` 均 No changes。README 的 DbContext / 迁移章节已同步。
-  - **未做**：5.4 启动期 Migrate/Seed 移出（`Program.cs:179-190/192-206` → 受控服务 + `--migrate/--seed`，`Mhop:Seed` 默认改 false，deploy.yml 前置执行）；5.7 限流分布式化（可选项）。
+  - 5.4 启动期 Migrate/Seed 移出：新增 `ClouderyApi/Modules/Mhop/Infrastructure/DatabaseMaintenanceService.cs`（`MigrateAsync` / `SeedAsync`，共用 DI 的 `MhopDbContext` + `MhopPasswordHasher`），新增 CLI 开关 `--migrate` / `--seed`（与既有 `--sweep-orphans` 同机制：在 `WebApplication.CreateBuilder` 之前摘出裸开关并过滤，执行完 `return 0`，失败 `return 1`）；`MhopOptions.Seed` 默认 `true` → `false`，`Mhop:AutoMigrate` 保持「留空时 Development 为 true」；启动期仅在配置显式打开时兜底调用同一服务。迁移一律前滚、Seed 幂等。
+  - `.github/workflows/deploy.yml` 在 `docker restart` 之前执行 `docker exec "$CONTAINER" dotnet ClouderyApi.dll --migrate --seed`（失败回退 `-w /app`），`set -e` 保证迁移失败即中止部署，不会带着未迁移的库重启。
+  - **未做**：5.7 限流分布式化（可选项）。
 
 ---
 

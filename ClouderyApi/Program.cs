@@ -25,9 +25,13 @@ using System.Collections.Concurrent;
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
 var sweepOrphans = args.Any(a => a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase));
 var sweepOrphansDelete = args.Any(a => a.Equals("--delete-orphans", StringComparison.OrdinalIgnoreCase));
+var runMigrate = args.Any(a => a.Equals("--migrate", StringComparison.OrdinalIgnoreCase));
+var runSeed = args.Any(a => a.Equals("--seed", StringComparison.OrdinalIgnoreCase));
 var builder = WebApplication.CreateBuilder(
     args.Where(a => !a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase)
-                    && !a.Equals("--delete-orphans", StringComparison.OrdinalIgnoreCase)).ToArray());
+                    && !a.Equals("--delete-orphans", StringComparison.OrdinalIgnoreCase)
+                    && !a.Equals("--migrate", StringComparison.OrdinalIgnoreCase)
+                    && !a.Equals("--seed", StringComparison.OrdinalIgnoreCase)).ToArray());
 
 builder.Services.AddControllers(options => options.Filters.Add<MhopApiExceptionFilter>());
 
@@ -110,6 +114,9 @@ builder.Services.AddSingleton<IDomainEventHandler<BottleThrown>, BottleThrownHan
 builder.Services.AddSingleton<IDomainEventHandler<BottleMessageSent>, BottleMessageSentHandler>();
 
 builder.Services.AddSingleton<MhopPasswordHasher>();
+
+// 数据库维护动作（迁移 / 种子）集中在此服务，供 CLI 与启动期兜底共用。
+builder.Services.AddScoped<DatabaseMaintenanceService>();
 builder.Services.AddSingleton<IMhopJwtService, MhopJwtService>();
 builder.Services.AddSingleton<MhopOnlineTracker>();
 builder.Services.AddSingleton<MhopSmtpClient>();
@@ -222,7 +229,28 @@ if (sweepOrphans)
     return await MhopOrphanSweeper.RunAsync(sweepScope.ServiceProvider, sweepOrphansDelete);
 }
 
+// ===== 维护工具：数据库迁移 / 种子数据 =====
+// 用法：dotnet ClouderyApi.dll --migrate [--seed]；部署脚本在重启容器前执行。
+// 迁移一律前滚；这里显式执行，失败以非 0 退出码中止（避免带着未迁移的库继续跑）。
+if (runMigrate || runSeed)
+{
+    using var maintenanceScope = app.Services.CreateScope();
+    var maintenance = maintenanceScope.ServiceProvider.GetRequiredService<DatabaseMaintenanceService>();
+    try
+    {
+        if (runMigrate) await maintenance.MigrateAsync();
+        if (runSeed) await maintenance.SeedAsync();
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "数据库维护动作失败（--migrate / --seed）");
+        return 1;
+    }
+}
+
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
+// 默认关闭（Mhop:AutoMigrate 留空时仅 Development 打开）：生产由部署脚本显式执行 --migrate。
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
 var mhopOptions = app.Services.GetRequiredService<IOptions<MhopOptions>>().Value;
 if (mhopOptions.AutoMigrate ?? app.Environment.IsDevelopment())
@@ -230,7 +258,7 @@ if (mhopOptions.AutoMigrate ?? app.Environment.IsDevelopment())
     try
     {
         using var mhopScope = app.Services.CreateScope();
-        mhopScope.ServiceProvider.GetRequiredService<MhopDbContext>().Database.Migrate();
+        await mhopScope.ServiceProvider.GetRequiredService<DatabaseMaintenanceService>().MigrateAsync();
     }
     catch (Exception ex)
     {
@@ -238,15 +266,13 @@ if (mhopOptions.AutoMigrate ?? app.Environment.IsDevelopment())
     }
 }
 
+// 种子默认关闭（Mhop:Seed），生产由部署脚本显式执行 --seed。
 if (mhopOptions.Seed)
 {
     try
     {
         using var mhopScope = app.Services.CreateScope();
-        await MhopSeeder.SeedAsync(
-            mhopScope.ServiceProvider.GetRequiredService<MhopDbContext>(),
-            mhopScope.ServiceProvider.GetRequiredService<MhopPasswordHasher>(),
-            app.Logger);
+        await mhopScope.ServiceProvider.GetRequiredService<DatabaseMaintenanceService>().SeedAsync();
     }
     catch (Exception ex)
     {

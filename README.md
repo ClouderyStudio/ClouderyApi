@@ -99,7 +99,7 @@ cp ClouderyApi/appsettings.example.json ClouderyApi/appsettings.json
 | `Cors:AllowedOrigins` | 允许跨域的来源白名单（默认含 localhost 及各站点域名） |
 | `Env:SCKEY_API_BASE`、`Env:SCKEY_BEARER_TOKEN` | Server 酱（SCKEY）推送配置 |
 | `Authorization:Admins` | 管理员 CasdoorId 列表，用于白名单/申请/周目/成员等敏感写操作 |
-| `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`AutoMigrate` / `Seed` |
+| `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`AutoMigrate` / `Seed`（生产建议 `false`，改用 CLI `--migrate` / `--seed`） |
 | `Llm` | 结果解读与 MHOP 共用的大模型配置（OpenAI 兼容）：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30）；留空时逐项回退到旧配置 `Mhop:Llm` |
 
 > ⚠️ `appsettings.json` 包含数据库口令、Casdoor 客户端密钥等敏感信息，已被 `.gitignore` 排除，**请勿提交到仓库**。默认端口见 `Properties/launchSettings.json`（`http://localhost:5171`，HTTPS `https://localhost:7288`）。
@@ -134,7 +134,7 @@ dotnet ef migrations add <Name> --context MhopDbContext --output-dir Migrations/
 dotnet ef database update --context MhopDbContext
 ```
 
-> 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境建议保持 `false` 手动执行。
+> 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境保持 `false`，改用 CLI `dotnet ClouderyApi.dll --migrate [--seed]`（`.github/workflows/deploy.yml` 在重启容器前自动执行，失败即中止部署）。
 
 > 内部试卷表迁移 `AddExamPapers` 仅新增 `ExamPapers` 表（整卷 JSON 存单列，兼容既有 schema）。存在多个 `DbContext` 时，`dotnet ef` 命令需显式指定 `--context`。
 
@@ -406,8 +406,8 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 
 ### 默认账号
 
-种子数据（`Mhop:Seed=true`）会创建管理员 `admin / admin123` 与一条引导帖，
-首次登录后请立即修改密码。`Mhop:AutoMigrate` 在开发环境默认开启。
+种子数据（`Mhop:Seed=true` 或 CLI `--seed`）会创建管理员 `admin / admin123` 与一条引导帖，
+首次登录后请立即修改密码。`Mhop:AutoMigrate` 在开发环境默认开启；`Mhop:Seed` 默认关闭，生产由部署脚本执行 `--seed`。
 
 ## GitHub Actions
 
