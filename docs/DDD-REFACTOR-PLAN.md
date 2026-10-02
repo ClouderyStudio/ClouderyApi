@@ -270,6 +270,10 @@
   3. MhopBottleService 归位为 BottleAppService（行为逐字保留，控制器不动）。
   4. AuthAppService / AssessmentAppService / CasdoorAppService。
   5. 控制器改为薄适配器（参照 MhopBottleController.cs:20-110）。
+- **进展（应用层样板已落地）**：
+  - 命名：`Application` 作为根命名空间与 Zhuxs 实体 `ClouderyApi.Models.Zhuxs.Application` 冲突（CS0118："Application"是命名空间，但此处被当做类型，命中 ClouderyApi/Data/ClouderyApiContext.cs 与 Controllers/Zhuxs/ApplicationsController.cs）。因此应用服务统一放 `ClouderyApi/UseCases/<Context>/`、命名空间 `ClouderyApi.UseCases.<Context>`；Stage 3 迁入 `Modules/*/Application` 后不再冲突。
+  - `AssessmentAppService`（ClouderyApi/UseCases/Mhop/AssessmentAppService.cs）承接 MhopAssessmentController 的量表目录（`Scales`）、提交用例（`SubmitAsync`：`AssessmentScoring.Evaluate` → MhopAiService 解读 → `save_to_cloud` 可选落库）与我的记录（`MineAsync`）；控制器由 113 行瘦身为 26 行薄适配器（3 个 action 只做模型绑定 + `MhopOk` 包装），路由 / 蛇形字段 / 状态码 / 文案逐字不变。
+  - 应用服务在 `Program.cs:87` 注册为 Scoped（`builder.Services.AddScoped<AssessmentAppService>();`）。
 - **改动清单（Cloudery / Zhuxs）**：
   1. MembersAppService、ExamPaperAppService（含试卷评分领域逻辑）、ExamResultAppService、Zhuxs 各 AppService。
   2. 为 Member / Whitelist / Application / Term / ExamPaper 补输出 DTO，停止返回 EF 实体。

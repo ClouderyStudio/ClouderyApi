@@ -3,6 +3,7 @@ using ClouderyApi.Data;
 using ClouderyApi.Services.Ai;
 using ClouderyApi.Services.Cloudery;
 using ClouderyApi.Services.Mhop;
+using ClouderyApi.UseCases.Mhop;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -84,6 +85,7 @@ builder.Services.AddSingleton<IMhopObjectStorage>(sp =>
 builder.Services.AddScoped<MhopUploadService>();
 builder.Services.AddScoped<MhopContentService>();
 builder.Services.AddScoped<MhopBottleService>();
+builder.Services.AddScoped<AssessmentAppService>();
 builder.Services.AddHostedService<MhopBottleTimeoutService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
