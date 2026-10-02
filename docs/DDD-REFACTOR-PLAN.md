@@ -244,11 +244,16 @@
   - `MhopContentKind` 从 Services/Mhop/MhopContentPolicy.cs 移到 ClouderyApi/Models/Mhop/MhopContentKind.cs（领域词汇，依赖方向 Services → Models；两个使用方已 import 该命名空间，无需改动）。
   - 清理 "post" / "reply" 字面量：MhopForumController 的 LikeCountMapAsync / LikedSetAsync 改为收 `LikeTargetType` 参数、ToggleLike / MyLikes 改为 `LikeTargetType.Parse`，MhopContentService（4 处）与 MhopAiService（2 处）的点赞清理查询改用常量。
   - 新增纯单测 ClouderyApi.Tests/DomainLikeTargetTests.cs（13 用例，无 HTTP / 无库）。
+- **进展（心理评估计分已完成）**：
+  - 新增领域服务 `AssessmentScoring`（ClouderyApi/Models/Mhop/AssessmentScoring.cs）+ 结果记录 `AssessmentScore(Score, Level, LevelCode, Crisis)`：`Evaluate(assessmentType, answers, freeText, crisis)` 负责题库校验（缺题「请完成量表全部题目」、越界「量表作答值非法」）、累计总分、分档，并把量表危机题命中并入危机信号；未知类型「未知的评估类型」、自由文本为空「请先描述你最近的状态与感受」。
+  - `MhopScales`（量表目录 / 分档表 / `ToResponse`）从 Services/Mhop/MhopScales.cs 移到 ClouderyApi/Models/Mhop/MhopScales.cs（领域词汇，依赖方向 Services → Models）；MhopAssessmentController.cs:37 / :49 / :63 的调用无需改 using。
+  - MhopAssessmentController.Submit 从「内联 40 行计分 + 4 处 400 MhopApiException」瘦身为「取 trim 后的自由文本 → MhopModeration.DetectCrisis → AssessmentScoring.Evaluate → 解构 score / level / levelCode / crisis」；异常类型换成 DomainRuleException，经 MhopApiExceptionFilter 仍映射为 400 `{detail}`，文案与顺序逐字不变。
+  - 边界职责划分：关键词危机筛查仍在服务层（MhopModeration），领域层以 `bool crisis` 入参接收后合并量表危机题，领域不反向依赖服务层；自由文本由控制器 trim 后传入（领域不 trim），已由单测钉住。
+  - 新增纯单测 ClouderyApi.Tests/DomainAssessmentTests.cs（27 用例，无 HTTP / 无库；含 PHQ-9 分档边界 0/4/5/9/10/14/15/19/20/27、危机题命中、自由文本分支、量表目录契约）。
 - **关键取舍**：暂不给 `Content` / `Board` / `Images` 加 EF 值转换（原第 5 条），因为 `Contains` / `==` / `GroupBy` / `ExecuteUpdateAsync` 触点太广、易改变可翻译性；先以「构造即校验 + 实体方法」收口规则，列与迁移保持不变。
 - **改动清单（剩余）**：
-  1. 抽取 AssessmentScoring 领域服务（自 MhopAssessmentController.cs:39-115）；把内联敏感词筛查并入 MhopContentPolicy 的路径再评估。
-  2. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`，先易后难、逐个校验 JSON 与状态码不变）。
-- **验证**：dotnet build 0 error；dotnet test **118 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24 + DomainLikeTargetTests 13），约 43s。
+  1. 业务异常统一到 `DomainRuleException`（逐步替换服务层 `MhopApiException`，先易后难、逐个校验 JSON 与状态码不变；401/403/404/409 等带状态码的仍保留 MhopApiException）。
+- **验证**：dotnet build 0 error；dotnet test **145 用例全绿**（Stage 0 契约 43 + DomainContentTests 19 + DomainBottleTests 19 + DomainUserTests 24 + DomainLikeTargetTests 13 + DomainAssessmentTests 27），约 44s。
 - **风险**：值对象相等性与 EF 追踪要注意；务必保持 MhopCurrentUserAccessor 返回**被追踪**实体（MhopCurrentUserAccessor.cs:87-88 注释）以满足“改后 SaveChanges”。
 - **回滚**：按聚合拆分提交，可单独回退。
 

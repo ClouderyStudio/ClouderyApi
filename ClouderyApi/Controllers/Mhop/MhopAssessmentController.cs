@@ -41,36 +41,12 @@ public class MhopAssessmentController : MhopControllerBase
     {
         var assessmentType = body.AssessmentType ?? string.Empty;
         var freeText = (body.FreeText ?? string.Empty).Trim();
-        int? score = null;
-        var level = string.Empty;
-        var levelCode = string.Empty;
         var crisis = MhopModeration.DetectCrisis(freeText);
-
-        if (MhopScales.All.TryGetValue(assessmentType, out var scale))
-        {
-            var answers = body.Answers ?? new Dictionary<string, int>();
-            var values = new List<int>(scale.Questions.Count);
-            for (var index = 0; index < scale.Questions.Count; index++)
-            {
-                if (!answers.TryGetValue(index.ToString(), out var value))
-                    throw new MhopApiException(400, "请完成量表全部题目");
-                values.Add(value);
-            }
-            if (values.Any(value => value is < 0 or > 3))
-                throw new MhopApiException(400, "量表作答值非法");
-
-            score = values.Sum();
-            (level, levelCode) = MhopScales.ScoreBand(assessmentType, score.Value);
-            if (scale.CrisisIndex is int crisisIndex && values[crisisIndex] > 0) crisis = true;
-        }
-        else if (assessmentType != "free")
-        {
-            throw new MhopApiException(400, "未知的评估类型");
-        }
-        else if (freeText.Length == 0)
-        {
-            throw new MhopApiException(400, "请先描述你最近的状态与感受");
-        }
+        var scoring = AssessmentScoring.Evaluate(assessmentType, body.Answers, freeText, crisis);
+        var score = scoring.Score;
+        var level = scoring.Level;
+        var levelCode = scoring.LevelCode;
+        crisis = scoring.Crisis;
 
         var (result, _) = await _ai.AssessAsync(assessmentType, score, level, freeText, crisis);
 
