@@ -29,6 +29,18 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Mhop__Seed", "true");
         // 测试不触碰对象存储，统一走本地磁盘实现。
         Environment.SetEnvironmentVariable("Mhop__Storage__Provider", "local");
+
+        // Casdoor 节在 Program.cs 构建服务阶段（AddCasdoor）就被读取，那时只有 CreateBuilder 的
+        // 环境变量源可见；ConfigureAppConfiguration 追加的源要等宿主最终配置才生效，来不及。
+        // CI 检出里没有 appsettings.json（.gitignore 忽略），缺 ApplicationType 会让 Casdoor SDK
+        // 抛 ArgumentOutOfRangeException，宿主起不来，全部集成测试一起挂。
+        Environment.SetEnvironmentVariable("Casdoor__Endpoint", "https://casdoor.example.com");
+        Environment.SetEnvironmentVariable("Casdoor__OrganizationName", "test");
+        Environment.SetEnvironmentVariable("Casdoor__ApplicationName", "test");
+        Environment.SetEnvironmentVariable("Casdoor__ApplicationType", "webapi");
+        Environment.SetEnvironmentVariable("Casdoor__ClientId", "test-client-id");
+        Environment.SetEnvironmentVariable("Casdoor__ClientSecret", "test-client-secret");
+        Environment.SetEnvironmentVariable("Casdoor__CallbackPath", "/callback");
     }
 
     public string DatabaseName { get; }
@@ -42,9 +54,18 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Mhop:AutoMigrate", "true");
         builder.UseSetting("Mhop:Seed", "true");
         builder.UseSetting("Mhop:Storage:Provider", "local");
+        builder.UseSetting("Casdoor:Endpoint", "https://casdoor.example.com");
+        builder.UseSetting("Casdoor:OrganizationName", "test");
+        builder.UseSetting("Casdoor:ApplicationName", "test");
+        builder.UseSetting("Casdoor:ApplicationType", "webapi");
+        builder.UseSetting("Casdoor:ClientId", "test-client-id");
+        builder.UseSetting("Casdoor:ClientSecret", "test-client-secret");
+        builder.UseSetting("Casdoor:CallbackPath", "/callback");
 
         // [AdminOnly] 每次请求都从 IConfiguration 读 Authorization:Admins，这里追加一个测试管理员；
         // ConfigureAppConfiguration 的源排在 appsettings.json 之后，能覆盖索引 0 的值。
+        // 注意：这里的源只在宿主最终配置里生效（请求期读 IConfiguration 的代码看得到），
+        // 构建服务阶段直读 builder.Configuration 的配置项（如 Casdoor）必须走上面的环境变量。
         builder.ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Authorization:Admins:0"] = AuthCookie.TestAdminCasdoorId,
