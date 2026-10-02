@@ -1,10 +1,8 @@
-using ClouderyApi.Data;
-using ClouderyApi.Models.Zhuxs;
 using ClouderyApi.Models.Zhuxs.DTOs;
 using ClouderyApi.Controllers.Filters;
+using ClouderyApi.UseCases.Zhuxs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace ClouderyApi.Controllers.Zhuxs;
 
@@ -15,53 +13,45 @@ namespace ClouderyApi.Controllers.Zhuxs;
 [ApiController]
 [Authorize]
 [AdminOnly]
-public class WhitelistsController(ClouderyApiContext context) : ControllerBase
+public class WhitelistsController(WhitelistsAppService whitelists) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Whitelist>>> GetWhitelist()
+    public async Task<ActionResult<IEnumerable<WhitelistOut>>> GetWhitelist()
     {
         // 加排序与上限，避免无界返回全表
-        return await context.ZhuxsWhitelists
-            .OrderBy(w => w.Code)
-            .Take(1000)
-            .ToListAsync();
+        return await whitelists.ListAsync();
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Whitelist>> GetWhitelist(string id)
+    public async Task<ActionResult<WhitelistOut>> GetWhitelist(string id)
     {
-        var whitelist = await context.ZhuxsWhitelists.FindAsync(id);
+        var whitelist = await whitelists.FindAsync(id);
         if (whitelist == null) return NotFound();
         return whitelist;
     }
 
     [HttpPost]
-    public async Task<ActionResult<Whitelist>> PostWhitelist([FromBody] WhitelistDto dto)
+    public async Task<ActionResult<WhitelistOut>> PostWhitelist([FromBody] WhitelistDto dto)
     {
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "参数校验失败" });
 
-        // 主键由服务端生成，客户端不可指定（防 over-posting）
-        var whitelist = new Whitelist { Id = Guid.NewGuid().ToString("N"), Code = dto.Code };
-        context.ZhuxsWhitelists.Add(whitelist);
+        WhitelistOut created;
         try
         {
-            await context.SaveChangesAsync();
+            created = await whitelists.CreateAsync(dto);
         }
-        catch (DbUpdateException)
+        catch (ZhuxsWriteConflictException)
         {
             return Conflict(new { success = false, message = "记录冲突" });
         }
-        return CreatedAtAction("GetWhitelist", new { id = whitelist.Id }, whitelist);
+
+        return CreatedAtAction("GetWhitelist", new { id = created.Id }, created);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteWhitelist(string id)
     {
-        var whitelist = await context.ZhuxsWhitelists.FindAsync(id);
-        if (whitelist == null) return NotFound();
-        context.ZhuxsWhitelists.Remove(whitelist);
-        await context.SaveChangesAsync();
-        return NoContent();
+        return await whitelists.DeleteAsync(id) ? NoContent() : NotFound();
     }
 }
