@@ -456,6 +456,30 @@ public sealed class BottleAppService
         _logger.LogWarning("管理员 {AdminId} 人工放行漂流瓶 {BottleId}", adminUserId, bottleId);
     }
 
+    /// <summary>批量统计瓶子下的可见消息数（后台列表用；控制器不直连 DbContext）。</summary>
+    public async Task<Dictionary<int, int>> CountVisibleMessagesAsync(
+        IReadOnlyCollection<int> bottleIds, CancellationToken cancellationToken = default)
+    {
+        var ids = bottleIds.ToList();
+        if (ids.Count == 0) return new Dictionary<int, int>();
+        return await _db.MhopBottleMessages.AsNoTracking()
+            .Where(m => ids.Contains(m.BottleId) && m.Status == MhopBottleMessageStatus.Visible)
+            .GroupBy(m => m.BottleId)
+            .Select(g => new { BottleId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BottleId, x => x.Count, cancellationToken);
+    }
+
+    /// <summary>批量取用户名（后台展示真实身份用）。</summary>
+    public async Task<Dictionary<int, string>> LoadUsernamesAsync(
+        IEnumerable<int> userIds, CancellationToken cancellationToken = default)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<int, string>();
+        return await _db.MhopUsers.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Username, cancellationToken);
+    }
+
 }
 /// <summary>漂流瓶后台统计口径。</summary>
 public sealed record MhopBottleAdminStats(

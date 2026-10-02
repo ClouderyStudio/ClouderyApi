@@ -1,9 +1,7 @@
-using ClouderyApi.Data;
 using ClouderyApi.Models.Mhop;
 using ClouderyApi.Models.Mhop.DTOs;
 using ClouderyApi.Services.Mhop;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using ClouderyApi.UseCases.Mhop;
 using ClouderyApi.UseCases.Mhop.Mapping;
 
@@ -19,7 +17,6 @@ namespace ClouderyApi.Controllers.Mhop;
 public class MhopBottleAdminController(
     BottleAppService bottles,
     MhopContentReviewService review,
-    MhopDbContext db,
     MhopCurrentUserAccessor current) : MhopControllerBase
 {
     [HttpGet("stats")]
@@ -60,13 +57,7 @@ public class MhopBottleAdminController(
 
         // 批量取每个瓶子的可见消息数
         var bottleIds = items.Select(b => b.Id).ToList();
-        var counts = bottleIds.Count == 0
-            ? new Dictionary<int, int>()
-            : await db.MhopBottleMessages.AsNoTracking()
-                .Where(m => bottleIds.Contains(m.BottleId) && m.Status == MhopBottleMessageStatus.Visible)
-                .GroupBy(m => m.BottleId)
-                .Select(g => new { BottleId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.BottleId, x => x.Count);
+        var counts = await bottles.CountVisibleMessagesAsync(bottleIds);
 
         return MhopOk(new AdminBottleListOut
         {
@@ -217,12 +208,6 @@ public class MhopBottleAdminController(
         return MhopOk(new { ok = true });
     }
 
-    private async Task<Dictionary<int, string>> LoadNamesAsync(IEnumerable<int> userIds)
-    {
-        var ids = userIds.Distinct().ToList();
-        if (ids.Count == 0) return new Dictionary<int, string>();
-        return await db.MhopUsers.AsNoTracking()
-            .Where(u => ids.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.Username);
-    }
+    private Task<Dictionary<int, string>> LoadNamesAsync(IEnumerable<int> userIds)
+        => bottles.LoadUsernamesAsync(userIds);
 }
