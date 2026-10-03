@@ -3,6 +3,7 @@ using ClouderyApi.Modules.Mhop.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Modules.Mhop.Application;
 using ClouderyApi.Modules.Mhop.Application.Mapping;
+using ClouderyApi.Shared.Filters;
 
 namespace ClouderyApi.Modules.Mhop.Api;
 
@@ -18,8 +19,9 @@ public class MhopBottleController(
 {
     private const string Hotline = "12356";
 
-    /// <summary>扔出一个瓶子。</summary>
+    /// <summary>扔出一个瓶子。每次投瓶都会触发一次 AI 内容审核，按 IP 限流保护模型开销。</summary>
     [HttpPost]
+    [IpRateLimit(MaxRequests = 20, WindowSeconds = 300, UseMhopErrorShape = true)]
     public async Task<IActionResult> Throw([FromBody] ThrowIn body)
     {
         var user = await current.RequireAsync();
@@ -84,8 +86,9 @@ public class MhopBottleController(
         return MhopOk(MhopBottleMapper.ToDetailOut(data.Value.Bottle, user.Id, data.Value.Unread, afterId));
     }
 
-    /// <summary>发送一条消息。</summary>
+    /// <summary>发送一条消息。每次都会触发一次 AI 内容审核，按 IP 限流。</summary>
     [HttpPost("{id:int}/messages")]
+    [IpRateLimit(MaxRequests = 30, WindowSeconds = 300, UseMhopErrorShape = true)]
     public async Task<IActionResult> Send(int id, [FromBody] SendIn body)
     {
         var user = await current.RequireAsync();
