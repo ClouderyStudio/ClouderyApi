@@ -97,9 +97,14 @@ public sealed class MhopSmtpClient
         return (reader, writer);
     }
 
-    private static async Task<Stream> UpgradeToTlsAsync(Stream stream, string host, CancellationToken cancellationToken)
+    private async Task<Stream> UpgradeToTlsAsync(Stream stream, string host, CancellationToken cancellationToken)
     {
-        var ssl = new SslStream(stream, leaveInnerStreamOpen: false, (_, _, _, _) => true);
+        // 默认走系统证书链校验（签发者 / 有效期 / 主机名）。仅当运维显式打开
+        // Smtp:AllowInvalidCertificate 时才接受任意证书——那是自建邮件服务器的兼容口子，
+        // 一旦开启，登录验证码就暴露给网络路径上的中间人，生产不应打开。
+        var ssl = _options.Smtp.AllowInvalidCertificate
+            ? new SslStream(stream, leaveInnerStreamOpen: false, (_, _, _, _) => true)
+            : new SslStream(stream, leaveInnerStreamOpen: false);
         await ssl.AuthenticateAsClientAsync(
             new SslClientAuthenticationOptions { TargetHost = host, EnabledSslProtocols = SslProtocols.None },
             cancellationToken);

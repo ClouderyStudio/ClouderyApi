@@ -124,4 +124,7 @@ public sealed class MhopSmtpOptions
 
     /// <summary>true=隐式 SSL(465)；false=STARTTLS(587)。</summary>
     public bool UseSsl { get; set; } = true;
+
+    /// <summary>自签名证书兼容开关，生产保持 false。</summary>
+    public bool AllowInvalidCertificate { get; set; }
 }
