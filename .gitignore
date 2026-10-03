@@ -372,3 +372,6 @@ uploads/
 # 本地调研 / 临时产物（不属于源码）
 undefined/
 commit-msg.txt
+
+# AI 工作区数据（非源码）
+.workbuddy/

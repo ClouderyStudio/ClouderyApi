@@ -104,7 +104,8 @@ cp ClouderyApi/appsettings.example.json ClouderyApi/appsettings.json
 | `Cors:AllowedOrigins` | 允许跨域的来源白名单（默认含 localhost 及各站点域名） |
 | `Env:SCKEY_API_BASE`、`Env:SCKEY_BEARER_TOKEN` | Server 酱（SCKEY）推送配置 |
 | `Authorization:Admins` | 管理员 CasdoorId 列表，用于白名单/申请/周目/成员等敏感写操作 |
-| `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`AutoMigrate` / `Seed`（生产建议 `false`，改用 CLI `--migrate` / `--seed`） |
+| `TrustedProxies` | 可信反向代理（`Proxies` 精确 IP / `Networks` CIDR）。生产在 Nginx 之后必填，否则按 IP 的限流会把全站算作一个客户端；**绝不要信任任意来源**。留空 = 不启用。见下方「反向代理与限流」 |
+| `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式；`AllowInvalidCertificate` 生产保持 false）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`SeedAdminPassword`（种子超管口令，留空则随机生成并记日志）、`AutoMigrate` / `Seed`（生产建议 `false`，改用 CLI `--migrate` / `--seed`） |
 | `Llm` | 结果解读与 MHOP 共用的大模型配置（OpenAI 兼容）：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30）；留空时逐项回退到旧配置 `Mhop:Llm` |
 
 > ⚠️ `appsettings.json` 包含数据库口令、Casdoor 客户端密钥等敏感信息，已被 `.gitignore` 排除，**请勿提交到仓库**。默认端口见 `Properties/launchSettings.json`（`http://localhost:5171`，HTTPS `https://localhost:7288`）。
@@ -413,8 +414,35 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 
 ### 默认账号
 
-种子数据（`Mhop:Seed=true` 或 CLI `--seed`）会创建管理员 `admin / admin123` 与一条引导帖，
-首次登录后请立即修改密码。`Mhop:AutoMigrate` 在开发环境默认开启；`Mhop:Seed` 默认关闭，生产由部署脚本执行 `--seed`。
+种子数据（`Mhop:Seed=true` 或 CLI `--seed`）会创建超级管理员 `admin` 与一条引导帖。
+
+**口令来源**：读 `Mhop:SeedAdminPassword`；该配置留空时生成一次性随机强口令，
+并只写进本次启动日志（`LogWarning`），请从日志取口令后立即登录改密。
+
+代码里不再内置任何默认口令——写死的口令（如历史上的 `admin123`）随仓库公开即等同无口令，
+后台可被任意人爆破。`MhopSeedAdminSecurityTests` 会在弱口令回归时直接让测试失败。
+
+`Mhop:AutoMigrate` 在开发环境默认开启；`Mhop:Seed` 默认关闭，生产由部署脚本执行 `--seed`。
+
+### 反向代理与限流
+
+生产部署通常在 Nginx / 云负载均衡之后，此时应用看到的客户端 IP 是代理地址，
+按 IP 的限流（全局 300 次/分钟、单接口 `IpRateLimit`、邮箱验证码频控）会退化成
+「全站共用一个计数桶」——既挡不住攻击，又会误伤正常用户。
+
+在 `TrustedProxies` 节显式声明可信代理即可修正：
+
+```json
+"TrustedProxies": {
+  "Proxies": ["127.0.0.1"],
+  "Networks": ["172.16.0.0/12"],
+  "TrustForwardedFor": true,
+  "TrustForwardedProto": true
+}
+```
+
+两项都留空 = 不信任任何代理，沿用直连行为（本地开发适用）。**只填自己控制的代理地址**：
+信任任意来源等于让攻击者自己伪造 `X-Forwarded-For`，每次请求换IP，限流形同虚设。
 
 ## 测试
 

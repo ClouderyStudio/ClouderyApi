@@ -52,7 +52,15 @@ dotnet ClouderyApi.dll --migrate [--seed] [--sweep-orphans [--delete-orphans]]
 - **授权用特性 + policy**（`Shared/Authorization/`），不要用 service locator。
 - **领域事件**：聚合以 `[NotMapped]` 事件列表实现 `IHasDomainEvents`，由 `MhopDbContext.SaveChangesAsync` 在保存成功后派发（`ClouderyApi/Shared/Domain/`）；新增副作用优先做成事件订阅者（`Modules/Mhop/Application/Events/`）。
 - 不引入重量级依赖；保持 `Nullable` 开启、`.editorconfig` 与 `-warnaserror` 不新增警告。
-- 迁移历史表：Zhuxs 用独立的 `__EFMigrationsHistory_Zhuxs`；Cloudery / Identity / Mhop 目前共用 `__EFMigrationsHistory`（调整前先确认，避免既有迁移被判定「未应用」而重跑）。
+- 迁移历史表：Zhuxs 用独立的 `__EFMigrationsHistory_Zhuxs`；Cloudery / Identity / Mhop 目前共用 `__EFMigrationsHistory`（调整前先确认，避免既有迁移被判定「未应用」而重跑）。三个共用表意味着**迁移 ID 必须全局唯一**，撞车会被 EF 静默跳过。
+
+## 4.1 安全红线（改动前必读）
+
+- **禁止在代码里写死任何口令**。种子超管口令来自 `Mhop:SeedAdminPassword`，留空则生成随机强口令并只写一次日志。历史事故：`admin123` / `1234567` 两个超管口令曾作为字面量进入源码；`MhopSeedAdminSecurityTests` 会让这种回归直接失败。
+- **公开资料接口不得下发登录凭据**。`GET /mhop/auth/users/{id}` 匿名可访问，`MhopAuthMapper.ToUserOut` 必须传 `maskEmail: true` + `maskPhone: true` + `exposePermissions: false`；本人 / 后台接口用默认值。邮箱是邮箱验证码登录的唯一凭据，泄漏即可按 id 遍历全站 PII。
+- **客户端 IP 一律走 `ClientIp.Resolve(HttpContext)`**，不要直接读 `RemoteIpAddress`。生产在 Nginx 之后，直读拿到的是代理 IP，限流会退化成「全站一个桶」。可信代理在 `TrustedProxies` 节显式声明——**绝不要信任任意来源**，否则伪造 `X-Forwarded-For` 就能绕过限流。
+- **`Mhop:Smtp:AllowInvalidCertificate` 生产保持 false**。打开后 TLS 不校验证书，登录验证码会被中间人截获。
+- **触发 LLM 的端点必须挂 `[IpRateLimit]`**：目前是 `/mhop/assessments`、`/mhop/forum/posts`、`/mhop/forum/posts/{id}/replies`、`/mhop/bottles`、`/mhop/bottles/{id}/messages`。挂在 MHOP 控制器上必须带 `UseMhopErrorShape = true`，否则 429 响应体形状不对（MHOP 前端读 `detail`）。新增同类端点时一并补上。
 
 ## 5. 提交与协作约定
 
