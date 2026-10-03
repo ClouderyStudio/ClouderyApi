@@ -66,6 +66,19 @@ public sealed class DomainBottleTests
         Assert.Equal(Now, bottle.PickerLastReadAt);
     }
 
+    [Fact]
+    public void Pick_rejects_picking_own_bottle()
+    {
+        var bottle = NewBottle(7);
+
+        var ex = Assert.Throws<DomainRuleException>(() => bottle.Pick(7, Now));
+        Assert.Equal("不能捞起自己扔出的瓶子", ex.Message);
+        // 抛错后状态必须保持原样：没有形成「自己捞自己」的会话
+        Assert.Equal(MhopBottleStatus.Pending, bottle.Status);
+        Assert.Null(bottle.PickerUserId);
+        Assert.Null(bottle.PickedAt);
+    }
+
     // ---------------- 结束 / 举报 / 超时基准 ----------------
 
     [Fact]

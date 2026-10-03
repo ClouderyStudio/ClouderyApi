@@ -121,14 +121,18 @@ public sealed class BottleAppService
                         .FirstOrDefaultAsync();
                     if (candidateId == 0) break; // 海里没有可捞瓶
 
+                    // 原子抢占语句同样带上 UserId <> 捞瓶人：与候选 SELECT 双保险，
+                    // 即使两条语句之间数据被改动，自己的瓶子也不可能在抢占环节写入自己的 PickerUserId。
                     var affected = await _db.Database.ExecuteSqlInterpolatedAsync($"""
                         UPDATE mhop_bottles
                         SET Status = {MhopBottleStatus.Picked}, PickerUserId = {user.Id}, PickedAt = {now}
                         WHERE Id = {candidateId} AND Status = {MhopBottleStatus.Drifting}
+                              AND UserId <> {user.Id}
                         """);
                     if (affected != 1) continue; // 被别人抢先，换一个
 
                     var bottle = await _db.MhopBottles.FirstAsync(b => b.Id == candidateId);
+                    // 领域层最后一道兜底：picker == thrower 时直接抛错，不留任何自捞会话落库
                     bottle.Pick(user.Id, now);
                     await _db.SaveChangesAsync();
                     await tx.CommitAsync();
@@ -151,8 +155,10 @@ public sealed class BottleAppService
         }
     }
 
-    public Task<int> SeaCountAsync()
-        => _db.MhopBottles.CountAsync(b => b.Status == MhopBottleStatus.Drifting);
+    /// <summary>海中可被该用户捞起的瓶子数（排除自己扔的，与捞瓶 SQL 口径一致）。</summary>
+    public Task<int> SeaCountAsync(int userId)
+        => _db.MhopBottles.CountAsync(b =>
+            b.Status == MhopBottleStatus.Drifting && b.UserId != userId);
 
     /// <summary>「我的瓶子」页一次性聚合：会话列表 + 今日次数 + 海中数量。</summary>
     public async Task<(List<MhopBottle> Items, int ThrownToday, int PickedToday, int SeaCount)>
@@ -162,7 +168,7 @@ public sealed class BottleAppService
         var today = DateTime.UtcNow.Date;
         var thrown = await _db.MhopBottles.CountAsync(b => b.UserId == userId && b.CreatedAt >= today);
         var picked = await _db.MhopBottles.CountAsync(b => b.PickerUserId == userId && b.PickedAt >= today);
-        var sea = await SeaCountAsync();
+        var sea = await SeaCountAsync(userId);
         return (items, thrown, picked, sea);
     }
 
@@ -283,6 +289,10 @@ public sealed class BottleAppService
             var bottle = await _db.MhopBottles.FirstOrDefaultAsync(b => b.Id == bottleId);
             if (bottle is null || !bottle.IsParty(userId))
                 throw new MhopApiException(404, "会话不存在");
+            // 瓶子尚在审核/漂流时对话还没开始，没有对方也没有内容可举报；
+            // 尤其防止扔瓶人在自己瓶子入海后点进详情页举报自己的在漂瓶
+            if (bottle.Status is MhopBottleStatus.Pending or MhopBottleStatus.Drifting)
+                throw new MhopApiException(409, "瓶子还未被捞起，暂不能举报");
 
             if (bottle.TryReport(userId, reason, DateTime.UtcNow))
             {

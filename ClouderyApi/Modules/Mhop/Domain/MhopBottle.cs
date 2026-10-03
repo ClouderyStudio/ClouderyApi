@@ -165,9 +165,13 @@ public class MhopBottle : IHasDomainEvents
     /// <summary>
     /// 被捞起（捞起即视为已读瓶身）。并发「一瓶不被两人捞走」由调用方的
     /// 「Id + Status=Drifting 条件更新」保证，实体方法只负责状态落地。
+    /// 领域不变量：扔瓶人永远不能捞起自己扔出的瓶子（双账号等绕过 SQL 过滤时兜底）。
     /// </summary>
     public void Pick(int pickerId, DateTime now)
     {
+        if (pickerId == UserId)
+            throw new DomainRuleException("不能捞起自己扔出的瓶子");
+
         Status = MhopBottleStatus.Picked;
         PickerUserId = pickerId;
         PickedAt = now;

@@ -69,8 +69,9 @@ public class MhopBottleController(
     [HttpGet("sea/count")]
     public async Task<IActionResult> SeaCount()
     {
-        await current.RequireAsync();
-        return MhopOk(new { count = await bottles.SeaCountAsync() });
+        var user = await current.RequireAsync();
+        // 海计数排除本人的瓶子，与随机捞瓶口径一致，避免「显示有瓶却捞不到」
+        return MhopOk(new { count = await bottles.SeaCountAsync(user.Id) });
     }
 
     /// <summary>会话详情（含消息）。after_id 用于轮询增量；进入页面时回写已读。</summary>
