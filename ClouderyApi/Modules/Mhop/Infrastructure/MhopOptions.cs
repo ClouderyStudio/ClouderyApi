@@ -36,6 +36,13 @@ public sealed class MhopOptions
 
     /// <summary>启动时写入种子数据（默认 false，生产请用 CLI：--seed）。</summary>
     public bool Seed { get; set; }
+
+    /// <summary>
+    /// 种子 admin 超级管理员的初始口令（<c>--seed</c> 且账号不存在时使用）。
+    /// 留空 = 生成一次性随机强口令，并只写进本次启动日志。
+    /// 严禁把口令写进代码或仓库——历史版本的 admin123 / 1234567 是公开字面量，等同于无口令。
+    /// </summary>
+    public string SeedAdminPassword { get; set; } = string.Empty;
 }
 
 /// <summary>图片存储配置（Mhop:Storage）：local=本机磁盘并由 /mhop/uploads 静态托管；oss=上传到远端阿里云 OSS。</summary>

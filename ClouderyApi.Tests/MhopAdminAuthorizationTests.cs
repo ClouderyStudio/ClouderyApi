@@ -16,7 +16,11 @@ public sealed class MhopAdminAuthorizationTests : IntegrationTestBase
     private async Task<string> SuperAdminTokenAsync()
     {
         var (status, body) = await JsonHttp.PostJsonAsync(Client, "/mhop/auth/login",
-            new { username = "admin", password = "admin123" });
+            new
+            {
+                username = ClouderyApiFactory.TestSeedAdminUsername,
+                password = ClouderyApiFactory.TestSeedAdminPassword,
+            });
         Assert.Equal(HttpStatusCode.OK, status);
         return body.RootElement.GetProperty("access_token").GetString()!;
     }

@@ -1,5 +1,6 @@
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Modules.Mhop.Infrastructure;
 
@@ -12,6 +13,7 @@ namespace ClouderyApi.Modules.Mhop.Infrastructure;
 public sealed class DatabaseMaintenanceService(
     MhopDbContext db,
     MhopPasswordHasher passwordHasher,
+    IOptions<MhopOptions> options,
     ILogger<DatabaseMaintenanceService> logger)
 {
     /// <summary>应用所有待执行的 EF 迁移。</summary>
@@ -25,6 +27,6 @@ public sealed class DatabaseMaintenanceService(
     public Task SeedAsync(CancellationToken cancellationToken = default)
     {
         logger.LogInformation("开始写入 MHOP 种子数据");
-        return MhopSeeder.SeedAsync(db, passwordHasher, logger);
+        return MhopSeeder.SeedAsync(db, passwordHasher, options.Value, logger);
     }
 }

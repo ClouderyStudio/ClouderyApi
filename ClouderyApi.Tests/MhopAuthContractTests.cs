@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
+using ClouderyApi.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -108,13 +109,22 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
     [Fact]
     public async Task Login_returns_superadmin_for_seeded_admin_and_401_for_wrong_password()
     {
-        var (ok, okBody) = await ReadAsync(
-            await SendJsonAsync(HttpMethod.Post, "/mhop/auth/login", new { username = "admin", password = "admin123" }));
+        var (ok, okBody) = await ReadAsync(await SendJsonAsync(HttpMethod.Post, "/mhop/auth/login",
+            new
+            {
+                username = ClouderyApiFactory.TestSeedAdminUsername,
+                password = ClouderyApiFactory.TestSeedAdminPassword,
+            }));
         Assert.Equal(HttpStatusCode.OK, ok);
         Assert.Equal("superadmin", okBody.RootElement.GetProperty("user").GetProperty("role").GetString());
 
         var (bad, badBody) = await ReadAsync(
-            await SendJsonAsync(HttpMethod.Post, "/mhop/auth/login", new { username = "admin", password = "wrong-password" }));
+            await SendJsonAsync(HttpMethod.Post, "/mhop/auth/login",
+                new
+                {
+                    username = ClouderyApiFactory.TestSeedAdminUsername,
+                    password = "wrong-password",
+                }));
         Assert.Equal(HttpStatusCode.Unauthorized, bad);
         Assert.Equal("用户名或密码错误", badBody.RootElement.GetProperty("detail").GetString());
     }
@@ -145,7 +155,8 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.Unauthorized, anon);
         Assert.Equal("请先登录", anonBody.RootElement.GetProperty("detail").GetString());
 
-        var token = await LoginAsync("admin", "admin123");
+        var token = await LoginAsync(
+            ClouderyApiFactory.TestSeedAdminUsername, ClouderyApiFactory.TestSeedAdminPassword);
         var (authed, body) = await ReadAsync(await GetAsync("/mhop/auth/me", token));
         Assert.Equal(HttpStatusCode.OK, authed);
         Assert.Equal("admin", body.RootElement.GetProperty("username").GetString());

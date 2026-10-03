@@ -19,6 +19,10 @@ namespace ClouderyApi.Tests.TestSupport;
 /// </summary>
 public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
 {
+    /// <summary>种子超管账号名与口令，仅供测试断言使用（生产种子不接受写死口令）。</summary>
+    public const string TestSeedAdminUsername = "admin";
+    public const string TestSeedAdminPassword = "test-only-admin-pwd";
+
     public ClouderyApiFactory(string databaseName)
     {
         DatabaseName = databaseName;
@@ -27,6 +31,9 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", ConnectionString);
         Environment.SetEnvironmentVariable("Mhop__AutoMigrate", "true");
         Environment.SetEnvironmentVariable("Mhop__Seed", "true");
+        // 种子默认生成随机超管口令（生产不写死口令）；测试需要一个可预测的已知口令，
+        // 才能断言登录与管理员契约。生产配置里不会出现这个键。
+        Environment.SetEnvironmentVariable("Mhop__SeedAdminPassword", TestSeedAdminPassword);
         // 测试不触碰对象存储，统一走本地磁盘实现。
         Environment.SetEnvironmentVariable("Mhop__Storage__Provider", "local");
 
@@ -53,6 +60,7 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:DefaultConnection", ConnectionString);
         builder.UseSetting("Mhop:AutoMigrate", "true");
         builder.UseSetting("Mhop:Seed", "true");
+        builder.UseSetting("Mhop:SeedAdminPassword", TestSeedAdminPassword);
         builder.UseSetting("Mhop:Storage:Provider", "local");
         builder.UseSetting("Casdoor:Endpoint", "https://casdoor.example.com");
         builder.UseSetting("Casdoor:OrganizationName", "test");
