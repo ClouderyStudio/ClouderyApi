@@ -51,7 +51,9 @@ public sealed class MhopForumReadContractTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, status);
         Assert.True(body.RootElement.GetProperty("posts").GetInt32() >= 1);
         Assert.True(body.RootElement.GetProperty("replies").GetInt32() >= 1);
-        Assert.True(body.RootElement.GetProperty("users").GetInt32() >= 2);
+        // 种子只创建一个超管（应急超管 root 已移除），因此这里只要求统计确实数到了用户行：
+        // 该值为 0 说明统计查询或种子写入坏了。
+        Assert.True(body.RootElement.GetProperty("users").GetInt32() >= 1);
     }
 
     [Fact]
