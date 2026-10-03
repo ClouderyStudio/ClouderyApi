@@ -18,6 +18,10 @@ public sealed class MhopEmailCodeService
     public const int ResendIntervalSeconds = 60;
     private const int MaxAttempts = 5;
     private const int IpHourlyLimit = 20;
+    /// <summary>同时跟踪的验证码邮箱数上限；超过即拒绝新发码（防随机邮箱刷量撑爆内存）。</summary>
+    private const int MaxTrackedEmails = 20_000;
+    /// <summary>同时跟踪的 IP 数上限；超过即拒绝新发码（防伪造 / 轮换 IP 撑爆内存）。</summary>
+    private const int MaxTrackedIps = 20_000;
 
     private readonly record struct CodeEntry(string Code, long ExpiresAt, int Attempts);
 
@@ -60,7 +64,28 @@ public sealed class MhopEmailCodeService
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         lock (_lock)
         {
-            var window = _ipWindow.GetOrAdd(ip, _ => []);
+            // IP 维度同样做容量保护：ClientIp 在未配可信代理时可能拿到大量不同取值，
+            // 不设上限则 _ipWindow 会随伪造 / 轮换 IP 无界增长。
+            if (!_ipWindow.TryGetValue(ip, out var window))
+            {
+                if (_ipWindow.Count >= MaxTrackedIps)
+                {
+                    foreach (var (tracked, timestamps) in _ipWindow)
+                    {
+                        timestamps.RemoveAll(timestamp => now - timestamp >= 3600);
+                        if (timestamps.Count == 0) _ipWindow.TryRemove(tracked, out _);
+                    }
+                    // 清理后仍无空间（新 IP 全都是新鲜的）：本次直接拒绝，等老窗口自然过期。
+                    if (_ipWindow.Count >= MaxTrackedIps)
+                    {
+                        _logger.LogWarning("验证码 IP 频控缓存已达上限 {Max}，本次请求被拒绝", MaxTrackedIps);
+                        return false;
+                    }
+                }
+                window = [];
+                _ipWindow[ip] = window;
+            }
+
             window.RemoveAll(timestamp => now - timestamp >= 3600);
             if (window.Count >= IpHourlyLimit) return false;
             window.Add(now);
@@ -68,7 +93,9 @@ public sealed class MhopEmailCodeService
         }
     }
 
-    /// <summary>生成验证码。返回 (code, retryAfter)；频控中时 code 为 null。</summary>
+    /// <summary>
+    /// 生成验证码。返回 (code, retryAfter)；频控中时 code 为 null。
+    /// </summary>
     public (string? Code, int RetryAfter) IssueCode(string email)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -76,10 +103,40 @@ public sealed class MhopEmailCodeService
         {
             var wait = ResendIntervalSeconds - (now - _lastSent.GetValueOrDefault(email, 0L));
             if (wait > 0) return (null, (int)wait + 1);
+
+            // 容量保护：IssueCode 不校验邮箱是否存在（那是防枚举的有意设计），
+            // 因此匿名请求可用随机邮箱把字典撑到无界增长；这里在写入前清理过期项，
+            // 仍超上限则拒绝发码——宁可让极少数正常用户晚点收信，也不能被撑爆内存。
+            if (_codes.Count >= MaxTrackedEmails)
+            {
+                PruneExpiredLocked(now);
+                if (_codes.Count >= MaxTrackedEmails)
+                {
+                    _logger.LogWarning("验证码缓存已达上限 {Max}，本次发码请求被拒绝（可能存在随机邮箱刷量）", MaxTrackedEmails);
+                    return (null, ResendIntervalSeconds);
+                }
+            }
+
             var code = RandomNumberGenerator.GetInt32(1_000_000).ToString("D6");
             _codes[email] = new CodeEntry(code, now + CodeTtlSeconds, 0);
             _lastSent[email] = now;
             return (code, 0);
+        }
+    }
+
+    /// <summary>清理已过期的验证码与发送记录（调用方须持有 _lock）。</summary>
+    private void PruneExpiredLocked(long now)
+    {
+        foreach (var (email, entry) in _codes)
+        {
+            if (now > entry.ExpiresAt) _codes.TryRemove(email, out _);
+        }
+
+        // _lastSent 只用于「同一邮箱 60 秒内不重复发」；验证码一旦删除，
+        // 该记录也没有意义了（它只可能比 _codes 多留几十秒）。
+        foreach (var (email, sentAt) in _lastSent)
+        {
+            if (now - sentAt > ResendIntervalSeconds) _lastSent.TryRemove(email, out _);
         }
     }
 
