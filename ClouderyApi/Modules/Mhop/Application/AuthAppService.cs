@@ -231,8 +231,8 @@ public sealed class AuthAppService
         var user = await _db.MhopUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null)
             throw new MhopApiException(404, "用户不存在");
-        // 手机号与后台权限仅本人与后台可见，公开资料脱敏
-        return MhopAuthMapper.ToUserOut(user, maskPhone: true, exposePermissions: false);
+        // 手机号、邮箱与后台权限仅本人与后台可见，公开资料脱敏
+        return MhopAuthMapper.ToUserOut(user, maskPhone: true, exposePermissions: false, maskEmail: true);
     }
 
     // ---- Casdoor 统一身份认证 ----

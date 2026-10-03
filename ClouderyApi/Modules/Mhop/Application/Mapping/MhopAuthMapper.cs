@@ -10,11 +10,20 @@ namespace ClouderyApi.Modules.Mhop.Application.Mapping;
 /// </summary>
 public static class MhopAuthMapper
 {
-    public static UserOut ToUserOut(MhopUser user, bool maskPhone = false, bool exposePermissions = true) => new()
+    /// <summary>
+    /// <paramref name="maskPhone"/> / <paramref name="maskEmail"/> 用于公开资料脱敏：
+    /// 手机号与邮箱都是登录凭据（邮箱验证码登录按邮箱查用户），公开接口不得下发，
+    /// 否则可按 userId 遍历全站 PII。本人 / 后台接口用默认值即完整下发。
+    /// </summary>
+    public static UserOut ToUserOut(
+        MhopUser user,
+        bool maskPhone = false,
+        bool exposePermissions = true,
+        bool maskEmail = false) => new()
     {
         Id = user.Id,
         Username = user.Username,
-        Email = user.Email,
+        Email = maskEmail ? null : user.Email,
         Phone = maskPhone ? null : user.Phone,
         Role = user.Role,
         Status = user.Status,

@@ -167,6 +167,8 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, pub);
         Assert.Equal(JsonValueKind.Null, pubBody.RootElement.GetProperty("phone").ValueKind);
         Assert.Equal(0, pubBody.RootElement.GetProperty("permissions").GetArrayLength());
+        // 邮箱是邮箱验证码登录的唯一凭据，公开接口不得下发（否则可按 id 遍历全站 PII）。
+        Assert.Equal(JsonValueKind.Null, pubBody.RootElement.GetProperty("email").ValueKind);
 
         var (invalid, invalidBody) = await ReadAsync(
             await SendJsonAsync(HttpMethod.Put, "/mhop/auth/me/phone", new { phone = "12345" }, token));
@@ -195,5 +197,39 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
         var (status, body) = await ReadAsync(await GetAsync("/mhop/auth/users/987654"));
         Assert.Equal(HttpStatusCode.NotFound, status);
         Assert.Equal("用户不存在", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    /// <summary>
+    /// 反向锁定：脱敏只作用于公开资料接口，本人访问自己的资料仍必须能拿到邮箱，
+    /// 否则前端账号页会显示不出绑定邮箱。
+    /// </summary>
+    [Fact]
+    public async Task Own_profile_still_exposes_email_while_public_profile_masks_it()
+    {
+        var token = await RegisterAsync("emailowner");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
+            var user = await db.MhopUsers.SingleAsync(u => u.Username == "emailowner");
+            user.Email = "owner@example.com";
+            await db.SaveChangesAsync();
+        }
+
+        var userId = await ResolveUserIdAsync(token);
+
+        var (mine, mineBody) = await ReadAsync(await GetAsync("/mhop/auth/me", token));
+        Assert.Equal(HttpStatusCode.OK, mine);
+        Assert.Equal("owner@example.com", mineBody.RootElement.GetProperty("email").GetString());
+
+        var (pub, pubBody) = await ReadAsync(await GetAsync("/mhop/auth/users/" + userId));
+        Assert.Equal(HttpStatusCode.OK, pub);
+        Assert.Equal(JsonValueKind.Null, pubBody.RootElement.GetProperty("email").ValueKind);
+    }
+
+    private async Task<int> ResolveUserIdAsync(string token)
+    {
+        var (_, body) = await ReadAsync(await GetAsync("/mhop/auth/me", token));
+        return body.RootElement.GetProperty("id").GetInt32();
     }
 }
