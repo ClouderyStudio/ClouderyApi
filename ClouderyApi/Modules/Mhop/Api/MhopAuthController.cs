@@ -1,5 +1,6 @@
 using ClouderyApi.Modules.Mhop.Api.Contracts;
 using ClouderyApi.Modules.Mhop.Application;
+using ClouderyApi.Shared.Filters;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClouderyApi.Modules.Mhop.Api;
@@ -30,7 +31,7 @@ public class MhopAuthController : MhopControllerBase
     public async Task<IActionResult> SendEmailCode([FromBody] EmailCodeIn body)
         => MhopOk(await _auth.SendEmailCodeAsync(
             body,
-            HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            ClientIp.Resolve(HttpContext),
             HttpContext.RequestAborted));
 
     [HttpPost("login-email")]

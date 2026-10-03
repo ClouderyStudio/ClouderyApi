@@ -16,11 +16,13 @@ using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Modules.Zhuxs.Application;
 using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using System.Collections.Concurrent;
+using ClouderyApi.Shared.Filters;
 
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
 var sweepOrphans = args.Any(a => a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase));
@@ -164,6 +166,31 @@ builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection(CorsSe
 // 管理员 policy 授权（Stage 5.3）：[AdminOnly] 只声明 policy，判定与 401/403 形状在 Shared/Authorization。
 builder.Services.AddAdminOnlyAuthorization();
 
+// ===== 可信反向代理头 =====
+// 生产在 Nginx / 云负载均衡之后时 RemoteIpAddress 是代理 IP，按 IP 的限流会退化成
+// 「全站共用一个计数桶」。显式配置可信代理后改用 X-Forwarded-For 取真实客户端 IP。
+// 两项（Proxies / Networks）都为空时不启用，避免信任伪造头导致限流被绕过。
+var forwardedHeadersSection = builder.Configuration.GetSection(TrustedProxyOptions.SectionName);
+builder.Services.Configure<TrustedProxyOptions>(forwardedHeadersSection);
+var trustedProxyOptions = forwardedHeadersSection.Get<TrustedProxyOptions>() ?? new TrustedProxyOptions();
+var useForwardedHeaders = trustedProxyOptions.TryResolve(out var trustedProxies, out var trustedNetworks);
+if (useForwardedHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.None;
+        if (trustedProxyOptions.TrustForwardedFor) options.ForwardedHeaders |= ForwardedHeaders.XForwardedFor;
+        if (trustedProxyOptions.TrustForwardedProto) options.ForwardedHeaders |= ForwardedHeaders.XForwardedProto;
+        if (trustedProxyOptions.TrustForwardedHost) options.ForwardedHeaders |= ForwardedHeaders.XForwardedHost;
+        // 清空框架默认的可信列表（默认含回环），改由配置显式声明，
+        // 避免「默认信任 localhost」在多容器部署里被绕过。
+        options.KnownProxies.Clear();
+        options.KnownIPNetworks.Clear();
+        foreach (var proxy in trustedProxies) options.KnownProxies.Add(proxy);
+        foreach (var network in trustedNetworks) options.KnownIPNetworks.Add(network);
+    });
+}
+
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCasdoor(builder.Configuration.GetSection("Casdoor"))
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
@@ -249,6 +276,10 @@ if (runMigrate || runSeed)
     }
 }
 
+// 可信代理头必须在所有中间件最前面：它改写 RemoteIpAddress，之后的限流/CORS 才拿得到真实客户端 IP。
+if (useForwardedHeaders)
+    app.UseForwardedHeaders();
+
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
 // 默认关闭（Mhop:AutoMigrate 留空时仅 Development 打开）：生产由部署脚本显式执行 --migrate。
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
@@ -287,14 +318,16 @@ app.Use(async (context, next) =>
 {
     const int maxRequests = 300;      // 每窗口内最大请求数
     const int windowSeconds = 60;     // 窗口时长(秒)
-    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var ip = ClientIp.Resolve(context);
     var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    var entry = rateLimitStore.GetOrAdd(ip, _ => (count: 0, windowStart: now));
-    // 窗口滚动：距上次窗口起始超过 windowSeconds 则开新窗口
-    if (now - entry.windowStart >= windowSeconds)
-        entry = (count: 0, windowStart: now);
-    entry.count++;
-    rateLimitStore[ip] = entry;
+    // AddOrUpdate 是单次原子操作；早先的「GetOrAdd → 读 → 改 → 写」四步存在竞态，
+    // 并发下会丢失计数，实际放行量被放大数倍。
+    var entry = rateLimitStore.AddOrUpdate(
+        ip,
+        _ => (count: 1, windowStart: now),
+        (_, current) => now - current.windowStart >= windowSeconds
+            ? (count: 1, windowStart: now)
+            : (count: current.count + 1, windowStart: current.windowStart));
     if (entry.count > maxRequests)
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
