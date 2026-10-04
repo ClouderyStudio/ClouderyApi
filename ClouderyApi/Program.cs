@@ -83,6 +83,10 @@ builder.Services.AddScoped<ScforgeCurrentUser>();
 // 让「作者本人」判定与应用层用例零改动。作用域读取走 Accessor。
 builder.Services.AddScoped<ScforgeApiKeyAccessor>();
 
+// 供 `--migrate` 前滚 SCForge 域的迁移（scforge_* 表）。
+// 必须注册：否则 --migrate 会在解析该服务时抛 InvalidOperationException 并以退出码 1 中止部署。
+builder.Services.AddScoped<ScforgeMaintenanceService>();
+
 // 文件边界：Scforge:Storage:Provider 决定实现。
 //   local = 本机磁盘（插件包私有目录 + public/ 下的图片由 /scforge/uploads 静态托管）
 //   oss   = 阿里云 OSS（图片公共读外链；插件包保持私有，仍由下载接口流式下发）

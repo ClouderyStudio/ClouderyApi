@@ -5,6 +5,8 @@ using ClouderyApi.Modules.Scforge.Domain;
 using ClouderyApi.Modules.Scforge.Infrastructure;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ClouderyApi.Tests;
 
@@ -166,5 +168,41 @@ public sealed class ScforgeApiKeyDomainTests
         // 签发方（Application）与校验方（Infrastructure）必须认同一个前缀，否则发出去的 Key 永远校验不过。
         Assert.Equal("scf_", ScforgeApiKeyScopes.TokenPrefix);
         Assert.Equal(ScforgeApiKeyScopes.TokenPrefix, ScforgeApiKeyMiddleware.TokenPrefix);
+    }
+
+    /* ---------------- 中间件：查库失败必须降级为匿名 ---------------- */
+
+    [Fact]
+    public async Task Middleware_db_failure_degrades_to_anonymous_instead_of_throwing()
+    {
+        // 回归测试：scforge_api_keys 表不存在时，EF 在碰 DbSet 时抛异常。
+        // 该中间件在管道早期且覆盖所有端点，一旦让它把异常抛出去，
+        // 任意伪造的 Authorization 头就能把全站公开接口打成 500（可匿名触发的放大故障）。
+        // 正确行为：记警告、以匿名身份继续，由端点按既有约定返回 401。
+        var reachedNext = false;
+        var middleware = new ScforgeApiKeyMiddleware(
+            (HttpContext _) => { reachedNext = true; return Task.CompletedTask; });
+
+        var context = new DefaultHttpContext();
+        // 长度 >= 20 才会走到查库分支（更短的令牌被中间件直接判为无效，省掉一次查库）。
+        context.Request.Headers.Authorization = "Bearer " + ScforgeApiKeyScopes.TokenPrefix + new string('x', 40);
+
+        await middleware.InvokeAsync(context, new ThrowingScforgeDbContext(), NullLogger<ScforgeApiKeyMiddleware>.Instance);
+
+        Assert.True(reachedNext, "请求必须继续走到下一个中间件，而不是因异常变成 500");
+        Assert.False(context.User.Identity?.IsAuthenticated ?? false, "查库失败必须降级为匿名（fail-closed）");
+    }
+
+    /// <summary>模拟"表未迁移"：任何触碰 DbSet 的操作都抛，贴近 EF 真实行为。</summary>
+    private sealed class ThrowingScforgeDbContext : IScforgeDbContext
+    {
+        public DbSet<ScforgeApiKey> ScforgeApiKeys => throw new InvalidOperationException("Table 'api.scforge_api_keys' doesn't exist");
+        public DbSet<ScforgePlugin> ScforgePlugins => throw new NotSupportedException();
+        public DbSet<ScforgeVersion> ScforgeVersions => throw new NotSupportedException();
+        public DbSet<ScforgeComment> ScforgeComments => throw new NotSupportedException();
+        public DbSet<ScforgeVote> ScforgeVotes => throw new NotSupportedException();
+        public DbSet<ScforgeAdmin> ScforgeAdmins => throw new NotSupportedException();
+        public DbSet<ScforgeGameVersion> ScforgeGameVersions => throw new NotSupportedException();
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }
