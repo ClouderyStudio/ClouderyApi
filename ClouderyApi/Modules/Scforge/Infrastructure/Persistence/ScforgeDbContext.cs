@@ -21,6 +21,7 @@ public class ScforgeDbContext(DbContextOptions<ScforgeDbContext> options) : DbCo
     public DbSet<ScforgeVote> ScforgeVotes { get; set; } = null!;
     public DbSet<ScforgeAdmin> ScforgeAdmins { get; set; } = null!;
     public DbSet<ScforgeGameVersion> ScforgeGameVersions { get; set; } = null!;
+    public DbSet<ScforgeApiKey> ScforgeApiKeys { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -98,6 +99,23 @@ public class ScforgeDbContext(DbContextOptions<ScforgeDbContext> options) : DbCo
             // 一人对同一目标只有一票：重复投票落在更新上，而不是插入第二行。
             entity.HasIndex(e => new { e.UserId, e.TargetType, e.TargetId }).IsUnique();
             entity.HasIndex(e => new { e.TargetType, e.TargetId });
+        });
+
+        modelBuilder.Entity<ScforgeApiKey>(entity =>
+        {
+            entity.Property(e => e.Prefix).IsRequired();
+            entity.Property(e => e.KeyHash).IsRequired();
+            entity.Property(e => e.UserName).IsRequired();
+            entity.Property(e => e.Name).IsRequired();
+
+            // 鉴权热路径：每次带 Key 的请求都按哈希查一行，必须唯一且覆盖索引。
+            entity.HasIndex(e => e.KeyHash).IsUnique();
+
+            // 「我的 Key」列表按归属人 + 创建时间倒序。
+            entity.HasIndex(e => new { e.UserId, e.CreatedAt });
+
+            // 后台巡检：按失效时间筛出可清理的历史记录。
+            entity.HasIndex(e => e.RevokedAt);
         });
     }
 }

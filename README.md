@@ -473,6 +473,52 @@ public/images/   图片：唯一被静态托管的部分，对应 /scforge/uploa
 | `Scforge:Storage:Oss:PublicRead` | 图片上传后设为公共读，默认 `true`（插件包始终私有） |
 | `Scforge:Storage:Oss:Prefix` | 对象键前缀，默认 `scforge`，用于与同一 Bucket 内其它业务隔离 |
 
+### API Key（命令行 / CI 发布）
+
+给脚本用的机器凭据：带 `Authorization: Bearer scf_…` 调用写接口，就能代替作者发布插件与版本，
+不必在 CI 里保存 Cookie。**与网页登录共用同一套作者身份与审核流程** —— Key 发布的作品同样进待审核。
+
+```bash
+# 签发（登录态下，Cookie）
+curl -X POST https://api.cldery.com/scforge/api-keys \
+  -H 'Content-Type: application/json' -b "$COOKIE" \
+  -d '{"name":"发版机器人","scopes":["read","publish"]}'
+
+# 用它发版
+curl -X POST https://api.cldery.com/scforge/plugins \
+  -H 'Authorization: Bearer scf_XXXX...' \
+  -F package=@和平区域插件.dll -F kind=plugin -F name=和平区域插件 \
+  -F slug=hpqy -F summary="区域内禁战" -F category=protection \
+  -F gameVersion=x26.07.01 -F version=1.0.0 -F channel=release -F changelog="首版"
+```
+
+| 端点 | 说明 |
+| --- | --- |
+| `GET /scforge/api-keys/scopes` | 可授予的作用域清单（含中文名与说明） |
+| `GET /scforge/api-keys` | 我的 Key 列表 |
+| `POST /scforge/api-keys` | 签发（**响应里的 `token` 只出现这一次**） |
+| `POST /scforge/api-keys/{id}/revoke` | 吊销自己的 |
+| `POST /scforge/api-keys/{id}/rotate` | 轮换：吊销旧的 + 发一把同权限的 |
+| `GET /scforge/admin/api-keys` | 全站列表（仅超管） |
+| `POST /scforge/admin/api-keys` | 为指定用户签发（仅超管，**可含 `manage`**） |
+
+**作用域**：`read` 读自己的列表 / `publish` 发布与追加版本 / `manage` 编辑、删除、重提审核。
+自助申请只能拿到 `read` + `publish`；`manage` 必须由超管在后台签发。
+作用域只约束机器凭据，**网页后台操作不受影响**。
+
+**安全约定**：
+
+- 库里**只存令牌哈希**（SHA-256），明文只在创建响应里出现一次，之后任何接口（含超管）都取不回来。
+  令牌形如 `scf_<base64url>`，前缀便于在日志与流量里识别。
+- 列表只显示前缀与掩码（`scf_a1b2…****`），够认出"哪一把"但反推不出令牌。
+- 吊销是软删除（写 `RevokedAt` + 原因），保留行便于审计。
+- **Cookie 会话优先**：已登录时忽略 Bearer，不会被 Key 覆盖真实身份。
+- 校验失败**不直接拒绝**，由各写端点按既有约定返回 `401 {"success":false,"message":"请先登录"}`，
+  对外错误形状不变。作用域不足返回 `403`，脚本据此能区分"密钥失效"和"权限不够"。
+
+> 迁移：`ScforgeApiKeys`（`Migrations/Scforge`）新增 `scforge_api_keys` 表。
+> 迁移 ID 沿用全局唯一约定（四个域共用 `__EFMigrationsHistory`）。
+
 > 部署 SCForge 前端时需把其来源加入 `Cors:AllowedOrigins`：非开发环境的 CSRF 中间件按同一份白名单校验写请求的 `Origin`。
 
 > 把 `Scforge:Storage:Provider` 改成 `oss` 并填好 `Scforge:Storage:Oss` 的四个必填项即可切到 OSS；

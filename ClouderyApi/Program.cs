@@ -79,6 +79,10 @@ builder.Services.AddScoped<IScforgeDbContext>(sp => sp.GetRequiredService<Scforg
 // 身份直接读 Casdoor Cookie 会话的 Claims（不查库、不签发第二套令牌）。
 builder.Services.AddScoped<ScforgeCurrentUser>();
 
+// API Key 通道：把 Authorization: Bearer scf_… 换算成同形状的 Claims，
+// 让「作者本人」判定与应用层用例零改动。作用域读取走 Accessor。
+builder.Services.AddScoped<ScforgeApiKeyAccessor>();
+
 // 文件边界：Scforge:Storage:Provider 决定实现。
 //   local = 本机磁盘（插件包私有目录 + public/ 下的图片由 /scforge/uploads 静态托管）
 //   oss   = 阿里云 OSS（图片公共读外链；插件包保持私有，仍由下载接口流式下发）
@@ -107,6 +111,7 @@ builder.Services.AddScoped<ScforgeVoteAppService>();
 builder.Services.AddScoped<ScforgeAdminAccessor>();
 builder.Services.AddScoped<ScforgeAdminAppService>();
 builder.Services.AddScoped<ScforgeGameVersionAppService>();
+builder.Services.AddScoped<ScforgeApiKeyAppService>();
 
 // 跨模块用户目录（Identity 实现）：SCForge 指定管理员时按用户名/邮箱找人。
 builder.Services.AddScoped<IUserDirectory, ClouderyApi.Modules.Identity.Application.UserDirectory>();
@@ -465,6 +470,11 @@ app.Logger.LogInformation(
     scforgePublicRoot);
 
 app.UseAuthentication();
+
+// API Key 认证通道。必须紧跟 UseAuthentication（要读 Cookie 解析结果以确保"会话优先"），
+// 且早于控制器：校验通过后写入 HttpContext.User，作者判定与权限作用域随即生效。
+// 校验失败不拒绝，交由各写端点按既有约定返回 401 中文错误体，保证对外错误形状不变。
+app.UseMiddleware<ScforgeApiKeyMiddleware>();
 
 app.UseAuthorization();
 

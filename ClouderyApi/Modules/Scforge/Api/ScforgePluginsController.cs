@@ -1,5 +1,6 @@
 using ClouderyApi.Modules.Scforge.Api.Contracts;
 using ClouderyApi.Modules.Scforge.Application;
+using ClouderyApi.Modules.Scforge.Domain;
 using ClouderyApi.Modules.Scforge.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,6 +18,7 @@ public sealed class ScforgePluginsController(
     ScforgePluginAppService plugins,
     ScforgeVoteAppService votes,
     ScforgeAdminAccessor adminAccessor,
+    ScforgeApiKeyAccessor apiKeys,
     ScforgeCurrentUser current) : ScforgeControllerBase
 {
     /// <summary>分页搜索：q / category / tag / gameVersion / sort / page / pageSize。</summary>
@@ -69,6 +71,7 @@ public sealed class ScforgePluginsController(
     public Task<IActionResult> Mine(CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            apiKeys.Require(ScforgeApiKeyScopes.Read);
             var items = await plugins.MineAsync(ToActor(current), cancellationToken);
             return Ok(new { items });
         });
@@ -102,6 +105,8 @@ public sealed class ScforgePluginsController(
     public Task<IActionResult> Create([FromForm] ScforgePluginCreateForm form, CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            // API Key 通道要求 publish 作用域；Cookie 会话不受此限（网页后台照常发布）。
+            apiKeys.Require(ScforgeApiKeyScopes.Publish);
             var plugin = await plugins.CreateAsync(form, ToActor(current), cancellationToken);
             return Ok(new { success = true, plugin });
         });
@@ -116,6 +121,8 @@ public sealed class ScforgePluginsController(
         CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            // 与创建同属"发布"：上传新版本会进入待审核。
+            apiKeys.Require(ScforgeApiKeyScopes.Publish);
             var actor = ToActor(current);
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
             var plugin = await plugins.UpdateAsync(id, form, actor, admin, cancellationToken);
@@ -132,6 +139,7 @@ public sealed class ScforgePluginsController(
         CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            apiKeys.Require(ScforgeApiKeyScopes.Publish);
             var version = await plugins.AddVersionAsync(id, form, ToActor(current), cancellationToken);
             return Ok(new { success = true, version });
         });
@@ -141,6 +149,7 @@ public sealed class ScforgePluginsController(
     public Task<IActionResult> Resubmit(Guid id, CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            apiKeys.Require(ScforgeApiKeyScopes.Manage);
             var actor = ToActor(current);
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
             var plugin = await plugins.ResubmitAsync(id, actor, admin, cancellationToken);
@@ -152,6 +161,7 @@ public sealed class ScforgePluginsController(
     public Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
+            apiKeys.Require(ScforgeApiKeyScopes.Manage);
             var actor = ToActor(current);
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
             await plugins.DeleteAsync(id, actor, admin, cancellationToken);

@@ -65,6 +65,7 @@ GET /misc/LongLink/jump/{decodedOriginLink}
 GET /sc/Server/get/{path}
 GET /sc/Server/{path}
 GET /scforge/admin/admins
+GET /scforge/admin/api-keys
 GET /scforge/admin/game-versions
 GET /scforge/admin/me
 GET /scforge/admin/plugins
@@ -72,6 +73,8 @@ GET /scforge/admin/review/plugins
 GET /scforge/admin/review/versions
 GET /scforge/admin/summary
 GET /scforge/admin/users
+GET /scforge/api-keys
+GET /scforge/api-keys/scopes
 GET /scforge/game-versions
 GET /scforge/plugins
 GET /scforge/plugins/featured
@@ -137,9 +140,15 @@ POST /mhop/upload/avatar
 POST /mhop/upload/image
 POST /sc/Server/{path}
 POST /scforge/admin/admins
+POST /scforge/admin/api-keys
+POST /scforge/admin/api-keys/{id}/revoke
+POST /scforge/admin/api-keys/{id}/rotate
 POST /scforge/admin/game-versions
 POST /scforge/admin/plugins/{id}/review
 POST /scforge/admin/versions/{id}/review
+POST /scforge/api-keys
+POST /scforge/api-keys/{id}/revoke
+POST /scforge/api-keys/{id}/rotate
 POST /scforge/plugins
 POST /scforge/plugins/{id}/resubmit
 POST /scforge/plugins/{id}/versions
