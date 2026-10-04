@@ -5,6 +5,11 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <NuGetAudit>false</NuGetAudit>
+        <!-- 本项目属于云术工作室（Cloudery Studio）旗下产品，程序集元数据会进入 exe/dll 属性页 -->
+        <Company>云术工作室 (Cloudery Studio)</Company>
+        <Product>ClouderyApi</Product>
+        <Authors>云术工作室 (Cloudery Studio)</Authors>
+        <Copyright>Copyright 2023-2026 Cloudery Studio, All rights reserved.</Copyright>
     </PropertyGroup>
 
     <ItemGroup>

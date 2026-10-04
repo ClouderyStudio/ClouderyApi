@@ -369,6 +369,10 @@ appsettings.json
 ClouderyApi/uploads/
 uploads/
 
+# SCForge 上传目录（插件包 / 图片，运行时生成）
+ClouderyApi/scforge-uploads/
+scforge-uploads/
+
 # 本地调研 / 临时产物（不属于源码）
 undefined/
 commit-msg.txt

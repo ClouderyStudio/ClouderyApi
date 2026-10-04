@@ -16,6 +16,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | 申请 | `/zhuxs/applications` | 入服申请审核（是否通过、申请时间、FAQ 问答） |
 | 周目 | `/zhuxs/terms` | 周目信息（名称、起止时间、版本、模组数、人数、模组文件） |
 | 服务器 | `/sc/server` | SurvivalCraft 服务器接口（转发 / 查询） |
+| SCForge 资源平台 | `/scforge` | 生存战争插件、模组资源目录：浏览 / 搜索 / 详情 / 版本下载、发布资源与追加版本、评论与回复、资源与评论赞踩（写操作需 Casdoor 会话） |
 | 长链 | `/misc/longlink` | 将普通链接编码为 IPv6.arpa 长链，解码并安全跳转（仅允许 http/https） |
 | MHOP 公共 | `/mhop` | 健康检查、援助热线、在线人数心跳（匿名） |
 | MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料与手机号绑定（登录后统一签发 **JWT Bearer**） |
@@ -29,7 +30,7 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 
 - **ASP.NET Core**（net10.0），控制器 `[ApiController]` 风格 REST API
 - **Entity Framework Core**，使用 **MySQL** 驱动（`MySql.EntityFrameworkCore`）
-- 四个 `DbContext`：`ClouderyContext`（云术域：成员 / 试卷 / 成绩，含 JSON 列转换与 `ExamResults` 唯一索引）、`ZhuxsContext`（竹像素域：白名单 / 条款 / 申请，独立迁移历史表）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）
+- 五个 `DbContext`：`ClouderyContext`（云术域：成员 / 试卷 / 成绩，含 JSON 列转换与 `ExamResults` 唯一索引）、`ZhuxsContext`（竹像素域：白名单 / 条款 / 申请，独立迁移历史表）、`IdentityDbContext`（身份域，本地登录用户 `Users` 表）、`MhopDbContext`（MHOP 域，表名统一加 `mhop_` 前缀以隔离，含点赞唯一索引与级联删除）、`ScforgeDbContext`（SCForge 资源平台域，表名统一加 `scforge_` 前缀，含 slug 唯一索引与投票去重唯一索引）
 - **Casdoor** OAuth2 认证（`Casdoor.AspNetCore` + `Casdoor.Client`），Cookie 会话，会话有效期 7 天且支持滚动续期
 - **MHOP 认证**：手写 HS256 JWT（`Authorization: Bearer`）+ PBKDF2-SHA256 密码哈希，兼容原有协议；并提供 **Casdoor 统一身份认证（OAuth2 授权码 / OIDC）** 登录，成功后同样签发 MHOP JWT
 - **共享大模型客户端**：`Shared/Ai` 提供 OpenAI 兼容 `/chat/completions` 的 `ILlmClient` 与危机词 / 热线前缀 `CrisisSupport`，供 MHOP 与量表结果解读共用；配置见根级 `Llm`
@@ -64,7 +65,8 @@ ClouderyApi/
 │   │   ├── Domain/                # 聚合与领域规则（Post / Reply / Bottle / User、量表计分、内容策略、Events/）
 │   │   └── Infrastructure/        # AI、JWT、密码哈希、邮件验证码、对象存储、在线人数、Seeder / 迁移维护 / 孤儿清理、Persistence/
 │   ├── Link/                      # 长链（LongLinkController）
-│   └── SurvivalCraft/             # SurvivalCraft 服务器接口（ServerController）
+│   ├── SurvivalCraft/             # SurvivalCraft 服务器接口（ServerController）
+│   └── Scforge/                   # SCForge 资源平台：插件 / 模组 / 版本 / 评论 / 投票
 ├── Shared/                        # 跨模块共享内核
 │   ├── Ai/                        # ILlmClient / LlmClient / LlmOptions / CrisisSupport
 │   ├── Authorization/             # AdminOnlyAttribute + AdminOnlyAuthorization（基于 policy 的管理员鉴权）
@@ -73,7 +75,7 @@ ClouderyApi/
 │   ├── Filters/                   # IpRateLimitAttribute（按 IP + 路径限流）
 │   ├── Json/                      # MhopJson（snake_case + UTC）
 │   └── Options/                   # AdminOptions / CasdoorSettings / CorsSettings / SckeyOptions
-├── Migrations/                    # 各 Context 独立迁移目录：Cloudery/、Zhuxs/、Identity/、Mhop/
+├── Migrations/                    # 各 Context 独立迁移目录：Cloudery/、Zhuxs/、Identity/、Mhop/、Scforge/
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
 
@@ -124,7 +126,7 @@ OpenAPI 描述文档（开发环境）：`http://localhost:5171/openapi/v1.json`
 
 ### 数据库迁移
 
-四个 `DbContext` 各自维护迁移：`IdentityDbContext` 在 `Migrations/Identity/`，`ClouderyContext` 在 `Migrations/Cloudery/`（沿用共享的 `__EFMigrationsHistory`，避免重跑既有迁移），`ZhuxsContext` 在 `Migrations/Zhuxs/`（独立历史表 `__EFMigrationsHistory_Zhuxs`），`MhopDbContext` 在 `Migrations/Mhop/`。生成并应用迁移：
+五个 `DbContext` 各自维护迁移：`IdentityDbContext` 在 `Migrations/Identity/`，`ClouderyContext` 在 `Migrations/Cloudery/`（沿用共享的 `__EFMigrationsHistory`，避免重跑既有迁移），`ZhuxsContext` 在 `Migrations/Zhuxs/`（独立历史表 `__EFMigrationsHistory_Zhuxs`），`MhopDbContext` 在 `Migrations/Mhop/`，`ScforgeDbContext` 在 `Migrations/Scforge/`。生成并应用迁移：
 
 ```bash
 dotnet ef migrations add <Name> --context IdentityDbContext --output-dir Migrations/Identity
@@ -138,6 +140,9 @@ dotnet ef database update --context ZhuxsContext
 
 dotnet ef migrations add <Name> --context MhopDbContext --output-dir Migrations/Mhop
 dotnet ef database update --context MhopDbContext
+
+dotnet ef migrations add <Name> --context ScforgeDbContext --output-dir Migrations/Scforge
+dotnet ef database update --context ScforgeDbContext
 ```
 
 > 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境保持 `false`，改用 CLI `dotnet ClouderyApi.dll --migrate [--seed]`（`.github/workflows/deploy.yml` 在重启容器前自动执行，失败即中止部署）。
@@ -256,6 +261,239 @@ dotnet ef database update --context MhopDbContext
 | `Migrations/Cloudery/20261001091128_AddExamResults.cs` | 仅新增 `ExamResults` 表与两个索引，兼容既有 schema |
 
 > 部署前执行 `dotnet ef database update --context ClouderyContext`。`ClouderyContext` / `ZhuxsContext` **不会**随启动自动迁移（只有 `MhopDbContext` 会自动迁移）。
+
+## SCForge 插件、模组资源平台（`/scforge`）
+
+> **SCForge 是云术工作室（Cloudery Studio）旗下项目** —— 品牌口径与官网一致：Copyright 2023-<year> Cloudery Studio, All rights reserved.
+
+### 两类资源：插件 / 模组
+
+平台上有两类资源，分属两块独立的板（`/plugins` 与 `/mods`），由 `ScforgePlugin.Kind` 区分：
+
+| kind | 包格式 | 生效范围 |
+| --- | --- | --- |
+| `plugin` | `.dll` | 只在服务端加载 |
+| `mod` | `.netmod` | **会随服务器下发到客户端**（同样可以用它写插件逻辑） |
+
+- 类型在创建时确定（`POST /scforge/plugins` 的 `kind`），**创建后不可更改**；
+  追加版本、替换版本文件时都会校验包扩展名与资源类型一致，不一致返回 400 并说明该传什么。
+- 浏览接口支持 `?kind=plugin|mod` 过滤（非法值忽略，避免旧链接报错），facets 里带两块的计数。
+- 平台因此不再只服务于服务端，对外文案统一为**生存战争插件、模组资源平台**。
+
+### 游戏版本（超管可维护）
+
+生存战争用日期式编号（`x26.07.01` / `x26.06.19` / `x26.05.23`），每两三周就往前推一格 ——
+写死在代码里意味着每次都要改代码发版，所以放进 `scforge_game_versions` 表：
+
+| 端点 | 权限 | 说明 |
+| --- | --- | --- |
+| GET `/scforge/game-versions` | 匿名 | 受支持版本（新的在前），发布页与筛选面板的取值来源 |
+| GET `/scforge/admin/game-versions` | 管理员 | 后台列表，附带被多少资源引用 |
+| POST `/scforge/admin/game-versions` | **超管** | 添加版本（可标 `beta`=内测）；格式必须是 `x26.07.01` 这类，重复返回 409 |
+| DELETE `/scforge/admin/game-versions/{id}` | **超管** | 删除版本；仍被资源引用时拒绝 |
+
+- 插件与版本的「兼容游戏版本」校验**以这张表为准**，新加的版本立刻可选，不需要发版。
+- 初始三个版本由迁移 `ScforgeGameVersions` 写入；`ScforgeCatalog.DefaultGameVersions` 只是初始数据与离线回退。
+- 前端在后台提供了「游戏版本」页（仅超管）：添加 / 标内测 / 删除，并显示每个版本的引用数。
+
+SCForge 是生存战争（SurvivalCraft）插件、模组资源平台，动线对齐 Modrinth / CurseForge 的核心部分：
+浏览与搜索插件、查看详情与版本、下载插件包、发布插件与追加版本、评论（含回复）以及插件 / 评论的赞踩。
+内容采用**先审后发**，并配有管理员后台面板与两级角色（超级管理员 / 管理员）。
+配套前端仓库为 **scforge-frontend**（Vue 3 + Vite，复用云术官网的 MD3 组件库），本模块提供其全部接口。
+
+### 认证
+
+沿用 Cloudery 主站的 **Casdoor Cookie 会话**（`/identity/auth/*`），不签发第二套令牌。
+写接口不挂 `[Authorize]`，而是在控制器内判断登录态，因此未登录返回中文 401 裸对象
+`{"success":false,"message":"请先登录"}`（与 Cloudery / Zhuxs 一致，而不是框架默认的 401 空响应体）。
+### 审核流程（先审后发）
+
+插件与版本各自持有状态 `ScforgeContentStatus`：`pending` / `published` / `rejected`。
+
+| 动作 | 结果 |
+| --- | --- |
+| 发布新插件 | 插件与首个版本都进入 `pending` |
+| 追加版本 | 该版本 `pending`；已通过的旧版本不受影响，插件本身仍在架 |
+| 作者编辑插件资料 | 插件回到 `pending`（审核通过前公众看不到） |
+| 作者修改版本元数据 / 替换版本文件 | 该版本回到 `pending` |
+| 删除版本 | 直接生效，无需审核（最后一个版本不允许删） |
+| 审核通过 / 驳回 | 由有 `review` 权限的管理员操作；**驳回必须给出理由**，理由会展示给作者 |
+| 作者「重新提交审核」 | 把被驳回的插件 / 版本重新置为 `pending` |
+
+**公开可见的判定**：插件 `published` **且至少有一个版本 `published`**。
+作者本人与管理员可以预览未通过的内容（管理员需要它来做审核）；
+其余调用者对未通过内容一律得到 404，不泄露「这里有个待审插件」。
+
+### 角色与权限
+
+后台身份存在 `scforge_admins` 表里，按 **Identity 域的用户 Id** 关联：
+
+| 角色 | 能力 |
+| --- | --- |
+| 超级管理员 `super` | 拥有全部权限，并且是**唯一**能指定 / 调整 / 撤销管理员的人 |
+| 管理员 `admin` | 由超管指定，只拥有被勾选的权限码 |
+
+可授予的权限码（`ScforgePermissionSet`）：
+
+| 权限码 | 界面名 | 说明 |
+| --- | --- | --- |
+| `review` | 审核权限 | 处理待审核的插件提交与版本文件，可通过或驳回并附理由 |
+| `content` | 内容管理 | 编辑任意插件的资料与版本、删除插件（不参与审核流程） |
+
+- **引导**：`Authorization:Admins`（CasdoorId 白名单）里的账号即使没有库记录也按**超级管理员**处理，
+  因此第一个超管不必手工插库就能登录后台授权他人；白名单**优先于**库记录，避免一条误建的管理员记录把引导超管降级。
+- **自我保护**：超管不能撤销自己的超管身份，系统也不允许移除最后一位超管。
+- **发布权只属于作者**：改资料、发新版本、删除都由作者身份把关，管理员不在此生效 ——
+  用管理员账号替别人发布会把内容记到原作者名下（冒名发布）；管理员的内容管理走独立的后台接口。
+- 接口用 `canManage`（是否作者本人）、`canReview`、`canManageContent` 三个字段把这件事告诉前端；
+  `GET /scforge/admin/me` 返回当前用户的后台身份与权限目录（非管理员返回 `isAdmin:false`，不报错）。
+
+### 路由
+
+| 方法 | 路由 | 认证 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/scforge/game-versions` | 匿名 | 受支持的游戏版本（新的在前），发布与筛选的取值来源 |
+| GET | `/scforge/plugins` | 匿名 | 分页搜索：`q` / **`kind`** / `category` / `tag` / `gameVersion` / `sort` / `page` / `pageSize`，同时返回 facets（含 kinds 计数） |
+| GET | `/scforge/plugins/featured` | 匿名 | 首页精选（可带 `kind`）：显式 `Featured` 优先，不足按净评分补齐 |
+| GET | `/scforge/plugins/recent` | 匿名 | 最近更新（可带 `kind`） |
+| GET | `/scforge/plugins/{idOrSlug}` | 匿名 | 详情（GUID 或 slug），带 `canManage` / `canReview` / `canManageContent`；未通过审核对非作者与管理员返回 404 |
+| GET | `/scforge/plugins/mine` | 登录 | 我提交的插件（含待审核与已驳回） |
+| GET | `/scforge/plugins/mine/summary` | 登录 | 我的插件统计卡（含三种审核状态的数量） |
+| POST | `/scforge/plugins` | 登录 | 发布新资源（multipart，`kind`=`plugin`/`mod`）；提交后进入待审核 |
+| PUT | `/scforge/plugins/{id}` | **仅作者**（或 `content` 权限） | 编辑插件资料（multipart，可替换图标 / 截图）；编辑后回到待审核 |
+| POST | `/scforge/plugins/{id}/resubmit` | **仅作者** | 被驳回后重新提交审核 |
+| DELETE | `/scforge/plugins/{id}` | **仅作者**（或 `content` 权限） | 删除插件及其版本、评论与投票 |
+| POST | `/scforge/plugins/{id}/versions` | **仅作者** | 追加版本（multipart）；新版本进入待审核 |
+| GET / PUT / DELETE | `/scforge/plugins/{id}/vote[/up\|/down]` | 登录 | 插件赞踩（幂等：重复点同一方向不重复计数） |
+| GET | `/scforge/versions/{id}/download` | 匿名 | 下载插件包（累加下载计数；未过审版本仅作者与管理员可取） |
+| PATCH | `/scforge/versions/{id}` | **仅作者** | 编辑版本元数据（渠道 / 日志 / 兼容版本 / 依赖）；回到待审核 |
+| POST | `/scforge/versions/{id}/file` | **仅作者** | 替换插件包文件（multipart）；回到待审核 |
+| POST | `/scforge/versions/{id}/resubmit` | **仅作者** | 被驳回的版本重新提交审核 |
+| DELETE | `/scforge/versions/{id}` | **仅作者** | 删除版本（最后一个版本不允许删） |
+| GET / POST | `/scforge/plugins/{pluginId}/comments` | 匿名读 / 登录写 | 评论树 / 发表评论与回复 |
+| PATCH | `/scforge/comments/{id}` | 仅作者 | 编辑评论 |
+| DELETE | `/scforge/comments/{id}` | 作者 / 管理员 | 删除评论（删除会连带删除其全部回复）；管理员可删他人评论用于巡查 |
+| PUT / DELETE | `/scforge/comments/{id}/vote[/up\|/down]` | 登录 | 评论赞踩 |
+
+后台面板（`/scforge/admin`）：
+
+| 方法 | 路由 | 所需权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/scforge/admin/me` | 登录 | 当前用户的后台身份与权限目录（非管理员 `isAdmin:false`） |
+| GET | `/scforge/admin/summary` | 管理员 | 待审核 / 已发布 / 已驳回数量、累计下载、管理员数 |
+| GET | `/scforge/admin/review/plugins` | `review` | 插件审核队列（默认 `pending`，最老的排前面） |
+| GET | `/scforge/admin/review/versions` | `review` | 版本审核队列 |
+| POST | `/scforge/admin/plugins/{id}/review` | `review` | 通过 / 驳回插件（驳回必须附理由） |
+| POST | `/scforge/admin/versions/{id}/review` | `review` | 通过 / 驳回版本 |
+| GET | `/scforge/admin/plugins` | 管理员 | 全量插件（含待审 / 已驳回，支持 `q` 与 `status`） |
+| PUT | `/scforge/admin/plugins/{id}` | `content` | 内容管理：编辑任意插件资料 |
+| DELETE | `/scforge/admin/plugins/{id}` | `content` | 内容管理：删除插件 |
+| GET | `/scforge/admin/users` | 超管 | 按用户名 / 邮箱搜索可指定的用户 |
+| GET / POST | `/scforge/admin/admins` | 超管 | 管理员列表 / 指定或调整管理员 |
+| DELETE | `/scforge/admin/admins/{id}` | 超管 | 撤销管理员 |
+
+响应一律为**裸对象**（`{ success, message, ... }`），字段名 camelCase，时间 UTC 带 `Z`；
+业务异常输出 `{ success:false, message }`，状态码 400 / 401 / 403 / 404 / 409。
+
+### 数据表与迁移
+
+```
+scforge_plugins   插件（slug 唯一索引；TagsText / GameVersionsText 为可下推过滤的管线化副本）
+scforge_versions  版本（内容寻址的插件包 StorageKey + SHA-256）
+scforge_comments  评论（ParentId 自引用组成回复树）
+scforge_votes     投票去重表（UserId + TargetType + TargetId 唯一索引）
+scforge_admins    管理员（UserId 唯一 + 角色 + 权限码 JSON）
+scforge_game_versions  受支持的游戏版本（Version 唯一 + 排序权重 + 内测标记，超管可维护）
+```
+
+`ScforgeDbContext` 沿用共享的 `__EFMigrationsHistory`，因此迁移 Id 必须全局唯一。
+与 `ClouderyContext` / `ZhuxsContext` 一样，它**不会**随启动自动迁移，部署前需显式执行
+`dotnet ef database update --context ScforgeDbContext`。
+
+### 上传与文件布局
+
+插件包与图片的存放位置由 `Scforge:Storage:Provider` 决定，两种实现共用同一套白名单、命名与 sha256 口径
+（因此同一个包在两种存储下的 `StorageKey` 完全一致，切换存储不会造成语义漂移）。
+
+**local（默认）** —— 落本机磁盘，`Scforge:UploadDir`（默认 `scforge-uploads`）下分两层：
+
+```
+packages/        插件包：按 sha256 内容寻址，私有目录，只能经 /scforge/versions/{id}/download 获取
+public/images/   图片：唯一被静态托管的部分，对应 /scforge/uploads/images/*
+```
+
+**oss（阿里云 OSS）** —— 对象键带 `Scforge:Storage:Oss:Prefix`（默认 `scforge`）前缀：
+
+```
+{prefix}/packages/{sha256}{ext}     插件包：**私有对象**，不设 ACL
+{prefix}/images/{guid}.webp         图片：公共读，返回 PublicBaseUrl 外链，浏览器直连
+```
+
+- 插件包在 OSS 里刻意保持私有、**不**下发预签名外链：下载入口必须唯一，否则「下载计数」与
+  「未过审版本不可下载」都会被绕过；下载仍由 `/scforge/versions/{id}/download` 流式转发。
+- 内容寻址在 OSS 下用 `DoesObjectExist` 去重；上传前先校验坏包，避免占用远端存储。
+- 图片统一由服务端解码重编码为 WebP（最长边 512），再按 `PublicRead` 设置对象 ACL；
+  Bucket 已公共读或走 CDN 回源时该调用失败只记警告，不影响访问。
+- 外链前缀优先取 `PublicBaseUrl`（CDN / 自定义域名），留空则按 `<bucket>.<endpoint>` 推导。
+
+插件包只接受 `.dll`（插件）与 `.netmod`（模组）—— **生存战争没有 zip 形式的插件或模组**。
+校验按包体魔数而不是只看后缀：`.dll` 必须以 PE 头 `MZ` 开头（把压缩包改成 `.dll` 会被拒绝），
+`.netmod` 若以 zip 魔数 `PK\x03\x04` 开头则按 zip 严格校验、否则视为不透明容器原样接受。
+图片会先用 ImageSharp 解码、缩到最长边 512 并统一重编码为 WebP，只接受 JPG / PNG / WebP / GIF
+（**不接受 SVG**：同源 SVG 可携带脚本，属于存储型 XSS 面）。静态托管带 `X-Content-Type-Options: nosniff`。
+
+### 插件包规范
+
+生存战争只有两种包，**没有 zip 形式的插件或模组**：
+
+| 格式 | 是什么 | 分发范围 |
+| --- | --- | --- |
+| `.dll` | 插件：编译出来的 .NET 程序集 | 只在服务端加载 |
+| `.netmod` | 模组：同样可以写插件逻辑，但**会随服务器下发到客户端** | 服务端 + 客户端 |
+
+- 服务端只做**格式校验**（`.dll` 必须带 PE 头 `MZ`；`.netmod` 本身若是 zip 则必须是完好的 zip），
+  并在包是压缩容器时读取根目录（或唯一一层子目录）的 `manifest.json`，用于补全作者没填的名称与版本号。
+- 包内其余内容既不解析也不执行；没有 `manifest.json` 不会导致上传失败。
+- 前端按扩展名把版本标成「插件」或「模组」，模组会额外提示「会下发到客户端」——
+  这是服主决定是否安装的关键信息。
+
+### 配置
+
+| 配置项 | 说明 |
+| --- | --- |
+| `Scforge:UploadDir` | 上传根目录，相对路径按内容根解析（默认 `scforge-uploads`） |
+| `Scforge:MaxPackageBytes` | 单个插件包上限，默认 67108864（64 MB） |
+| `Scforge:MaxImageBytes` | 单张图片上限，默认 4194304（4 MB） |
+| `Scforge:MaxPageSize` | 列表单页最大条数，默认 60 |
+| `Scforge:Storage:Provider` | `local`（默认）或 `oss`（别名 `aliyun`） |
+| `Scforge:Storage:Oss:Endpoint` | 如 `oss-cn-hangzhou.aliyuncs.com`，可带 `https://` |
+| `Scforge:Storage:Oss:Bucket` | 存储桶名 |
+| `Scforge:Storage:Oss:AccessKeyId` / `AccessKeySecret` | 访问密钥；用 STS 时另填 `SecurityToken` |
+| `Scforge:Storage:Oss:PublicBaseUrl` | 对外访问域名（CDN / 自定义域名）；留空按 Bucket + Endpoint 推导 |
+| `Scforge:Storage:Oss:PublicRead` | 图片上传后设为公共读，默认 `true`（插件包始终私有） |
+| `Scforge:Storage:Oss:Prefix` | 对象键前缀，默认 `scforge`，用于与同一 Bucket 内其它业务隔离 |
+
+> 部署 SCForge 前端时需把其来源加入 `Cors:AllowedOrigins`：非开发环境的 CSRF 中间件按同一份白名单校验写请求的 `Origin`。
+
+> 把 `Scforge:Storage:Provider` 改成 `oss` 并填好 `Scforge:Storage:Oss` 的四个必填项即可切到 OSS；
+> 缺项时启动日志会给出提示，SCForge 的写接口会以明确错误拒绝，不影响其它模块。
+> **已入库的旧 URL 不会自动迁移**：本地相对地址（`/scforge/uploads/...`）在切到 OSS 后不再可访问，
+> 需要时把历史图片重新上传一遍即可（插件包不受影响，它只存 StorageKey，下载接口与存储无关）。
+
+> 首次部署后需要一位超管：把其 CasdoorId 填进 `Authorization:Admins`（引导口子），
+> 之后即可在后台「管理员」页把它换成正式的库记录、并授予其他人 `review` / `content`。
+
+### 相关代码
+
+| 位置 | 说明 |
+| --- | --- |
+| `Modules/Scforge/Domain/` | 聚合（Plugin / Version / Comment / Vote / Admin）、`ScforgeCatalog`、`ScforgeContentStatus`、`ScforgeAdminRoles`、`ScforgePermissionSet`、模块内业务异常 |
+| `Modules/Scforge/Application/` | `ScforgePluginAppService` / `ScforgeCommentAppService` / `ScforgeVoteAppService` / **`ScforgeAdminAppService`**、`ScforgeActor`、`ScforgeAdminContext`、`IScforgeDbContext`、`IScforgeFileStore`、`Mapping/ScforgeMapper.cs` |
+| `Modules/Scforge/Api/` | **四个控制器**（插件 / 版本 / 评论 / 后台）+ `ScforgeControllerBase`（裸对象与业务异常翻译）+ `Contracts/` |
+| `Modules/Scforge/Infrastructure/` | `ScforgeDbContext`(+Factory)、**`Storage/` 下的 `LocalScforgeFileStore` / `OssScforgeFileStore` / `ScforgeFilePolicy` / `ScforgePackageInspector`**、`ScforgeCurrentUser`、`ScforgeAdminAccessor`、`ScforgeOptions`、`ScforgeUploadPaths` |
+| `Shared/Directory/IUserDirectory.cs` + `Modules/Identity/Application/UserDirectory.cs` | 跨模块只读用户目录（后台按用户名 / 邮箱指定管理员） |
+| `Migrations/Scforge/` | `ScforgeInitial`（四张表）、`ScforgeReviewAndAdmins`（审核字段 + `scforge_admins`） |
+| `ClouderyApi.Tests/ScforgeContractTests.cs` | 13 个契约用例：待审不可见 / 审核通过后可见 / 编辑重回审核 / 驳回需理由 / 投票幂等 / 评论与回复 / 下载字节一致性 / review 与 content 权限边界 / 超管才能管管理员 / 图标类型校验 |
 
 ## MHOP 模块（从 Python FastAPI 后端迁移）
 

@@ -3,6 +3,7 @@ using ClouderyApi.Modules.Cloudery.Infrastructure.Persistence;
 using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using ClouderyApi.Modules.Identity.Infrastructure.Persistence;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
+using ClouderyApi.Modules.Scforge.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +37,10 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Mhop__SeedAdminPassword", TestSeedAdminPassword);
         // 测试不触碰对象存储，统一走本地磁盘实现。
         Environment.SetEnvironmentVariable("Mhop__Storage__Provider", "local");
+        // SCForge 的上传目录指向系统临时目录：测试不应往仓库工作树里写插件包与图片。
+        Environment.SetEnvironmentVariable("Scforge__UploadDir", ScforgeUploadRoot);
+        // 集成测试始终走本地存储，不碰真实 OSS。
+        Environment.SetEnvironmentVariable("Scforge__Storage__Provider", "local");
 
         // Casdoor 节在 Program.cs 构建服务阶段（AddCasdoor）就被读取，那时只有 CreateBuilder 的
         // 环境变量源可见；ConfigureAppConfiguration 追加的源要等宿主最终配置才生效，来不及。
@@ -50,6 +55,10 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Casdoor__CallbackPath", "/callback");
     }
 
+    /// <summary>SCForge 上传目录（系统临时目录下的一次性位置）。</summary>
+    public static string ScforgeUploadRoot { get; } =
+        Path.Combine(Path.GetTempPath(), "cloudery-tests-scforge");
+
     public string DatabaseName { get; }
 
     public string ConnectionString { get; }
@@ -62,6 +71,8 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Mhop:Seed", "true");
         builder.UseSetting("Mhop:SeedAdminPassword", TestSeedAdminPassword);
         builder.UseSetting("Mhop:Storage:Provider", "local");
+        builder.UseSetting("Scforge:UploadDir", ScforgeUploadRoot);
+        builder.UseSetting("Scforge:Storage:Provider", "local");
         builder.UseSetting("Casdoor:Endpoint", "https://casdoor.example.com");
         builder.UseSetting("Casdoor:OrganizationName", "test");
         builder.UseSetting("Casdoor:ApplicationName", "test");
@@ -101,5 +112,8 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
 
         var identity = provider.GetRequiredService<IdentityDbContext>();
         await identity.Database.MigrateAsync();
+
+        var scforge = provider.GetRequiredService<ScforgeDbContext>();
+        await scforge.Database.MigrateAsync();
     }
 }

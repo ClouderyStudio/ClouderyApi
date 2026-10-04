@@ -15,6 +15,9 @@ using ClouderyApi.Modules.Mhop.Application.Events;
 using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Modules.Zhuxs.Application;
 using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
+using ClouderyApi.Modules.Scforge.Application;
+using ClouderyApi.Modules.Scforge.Infrastructure;
+using ClouderyApi.Modules.Scforge.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +25,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using System.Collections.Concurrent;
+using ClouderyApi.Shared.Directory;
 using ClouderyApi.Shared.Filters;
 
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
@@ -61,6 +65,51 @@ builder.Services.AddDbContext<ZhuxsContext>(options =>
 // 这里把两个边界接口分别绑定到拆分后的独立上下文。
 builder.Services.AddScoped<IClouderyDbContext>(sp => sp.GetRequiredService<ClouderyContext>());
 builder.Services.AddScoped<IZhuxsDbContext>(sp => sp.GetRequiredService<ZhuxsContext>());
+
+// ===== SCForge 生存战争插件、模组资源平台模块 =====
+// 独立上下文 scforge_* 表；与 Cloudery / Identity / Mhop 共用 __EFMigrationsHistory，
+// 因此迁移 Id 必须全局唯一（ScforgeInitial 为首次迁移）。
+builder.Services.Configure<ScforgeOptions>(builder.Configuration.GetSection(ScforgeOptions.SectionName));
+builder.Services.AddDbContext<ScforgeDbContext>(options =>
+{
+    options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
+});
+builder.Services.AddScoped<IScforgeDbContext>(sp => sp.GetRequiredService<ScforgeDbContext>());
+
+// 身份直接读 Casdoor Cookie 会话的 Claims（不查库、不签发第二套令牌）。
+builder.Services.AddScoped<ScforgeCurrentUser>();
+
+// 文件边界：Scforge:Storage:Provider 决定实现。
+//   local = 本机磁盘（插件包私有目录 + public/ 下的图片由 /scforge/uploads 静态托管）
+//   oss   = 阿里云 OSS（图片公共读外链；插件包保持私有，仍由下载接口流式下发）
+builder.Services.AddSingleton<IScforgeFileStore>(sp =>
+{
+    var fileOptions = sp.GetRequiredService<IOptions<ScforgeOptions>>().Value;
+    var provider = (fileOptions.Storage.Provider ?? "local").Trim();
+    if (provider.Equals("oss", StringComparison.OrdinalIgnoreCase)
+        || provider.Equals("aliyun", StringComparison.OrdinalIgnoreCase))
+    {
+        return new OssScforgeFileStore(fileOptions, sp.GetRequiredService<ILogger<OssScforgeFileStore>>());
+    }
+
+    var contentRoot = sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath;
+    return new LocalScforgeFileStore(
+        fileOptions,
+        ScforgeUploadPaths.ResolveLocalRoot(fileOptions.UploadDir, contentRoot),
+        sp.GetRequiredService<ILogger<LocalScforgeFileStore>>());
+});
+
+builder.Services.AddScoped<ScforgePluginAppService>();
+builder.Services.AddScoped<ScforgeCommentAppService>();
+builder.Services.AddScoped<ScforgeVoteAppService>();
+
+// 后台：管理员权限解析（scforge_admins + 配置白名单引导）与后台用例编排。
+builder.Services.AddScoped<ScforgeAdminAccessor>();
+builder.Services.AddScoped<ScforgeAdminAppService>();
+builder.Services.AddScoped<ScforgeGameVersionAppService>();
+
+// 跨模块用户目录（Identity 实现）：SCForge 指定管理员时按用户名/邮箱找人。
+builder.Services.AddScoped<IUserDirectory, ClouderyApi.Modules.Identity.Application.UserDirectory>();
 
 builder.Services.AddDbContext<IdentityDbContext>(options =>
     options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!));
@@ -235,8 +284,8 @@ builder.Services.AddSwaggerGen(u =>
     u.SwaggerDoc("v1", new OpenApiInfo
     {
         Version = "Ver:1.0.0",
-        Title = "ClouderyApi",
-        Description = "ClouderyApi",
+        Title = "ClouderyApi · 云术工作室",
+        Description = "云术工作室（Cloudery Studio）旗下服务的统一后端。SCForge 生存战争插件、模组资源平台位于 /scforge。",
         Contact = new OpenApiContact
         {
             Name = "JustQiyi",
@@ -388,6 +437,32 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = MhopUploadPaths.RequestPath,
 });
 app.Logger.LogInformation("MHOP 图片存储：{Provider}（本地兼容目录 {Root}）", mhopStorage.Provider, mhopUploadRoot);
+
+// ===== SCForge 本地上传目录的静态托管：/scforge/uploads/* =====
+// 只有 Storage:Provider=local 时图片才落在这里；改用 oss 后图片走外链，这一段自然闲置（保留以便随时切回）。
+// 只托管 public/ 下的图片；插件包在私有目录里，只能经 /scforge/versions/{id}/download 获取，
+// 这样隐藏插件的包不会被静态路径绕过，下载计数也只有一个口径。
+var scforgeFileOptions = app.Services.GetRequiredService<IOptions<ScforgeOptions>>().Value;
+var scforgeUploadRoot = ScforgeUploadPaths.ResolveLocalRoot(scforgeFileOptions.UploadDir, app.Environment.ContentRootPath);
+var scforgePublicRoot = Path.Combine(scforgeUploadRoot, "public");
+Directory.CreateDirectory(Path.Combine(scforgePublicRoot, "images"));
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(scforgePublicRoot),
+    RequestPath = ScforgeUploadPaths.RequestPath,
+    OnPrepareResponse = context =>
+    {
+        // 用户上传的图片：禁止内容嗅探，降低被当成脚本解析的风险。
+        context.Context.Response.Headers.XContentTypeOptions = "nosniff";
+    },
+});
+var scforgeStore = app.Services.GetRequiredService<IScforgeFileStore>();
+app.Logger.LogInformation(
+    "SCForge 存储：{Provider}{Remote}（上传目录 {Root}，公开图片 {Public}）",
+    scforgeStore.Provider,
+    scforgeStore.IsRemote ? "（远端 OSS）" : string.Empty,
+    scforgeUploadRoot,
+    scforgePublicRoot);
 
 app.UseAuthentication();
 
