@@ -20,13 +20,13 @@ public static class ScforgeApiKeyScopes
     /// </summary>
     public const string TokenPrefix = "scf_";
 
-    /// <summary>发布插件与追加版本（<c>POST /scforge/plugins</c>、<c>POST .../versions</c>）。</summary>
+    /// <summary>发布插件与追加版本（<c>POST /scforge/plugins</c>、<c>POST .../versions</c>）；编辑插件资料与替换版本文件同属此档。</summary>
     public const string Publish = "publish";
 
     /// <summary>读取自己的资源列表（<c>GET /scforge/plugins/mine</c> 等）。</summary>
     public const string Read = "read";
 
-    /// <summary>编辑与删除自己的插件、重提审核。</summary>
+    /// <summary>删除自己的插件、重提审核（编辑资料走 <see cref="Publish"/>，因为它同样要过审）。</summary>
     public const string Manage = "manage";
 
     /// <summary>全部可授予作用域（顺序即界面展示顺序）。</summary>
@@ -45,8 +45,10 @@ public static class ScforgeApiKeyScopes
     public static readonly IReadOnlyDictionary<string, string> Descriptions = new Dictionary<string, string>
     {
         [Read] = "查询自己发布的插件与版本列表",
-        [Publish] = "发布新插件、追加新版本（走与网页相同的审核流程）",
-        [Manage] = "编辑与删除自己的插件、把被驳回的提交重新送审",
+        // 注意：编辑插件资料 / 替换版本文件走的是 publish 而非 manage ——
+        // 它们同样会产生"进入待审核"的后果，与发布同源。manage 只留给不产生新内容的两类操作。
+        [Publish] = "发布新插件、编辑插件资料、追加或替换版本（走与网页相同的审核流程）",
+        [Manage] = "删除自己的插件、把被驳回的提交重新送审",
     };
 
     public static bool IsValid(string? code) => All.Contains(code, StringComparer.Ordinal);

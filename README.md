@@ -502,8 +502,9 @@ curl -X POST https://api.cldery.com/scforge/plugins \
 | `GET /scforge/admin/api-keys` | 全站列表（仅超管） |
 | `POST /scforge/admin/api-keys` | 为指定用户签发（仅超管，**可含 `manage`**） |
 
-**作用域**：`read` 读自己的列表 / `publish` 发布与追加版本 / `manage` 编辑、删除、重提审核。
-自助申请只能拿到 `read` + `publish`；`manage` 必须由超管在后台签发。
+**作用域**：`read` 读自己的列表 / `publish` 发布、编辑资料、追加或替换版本 / `manage` 删除与重提审核。
+注意**编辑插件资料走 `publish` 而非 `manage`** —— 它和发布一样会产生"进入待审核"的后果；
+`manage` 只留给不产生新内容的两类操作。自助申请只能拿到 `read` + `publish`；`manage` 必须由超管在后台签发。
 作用域只约束机器凭据，**网页后台操作不受影响**。
 
 **安全约定**：
