@@ -319,7 +319,13 @@ if (runMigrate || runSeed)
     var maintenance = maintenanceScope.ServiceProvider.GetRequiredService<DatabaseMaintenanceService>();
     try
     {
-        if (runMigrate) await maintenance.MigrateAsync();
+        // SCForge 的 scforge_* 表与 MHOP 是两个独立上下文，必须分别前滚；
+        // 漏掉任何一个都会表现为「部署成功但新表不存在」。
+        if (runMigrate)
+        {
+            await maintenance.MigrateAsync();
+            await maintenanceScope.ServiceProvider.GetRequiredService<ScforgeMaintenanceService>().MigrateAsync();
+        }
         if (runSeed) await maintenance.SeedAsync();
         return 0;
     }
