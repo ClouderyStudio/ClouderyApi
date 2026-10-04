@@ -7,7 +7,7 @@
 - **ClouderyApi**：ASP.NET Core Web API（`net10.0`），单一程序集 + xUnit 测试项目，数据库为 **MySQL**（`MySql.EntityFrameworkCore`）。
 - 服务四个站点族：云术 Cloudery（成员 / 内部试卷 / 云端测评结果 / 结果解读）、竹像素 Zhuxs（白名单 / 周目 / 申请）、MHOP 心理平台（论坛 / 漂流瓶 / 量表 / 后台）、以及 SurvivalCraft 与长链等工具接口。
 - 认证并存：Casdoor Cookie 会话（Cloudery / Identity）、MHOP 自有 HS256 JWT、SurvivalCraft 静态 Token、基于 policy 的 `AdminOnly`。
-- 代码组织：**模块化单体**，`ClouderyApi/Modules/<Ctx>/{Domain,Application,Api,Infrastructure}` + 共享内核 `ClouderyApi/Shared/`；四个 `DbContext` 分域（`ClouderyContext` / `ZhuxsContext` / `IdentityDbContext` / `MhopDbContext`）。详见 README 的「目录结构」。
+- 代码组织：**模块化单体**，`ClouderyApi/Modules/<Ctx>/{Domain,Application,Api,Infrastructure}` + 共享内核 `ClouderyApi/Shared/`；**五个** `DbContext` 分域（`ClouderyContext` / `ZhuxsContext` / `IdentityDbContext` / `MhopDbContext` / `ScforgeDbContext`）。详见 README 的「目录结构」。
 
 ## 2. 常用命令
 
@@ -25,6 +25,7 @@ dotnet ef migrations add <Name> --context ClouderyContext  --output-dir Migratio
 dotnet ef migrations add <Name> --context ZhuxsContext     --output-dir Migrations/Zhuxs
 dotnet ef migrations add <Name> --context IdentityDbContext --output-dir Migrations/Identity
 dotnet ef migrations add <Name> --context MhopDbContext    --output-dir Migrations/Mhop
+dotnet ef migrations add <Name> --context ScforgeDbContext --output-dir Migrations/Scforge
 
 # 运行时开关（执行完即退出，不启动 Web 主机）
 dotnet ClouderyApi.dll --migrate [--seed] [--sweep-orphans [--delete-orphans]]
@@ -32,6 +33,25 @@ dotnet ClouderyApi.dll --migrate [--seed] [--sweep-orphans [--delete-orphans]]
 
 - `appsettings.json` 含密钥且**不入库**，本地从 `ClouderyApi/appsettings.example.json` 复制后填写；测试通过环境变量注入配置，不读该文件。
 - **小改动只跑受影响范围**（`--filter`），批量收口时才跑全量；全量单跑约 2 分钟。
+
+### 2.1 必须先在本地跑通，不要靠 CI 兜底
+
+**动手前先自备一个本地 MySQL 8**（CI 里的服务容器本地没有；不装就等于用「编译过 + 单测过」冒充验证过）：
+
+```bash
+# Docker（推荐，一次性干净实例）
+docker run -d --name cloudery-mysql -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=api mysql:8.0
+```
+
+连不上时先自查容器状态与端口占用；已有实例复用即可，**不要**每次重建。
+
+- **集成测试必须有真实 MySQL 才算数**：每个测试类自建 / 自删一次性库，没有库时它们会以
+  `MySqlException: Unable to connect to any of the specified MySQL hosts` 批量失败。
+  **看到成片的这类失败一律先确认是不是环境没起，而不是当成代码回归。**
+- **改了迁移、DI 注册、`--migrate` 启动路径或中间件，必须在本地实跑一次**
+  `dotnet ClouderyApi.dll --migrate`，看日志里出现 `Applying migration '...'` 与目标 `CREATE TABLE`，
+  再跑受影响的测试。历史事故见第 6 节「迁移只迁了一半」。
 
 ## 3. 硬约束（改动前必读）
 
@@ -42,7 +62,7 @@ dotnet ClouderyApi.dll --migrate [--seed] [--sweep-orphans [--delete-orphans]]
 - 鉴权形状：只挂 `[Authorize]` 的端点未登录 → `401` + `WWW-Authenticate: Bearer` + 空响应体（**不是** 302 跳转）；只有 `[AdminOnly]`（端点授权元数据 ≤1 条）才由授权处理器写 `401 {"success":false,"message":"请先登录"}`；已登录非管理员一律 `403 {"success":false,"message":"无管理员权限，操作被拒绝"}`。
 - 时间统一 UTC 带 `Z`；`inc_view` 必须是字符串（ASP.NET bool 绑定不接受 `"1"`，见 `ClouderyApi/Modules/Mhop/Api/MhopForumController.cs:45-48` 与同文件 `:127` 的 `IsTruthy`）。
 - 数据库表名 / 列 / 索引不变，迁移只前滚、不写破坏性 `Down`；模型快照应与迁移一致（`dotnet ef migrations has-pending-model-changes --context <Ctx>` 应为 No changes）。
-- 任何改动都要 `dotnet build -warnaserror` 通过，并按范围跑测试。
+- 任何改动都要 `dotnet build -warnaserror` 通过，并按范围跑测试。**涉及迁移 / DI / 启动路径 / 中间件时，「build 与单测通过」不算验证过**——必须按 2.1 在本地实跑（本地 MySQL 8 + `--migrate`）。
 
 ## 4. 编码约定
 
@@ -77,6 +97,17 @@ dotnet ClouderyApi.dll --migrate [--seed] [--sweep-orphans [--delete-orphans]]
 - 集成测试库按测试类创建 / 删除，不要假定某个库已存在。
 - 生产环境 `Mhop:AutoMigrate` / `Mhop:Seed` 关闭，迁移与种子走 CLI `--migrate` / `--seed`（`.github/workflows/deploy.yml` 已在重启容器前执行）。
 - `--sweep-orphans` 默认只预览孤儿图片，实际删除需显式 `--delete-orphans`。
+- **迁移只迁了一半**（2026-10-04 事故）：`--migrate` 经 `DatabaseMaintenanceService` 只驱动
+  `MhopDbContext`，**`ScforgeDbContext` 从未纳入**。Scforge 的表是当初手工 `dotnet ef` 建上的，
+  此后新增迁移从未执行 —— 表现是**部署全绿但新表不存在**，带 Bearer 的请求一律 500，
+  且因中间件跑在管道早期且覆盖所有端点，**公开接口也被匿名请求打挂**。
+  已修（新增 `ScforgeMaintenanceService` 并在 `--migrate` 一并前滚）。
+  ⚠️ **新增 DbContext 时必须同步接进 `--migrate`**；新增中间件里碰数据库的服务时，
+  **查库异常必须降级为匿名（fail-closed）**，否则一个伪造的 Authorization 头就能放大成全站故障。
+- **新建服务类必须同步 `AddScoped`**：2026-10-04 部署失败于
+  `No service for type 'ScforgeMaintenanceService' has been registered.`
+  —— 编译 0 错、单测全绿，只有真部署才炸。
+  所以**新服务 / 改 `--migrate` / 改 DI 后必须在本地实跑一次**（见 2.1）。
 
 ## 7. 文档地图
 
