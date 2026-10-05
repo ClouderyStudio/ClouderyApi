@@ -6,7 +6,7 @@ using ClouderyApi.Shared.Json;
 namespace ClouderyApi.Modules.Mhop.Api;
 
 /// <summary>
-/// MHOP 控制器基类：统一用 MhopJson 的蛇形命名 + UTC 时间序列化响应，
+/// MHOP 控制器基类：统一用 MhopJson 的蛇形命名 + 北京时间（+08:00）时间序列化响应，
 /// 保证与 Python 后端字段名一致，前端无需改动。
 /// </summary>
 public abstract class MhopControllerBase : ControllerBase

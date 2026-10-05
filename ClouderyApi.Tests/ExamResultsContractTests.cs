@@ -176,11 +176,11 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// 附录 C.4：写入与读回的时间必须逐字相同（截到微秒 + 统一 UtcDateTimeConverter 带 Z），
+    /// 附录 C.4：写入与读回的时间必须逐字相同（截到微秒 + 统一 BeijingDateTimeConverter 以 +08:00 呈现），
     /// 否则客户端按 ISO-8601 解析会得到错误的时刻。
     /// </summary>
     [Fact]
-    public async Task Saved_at_and_updated_at_round_trip_identically_and_carry_utc_z()
+    public async Task Saved_at_and_updated_at_round_trip_identically_and_use_beijing_offset()
     {
         SignIn();
 
@@ -189,8 +189,8 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
         var row = first.Body.GetProperty("results")[0];
         var savedAt = row.GetProperty("savedAt").GetString()!;
         var updatedAt = row.GetProperty("updatedAt").GetString()!;
-        Assert.EndsWith("Z", savedAt);
-        Assert.EndsWith("Z", updatedAt);
+        Assert.EndsWith("+08:00", savedAt);
+        Assert.EndsWith("+08:00", updatedAt);
 
         var (listStatus, list) = await JsonHttp.GetJsonAsync(Client, "/exam/results");
         Assert.Equal(HttpStatusCode.OK, listStatus);
@@ -200,11 +200,12 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
         Assert.Equal(savedAt, readBack.GetProperty("savedAt").GetString());
         Assert.Equal(updatedAt, readBack.GetProperty("updatedAt").GetString());
 
-        var parsed = DateTime.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.RoundtripKind);
-        Assert.Equal(DateTimeKind.Utc, parsed.Kind);
-        Assert.Equal(new DateTime(2026, 1, 2, 3, 4, 5, 123, DateTimeKind.Utc).AddTicks(4560), parsed);
-        Assert.Equal(0, parsed.Ticks % TimeSpan.TicksPerMicrosecond);
+        var parsed = DateTimeOffset.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None);
+        // 呈现是北京时间，时刻仍是写入的那个 UTC 瞬间。
+        Assert.Equal(TimeSpan.FromHours(8), parsed.Offset);
+        Assert.Equal(new DateTime(2026, 1, 2, 3, 4, 5, 123, DateTimeKind.Utc).AddTicks(4560), parsed.UtcDateTime);
+        Assert.Equal(0, parsed.UtcDateTime.Ticks % TimeSpan.TicksPerMicrosecond);
     }
 
     [Fact]
@@ -216,11 +217,11 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.OK, status);
         var savedAt = body.GetProperty("results")[0].GetProperty("savedAt").GetString()!;
-        Assert.EndsWith("Z", savedAt);
+        Assert.EndsWith("+08:00", savedAt);
         Assert.Equal(
             new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
-            DateTime.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind));
+            DateTimeOffset.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None).UtcDateTime);
     }
 
     [Fact]

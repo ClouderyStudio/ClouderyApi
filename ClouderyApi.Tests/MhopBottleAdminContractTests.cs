@@ -215,8 +215,8 @@ public sealed class MhopBottleAdminContractTests : IntegrationTestBase
         Assert.Equal(2, detail.GetProperty("message_count").GetInt32());
         Assert.Equal(throwerName, detail.GetProperty("thrower_name").GetString());
         Assert.Equal(pickerName, detail.GetProperty("picker_name").GetString());
-        Assert.EndsWith("Z", detail.GetProperty("created_at").GetString());
-        Assert.EndsWith("Z", detail.GetProperty("picked_at").GetString());
+        Assert.EndsWith("+08:00", detail.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", detail.GetProperty("picked_at").GetString());
 
         var messages = detail.GetProperty("messages").EnumerateArray().ToArray();
         Assert.Equal(3, messages.Length);

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ClouderyApi.Shared.Time;
 
 namespace ClouderyApi.Modules.Identity.Domain;
 
@@ -26,7 +27,7 @@ public class User
     [MaxLength(100)]
     public string CasdoorId { get; set; } = string.Empty;
 
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime CreatedAt { get; set; } = UtcClock.Now();
 
     public DateTime? LastLoginAt { get; set; }
 }

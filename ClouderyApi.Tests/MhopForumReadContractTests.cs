@@ -57,7 +57,7 @@ public sealed class MhopForumReadContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Posts_list_returns_masked_seeded_post_with_utc_timestamps()
+    public async Task Posts_list_returns_masked_seeded_post_with_beijing_timestamps()
     {
         var (status, body) = await JsonHttp.GetJsonAsync(Client, "/mhop/forum/posts?board=stress&page=1&size=10");
 
@@ -77,8 +77,8 @@ public sealed class MhopForumReadContractTests : IntegrationTestBase
         Assert.Equal(JsonValueKind.Number, item.GetProperty("view_count").ValueKind);
         Assert.Equal(JsonValueKind.Array, item.GetProperty("images").ValueKind);
         Assert.False(item.GetProperty("mine").GetBoolean());
-        Assert.EndsWith("Z", item.GetProperty("created_at").GetString());
-        Assert.EndsWith("Z", item.GetProperty("last_reply_at").GetString());
+        Assert.EndsWith("+08:00", item.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", item.GetProperty("last_reply_at").GetString());
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class MhopForumReadContractTests : IntegrationTestBase
         Assert.Equal(1, reply.GetProperty("status").GetInt32());
         Assert.Equal(id, reply.GetProperty("post_id").GetInt32());
         Assert.False(reply.GetProperty("recalled").GetBoolean());
-        Assert.EndsWith("Z", reply.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", reply.GetProperty("created_at").GetString());
     }
 
     [Fact]

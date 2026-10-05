@@ -51,9 +51,10 @@ builder.Services.AddControllers(options =>
 })
 .AddJsonOptions(options =>
 {
-    // 全站（MHOP 走自己的 MhopJson.Options）时间一律按 UTC 序列化并带 Z：
-    // 数据库 datetime(6) 读回来是 Unspecified，不标 UTC 前端会按本地时间解析（附录 C.4）。
-    options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+    // 全站（MHOP 走自己的 MhopJson.Options）时间一律按北京时间（UTC+8）序列化并带 +08:00 偏移：
+    // 数据库存 UTC，datetime(6) 读回来是 Unspecified，不标偏移前端会按浏览器本地时间解析（附录 C.4）。
+    options.JsonSerializerOptions.Converters.Add(new BeijingDateTimeConverter());
+    options.JsonSerializerOptions.Converters.Add(new BeijingDateTimeOffsetConverter());
 });
 
 // 201 的 Location 一律小写（路由匹配本就不区分大小写，但对外 URL 与文档/前端拼写一致）：

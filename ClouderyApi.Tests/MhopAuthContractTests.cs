@@ -11,7 +11,7 @@ namespace ClouderyApi.Tests;
 
 /// <summary>
 /// 锁定 MHOP 身份接口的对外契约：路由、状态码、{ detail } 错误体、蛇形字段名、
-/// UTC "Z" 时间，以及公开资料的脱敏规则。这些是前端依赖的兼容红线。
+/// 北京时间（+08:00）时间，以及公开资料的脱敏规则。这些是前端依赖的兼容红线。
 /// </summary>
 public sealed class MhopAuthContractTests : IntegrationTestBase
 {
@@ -52,7 +52,7 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Register_returns_snake_case_payload_with_utc_created_at()
+    public async Task Register_returns_snake_case_payload_with_beijing_created_at()
     {
         var (status, body) = await ReadAsync(
             await SendJsonAsync(HttpMethod.Post, "/mhop/auth/register", new { username = "tester01", password = "secret123" }));
@@ -67,7 +67,7 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
         Assert.Equal("tester01", user.GetProperty("username").GetString());
         Assert.Equal("user", user.GetProperty("role").GetString());
         Assert.Equal("active", user.GetProperty("status").GetString());
-        Assert.EndsWith("Z", user.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", user.GetProperty("created_at").GetString());
     }
 
     [Theory]

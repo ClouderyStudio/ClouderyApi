@@ -157,8 +157,8 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
         Assert.Equal(0, item.GetProperty("unread").GetInt32());
         Assert.Equal(0, item.GetProperty("message_count").GetInt32());
         Assert.Equal("还没过审的瓶子", item.GetProperty("last_message").GetString());
-        Assert.EndsWith("Z", item.GetProperty("created_at").GetString());
-        Assert.EndsWith("Z", item.GetProperty("last_message_at").GetString());
+        Assert.EndsWith("+08:00", item.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", item.GetProperty("last_message_at").GetString());
         AssertNoIdentityFields(item);
     }
 
@@ -199,7 +199,7 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
         Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("end_reason").ValueKind);
         Assert.False(body.RootElement.GetProperty("ended_by_me").GetBoolean());
         Assert.Empty(body.RootElement.GetProperty("messages").EnumerateArray());
-        Assert.EndsWith("Z", body.RootElement.GetProperty("picked_at").GetString());
+        Assert.EndsWith("+08:00", body.RootElement.GetProperty("picked_at").GetString());
         AssertNoIdentityFields(body.RootElement);
 
         var (afterSea, afterSeaBody) = await JsonHttp.GetJsonAsync(Client, "/mhop/bottles/sea/count", pickerToken);
@@ -244,7 +244,7 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
         Assert.Equal("你好呀", sentBody.RootElement.GetProperty("content").GetString());
         Assert.Equal(1, sentBody.RootElement.GetProperty("status").GetInt32());
         Assert.False(sentBody.RootElement.GetProperty("crisis").GetBoolean());
-        Assert.EndsWith("Z", sentBody.RootElement.GetProperty("created_at").GetString());
+        Assert.EndsWith("+08:00", sentBody.RootElement.GetProperty("created_at").GetString());
 
         var (detail, detailBody) = await JsonHttp.GetJsonAsync(Client, "/mhop/bottles/" + bottleId, throwerToken);
         Assert.Equal(HttpStatusCode.OK, detail);
