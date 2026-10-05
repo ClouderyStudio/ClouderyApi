@@ -105,7 +105,7 @@ public sealed class ScforgePluginAppService(
     }
 
     /// <summary>精选位：显式标记的排前面，不足时按净评分补齐（冷启动也不会是空板块）。</summary>
-    public async Task<List<ScforgePluginSummaryDto>> FeaturedAsync(
+    public async Task<List<ScforgeAddonSummaryDto>> FeaturedAsync(
         int limit,
         string? kind,
         ScforgeActor actor,
@@ -137,7 +137,7 @@ public sealed class ScforgePluginAppService(
         return await ProjectSummariesAsync(featured, actor, cancellationToken);
     }
 
-    public async Task<List<ScforgePluginSummaryDto>> RecentAsync(
+    public async Task<List<ScforgeAddonSummaryDto>> RecentAsync(
         int limit,
         string? kind,
         ScforgeActor actor,
@@ -161,7 +161,7 @@ public sealed class ScforgePluginAppService(
     /// 公开可见 = 插件已通过审核且至少有一个已通过审核的版本；
     /// 作者与管理员可预览未通过的内容（管理员需要它来做审核）。
     /// </summary>
-    public async Task<ScforgePluginDetailDto> GetAsync(
+    public async Task<ScforgeAddonDetailDto> GetAsync(
         string idOrSlug,
         ScforgeActor actor,
         ScforgeAdminContext admin,
@@ -197,7 +197,7 @@ public sealed class ScforgePluginAppService(
     }
 
     /// <summary>当前用户发布的插件（含待审核与已驳回）。</summary>
-    public async Task<List<ScforgePluginSummaryDto>> MineAsync(
+    public async Task<List<ScforgeAddonSummaryDto>> MineAsync(
         ScforgeActor actor,
         CancellationToken cancellationToken = default)
     {
@@ -226,7 +226,7 @@ public sealed class ScforgePluginAppService(
 
         return new ScforgeMineSummaryDto
         {
-            Plugins = rows.Count,
+            Addons = rows.Count,
             Downloads = rows.Sum(r => r.Downloads),
             Upvotes = rows.Sum(r => r.Upvotes),
             Comments = rows.Sum(r => r.CommentCount),
@@ -239,8 +239,8 @@ public sealed class ScforgePluginAppService(
     /* ============================ 发布 ============================ */
 
     /// <summary>发布新插件：插件与首个版本都进入待审核。</summary>
-    public async Task<ScforgePluginDetailDto> CreateAsync(
-        ScforgePluginCreateForm form,
+    public async Task<ScforgeAddonDetailDto> CreateAsync(
+        ScforgeAddonCreateForm form,
         ScforgeActor actor,
         CancellationToken cancellationToken = default)
     {
@@ -377,9 +377,9 @@ public sealed class ScforgePluginAppService(
     /// 编辑插件资料（作者，或有 content 权限的管理员）。
     /// 任何编辑都会重新进入待审核：审核通过前不再对公众可见。
     /// </summary>
-    public async Task<ScforgePluginDetailDto> UpdateAsync(
+    public async Task<ScforgeAddonDetailDto> UpdateAsync(
         Guid pluginId,
-        ScforgePluginEditForm form,
+        ScforgeAddonEditForm form,
         ScforgeActor actor,
         ScforgeAdminContext admin,
         CancellationToken cancellationToken = default)
@@ -534,7 +534,7 @@ public sealed class ScforgePluginAppService(
     }
 
     /// <summary>作者把被驳回的插件重新提交审核（改过内容时编辑本身也会触发）。</summary>
-    public async Task<ScforgePluginDetailDto> ResubmitAsync(
+    public async Task<ScforgeAddonDetailDto> ResubmitAsync(
         Guid pluginId,
         ScforgeActor actor,
         ScforgeAdminContext admin,
@@ -751,7 +751,7 @@ public sealed class ScforgePluginAppService(
         version.ReviewedBy = null;
     }
 
-    private async Task<ScforgePluginDetailDto> BuildDetailAsync(
+    private async Task<ScforgeAddonDetailDto> BuildDetailAsync(
         ScforgePlugin plugin,
         ScforgeActor actor,
         ScforgeAdminContext admin,
@@ -828,7 +828,7 @@ public sealed class ScforgePluginAppService(
     }
 
     /// <summary>批量补齐列表项的版本统计与「我的投票」，避免逐条查库。</summary>
-    internal async Task<List<ScforgePluginSummaryDto>> ProjectSummariesAsync(
+    internal async Task<List<ScforgeAddonSummaryDto>> ProjectSummariesAsync(
         IReadOnlyList<ScforgePlugin> plugins,
         ScforgeActor actor,
         CancellationToken cancellationToken)

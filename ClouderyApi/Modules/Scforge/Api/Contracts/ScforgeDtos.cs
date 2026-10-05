@@ -10,7 +10,7 @@ namespace ClouderyApi.Modules.Scforge.Api.Contracts;
  * 「我的插件」与后台审核队列都需要不点进详情就能看到状态与驳回理由。
  */
 
-/// <summary>插件作者快照。</summary>
+/// <summary>资源作者快照。</summary>
 public class ScforgeAuthorDto
 {
     public string Id { get; set; } = string.Empty;
@@ -18,8 +18,8 @@ public class ScforgeAuthorDto
     public string? Avatar { get; set; }
 }
 
-/// <summary>列表项：浏览页、首页卡片、我的插件与后台列表共用。</summary>
-public class ScforgePluginSummaryDto
+/// <summary>列表项：浏览页、首页卡片、我的资源与后台列表共用。</summary>
+public class ScforgeAddonSummaryDto
 {
     public string Id { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
@@ -64,7 +64,7 @@ public class ScforgePluginSummaryDto
 }
 
 /// <summary>详情页：列表字段 + 正文、链接、截图文集与全部版本。</summary>
-public sealed class ScforgePluginDetailDto : ScforgePluginSummaryDto
+public sealed class ScforgeAddonDetailDto : ScforgeAddonSummaryDto
 {
     public string Description { get; set; } = string.Empty;
     public string Readme { get; set; } = string.Empty;
@@ -82,7 +82,7 @@ public sealed class ScforgePluginDetailDto : ScforgePluginSummaryDto
     /// <summary>当前用户是否有审核权限（后台审核队列 / 通过 / 驳回）。</summary>
     public bool CanReview { get; set; }
 
-    /// <summary>当前用户是否有内容管理权限（编辑任意插件、删除）。</summary>
+    /// <summary>当前用户是否有内容管理权限（编辑任意资源、删除）。</summary>
     public bool CanManageContent { get; set; }
 
     public List<ScforgeVersionDto> Versions { get; set; } = [];
@@ -113,15 +113,15 @@ public class ScforgeVersionDto
     public DateTimeOffset? ReviewedAt { get; set; }
     public string? ReviewedBy { get; set; }
 
-    /// <summary>所属插件（后台审核队列需要展示它属于谁）。</summary>
-    public string PluginId { get; set; } = string.Empty;
+    /// <summary>所属资源（后台审核队列需要展示它属于谁）。</summary>
+    public string AddonId { get; set; } = string.Empty;
 
-    public string PluginName { get; set; } = string.Empty;
+    public string AddonName { get; set; } = string.Empty;
 
-    public string PluginSlug { get; set; } = string.Empty;
+    public string AddonSlug { get; set; } = string.Empty;
 
     /// <summary>所属资源的类型：plugin 或 mod（审核队列据此跳到正确的板块）。</summary>
-    public string PluginKind { get; set; } = "plugin";
+    public string AddonKind { get; set; } = "plugin";
 
     public ScforgeAuthorDto Author { get; set; } = new();
 }
@@ -165,7 +165,7 @@ public class ScforgeFacetsDto
 /// <summary>分页搜索结果（分页字段直接摊平，前端无需再拆一层）。</summary>
 public class ScforgeSearchResultDto
 {
-    public List<ScforgePluginSummaryDto> Items { get; set; } = [];
+    public List<ScforgeAddonSummaryDto> Items { get; set; } = [];
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 24;
     public int Total { get; set; }
@@ -177,7 +177,7 @@ public class ScforgeSearchResultDto
 public class ScforgeCommentDto
 {
     public string Id { get; set; } = string.Empty;
-    public string PluginId { get; set; } = string.Empty;
+    public string AddonId { get; set; } = string.Empty;
     public string? ParentId { get; set; }
     public string Body { get; set; } = string.Empty;
     public ScforgeAuthorDto Author { get; set; } = new();
@@ -204,10 +204,10 @@ public class ScforgeVoteStateDto
     public int MyVote { get; set; }
 }
 
-/// <summary>「我的插件」页顶部的统计卡。</summary>
+/// <summary>「我的资源」页顶部的统计卡。</summary>
 public class ScforgeMineSummaryDto
 {
-    public int Plugins { get; set; }
+    public int Addons { get; set; }
     public int Downloads { get; set; }
     public int Upvotes { get; set; }
     public int Comments { get; set; }
@@ -249,19 +249,19 @@ public class ScforgePermissionDto
 /// <summary>后台首页的统计。</summary>
 public class ScforgeAdminSummaryDto
 {
-    public int PendingPlugins { get; set; }
+    public int PendingAddons { get; set; }
     public int PendingVersions { get; set; }
-    public int PublishedPlugins { get; set; }
-    public int RejectedPlugins { get; set; }
-    public int TotalPlugins { get; set; }
+    public int PublishedAddons { get; set; }
+    public int RejectedAddons { get; set; }
+    public int TotalAddons { get; set; }
     public int TotalDownloads { get; set; }
     public int Admins { get; set; }
 }
 
 /// <summary>后台的分页结果（审核队列与全量列表共用）。</summary>
-public class ScforgeAdminPluginPageDto
+public class ScforgeAdminAddonPageDto
 {
-    public List<ScforgePluginSummaryDto> Items { get; set; } = [];
+    public List<ScforgeAddonSummaryDto> Items { get; set; } = [];
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
     public int Total { get; set; }

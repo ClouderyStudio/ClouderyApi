@@ -106,7 +106,7 @@ public sealed class ScforgeCommentAppService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("SCForge：{Author} 评论了插件 {PluginId}", actor.DisplayName, pluginId);
+        logger.LogInformation("SCForge：{Author} 评论了资源 {PluginId}", actor.DisplayName, pluginId);
 
         return ScforgeMapper.ToCommentTree([comment], userId, admin.IsAdmin, new Dictionary<Guid, int>()).Single();
     }
@@ -175,7 +175,7 @@ public sealed class ScforgeCommentAppService(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("SCForge：{Author} 删除了 {Count} 条评论（插件 {PluginId}）", actor.DisplayName, doomed.Count, pluginId);
+        logger.LogInformation("SCForge：{Author} 删除了 {Count} 条评论（资源 {PluginId}）", actor.DisplayName, doomed.Count, pluginId);
     }
 
     private static void ValidateBody(string text)

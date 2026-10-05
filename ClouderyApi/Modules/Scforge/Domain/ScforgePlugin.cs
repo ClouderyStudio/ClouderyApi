@@ -4,8 +4,12 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace ClouderyApi.Modules.Scforge.Domain;
 
 /// <summary>
-/// 一个插件（聚合根）。作者信息为写入时快照，避免跨域联表依赖 Identity 库。
+/// 一个资源（聚合根）：插件或模组，用 <see cref="Kind"/> 区分。作者信息为写入时快照，避免跨域联表依赖 Identity 库。
 /// </summary>
+/// <remarks>
+/// 命名说明：内部实体名与表名沿用 Plugin / <c>scforge_plugins</c>（避免数据库迁移），
+/// 对外 API 契约（路由 <c>/scforge/addons</c>、DTO 类名与 JSON 字段）一律称 addon。
+/// </remarks>
 [Table("scforge_plugins")]
 public class ScforgePlugin
 {

@@ -62,10 +62,10 @@ public sealed class ScforgeAdminAppService(
 
         return new ScforgeAdminSummaryDto
         {
-            PendingPlugins = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Pending)?.Count ?? 0,
-            PublishedPlugins = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Published)?.Count ?? 0,
-            RejectedPlugins = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Rejected)?.Count ?? 0,
-            TotalPlugins = pluginGroups.Sum(g => g.Count),
+            PendingAddons = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Pending)?.Count ?? 0,
+            PublishedAddons = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Published)?.Count ?? 0,
+            RejectedAddons = pluginGroups.FirstOrDefault(g => g.Status == ScforgeContentStatus.Rejected)?.Count ?? 0,
+            TotalAddons = pluginGroups.Sum(g => g.Count),
             PendingVersions = await db.ScforgeVersions
                 .AsNoTracking()
                 .CountAsync(v => v.Status == ScforgeContentStatus.Pending, cancellationToken),
@@ -77,7 +77,7 @@ public sealed class ScforgeAdminAppService(
     /* ============================ 审核队列 ============================ */
 
     /// <summary>待审（或指定状态）的插件队列，最老的排前面。</summary>
-    public async Task<ScforgeAdminPluginPageDto> ReviewQueuePluginsAsync(
+    public async Task<ScforgeAdminAddonPageDto> ReviewQueuePluginsAsync(
         string? status,
         int page,
         int pageSize,
@@ -102,7 +102,7 @@ public sealed class ScforgeAdminAppService(
             .Take(size)
             .ToListAsync(cancellationToken);
 
-        return new ScforgeAdminPluginPageDto
+        return new ScforgeAdminAddonPageDto
         {
             Items = await plugins.ProjectSummariesAsync(items, actor, cancellationToken),
             Page = current,
@@ -155,7 +155,7 @@ public sealed class ScforgeAdminAppService(
     /* ============================ 审核动作 ============================ */
 
     /// <summary>通过或驳回一个插件提交。</summary>
-    public async Task<ScforgePluginSummaryDto> ReviewPluginAsync(
+    public async Task<ScforgeAddonSummaryDto> ReviewPluginAsync(
         Guid pluginId,
         ScforgeReviewIn body,
         ScforgeActor actor,
@@ -228,7 +228,7 @@ public sealed class ScforgeAdminAppService(
     /* ============================ 内容管理 ============================ */
 
     /// <summary>全量插件列表（含待审与已驳回），供内容管理员巡检。</summary>
-    public async Task<ScforgeAdminPluginPageDto> AllPluginsAsync(
+    public async Task<ScforgeAdminAddonPageDto> AllPluginsAsync(
         string? term,
         string? status,
         int page,
@@ -269,7 +269,7 @@ public sealed class ScforgeAdminAppService(
             .Take(size)
             .ToListAsync(cancellationToken);
 
-        return new ScforgeAdminPluginPageDto
+        return new ScforgeAdminAddonPageDto
         {
             Items = await plugins.ProjectSummariesAsync(items, actor, cancellationToken),
             Page = current,

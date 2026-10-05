@@ -10,10 +10,10 @@ namespace ClouderyApi.Modules.Scforge.Api.Contracts;
  * 属性全部可空，避免 [ApiController] 为非空引用类型隐式加上 Required。
  */
 
-/// <summary>发布一个新插件（multipart/form-data，含插件包与可选图片）。</summary>
-public class ScforgePluginCreateForm
+/// <summary>发布一个新资源（multipart/form-data，含插件包与可选图片）。</summary>
+public class ScforgeAddonCreateForm
 {
-    /// <summary>插件包（必填）：.dll（插件）或 .netmod（模组，会下发到客户端）。</summary>
+    /// <summary>资源包（必填）：.dll（插件）或 .netmod（模组，会下发到客户端）。</summary>
     public IFormFile? Package { get; set; }
 
     /// <summary>资源类型：plugin（插件，仅服务端）或 mod（模组，会下发到客户端）。创建后不可更改。</summary>
@@ -37,7 +37,7 @@ public class ScforgePluginCreateForm
     public string? DonationUrl { get; set; }
     public string? DiscordUrl { get; set; }
 
-    /// <summary>插件图标（可选）：JPG / PNG / WebP / GIF。</summary>
+    /// <summary>资源图标（可选）：JPG / PNG / WebP / GIF。</summary>
     public IFormFile? Icon { get; set; }
 
     /// <summary>截图（可选，最多 6 张）。</summary>
@@ -52,11 +52,11 @@ public class ScforgePluginCreateForm
 }
 
 /// <summary>
-/// 作者编辑插件资料（multipart/form-data）。
+/// 作者编辑资源资料（multipart/form-data）。
 /// slug 与名称不可改（前者是 URL 契约，后者改名会让老链接的搜索结果错位）；
 /// 编辑会**重新进入待审核**，审核通过前不对公众可见。
 /// </summary>
-public class ScforgePluginEditForm
+public class ScforgeAddonEditForm
 {
     public string? Summary { get; set; }
     public string? Description { get; set; }
@@ -84,7 +84,7 @@ public class ScforgePluginEditForm
     public bool? ClearGallery { get; set; }
 }
 
-/// <summary>为已有插件追加一个版本（multipart/form-data）。</summary>
+/// <summary>为已有资源追加一个版本（multipart/form-data）。</summary>
 public class ScforgeVersionCreateForm
 {
     public IFormFile? Package { get; set; }
@@ -95,7 +95,7 @@ public class ScforgeVersionCreateForm
     public List<string>? GameVersions { get; set; }
     public List<string>? Dependencies { get; set; }
 
-    /// <summary>缺省时沿用插件的主游戏版本。</summary>
+    /// <summary>缺省时沿用资源的主游戏版本。</summary>
     public string? GameVersion { get; set; }
 }
 
@@ -109,7 +109,7 @@ public class ScforgeVersionEditIn
     public List<string>? Dependencies { get; set; }
 }
 
-/// <summary>替换某个版本的插件包文件（multipart/form-data）；替换会重新进入待审核。</summary>
+/// <summary>替换某个版本的资源包文件（multipart/form-data）；替换会重新进入待审核。</summary>
 public class ScforgeVersionFileForm
 {
     public IFormFile? Package { get; set; }
@@ -125,7 +125,7 @@ public class ScforgeGameVersionIn
     public bool? Beta { get; set; }
 }
 
-/// <summary>审核一个插件或版本：通过 / 驳回，驳回必须给出理由。</summary>
+/// <summary>审核一个资源或版本：通过 / 驳回，驳回必须给出理由。</summary>
 public class ScforgeReviewIn
 {
     public bool Approve { get; set; }

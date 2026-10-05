@@ -38,7 +38,7 @@ public static class ScforgeMapper
         Avatar = string.IsNullOrWhiteSpace(avatar) ? null : avatar,
     };
 
-    /// <summary>版本投影；插件信息一并带上，后台审核队列不必再查一次库。</summary>
+    /// <summary>版本投影；资源信息一并带上，后台审核队列不必再查一次库。</summary>
     public static ScforgeVersionDto ToVersion(ScforgeVersion version, ScforgePlugin plugin) => new()
     {
         Id = version.Id.ToString(),
@@ -57,14 +57,14 @@ public static class ScforgeMapper
         ReviewNote = version.ReviewNote,
         ReviewedAt = ToBeijing(version.ReviewedAt),
         ReviewedBy = version.ReviewedBy,
-        PluginId = plugin.Id.ToString(),
-        PluginName = plugin.Name,
-        PluginSlug = plugin.Slug,
-        PluginKind = plugin.Kind,
+        AddonId = plugin.Id.ToString(),
+        AddonName = plugin.Name,
+        AddonSlug = plugin.Slug,
+        AddonKind = plugin.Kind,
         Author = ToAuthor(plugin.AuthorId, plugin.AuthorName, plugin.AuthorAvatar),
     };
 
-    public static ScforgePluginSummaryDto ToSummary(ScforgePlugin plugin, VersionStat stat, int myVote) => new()
+    public static ScforgeAddonSummaryDto ToSummary(ScforgePlugin plugin, VersionStat stat, int myVote) => new()
     {
         Id = plugin.Id.ToString(),
         Slug = plugin.Slug,
@@ -95,7 +95,7 @@ public static class ScforgeMapper
         ReviewedBy = plugin.ReviewedBy,
     };
 
-    public static ScforgePluginDetailDto ToDetail(
+    public static ScforgeAddonDetailDto ToDetail(
         ScforgePlugin plugin,
         IReadOnlyList<ScforgeVersion> versions,
         int myVote,
@@ -110,7 +110,7 @@ public static class ScforgeMapper
             new VersionStat(versions.Count, published.Count, latest?.Version, latest?.PublishedAt),
             myVote);
 
-        return new ScforgePluginDetailDto
+        return new ScforgeAddonDetailDto
         {
             Id = summary.Id,
             Slug = summary.Slug,
@@ -173,7 +173,7 @@ public static class ScforgeMapper
                 return new ScforgeCommentDto
                 {
                     Id = c.Id.ToString(),
-                    PluginId = c.PluginId.ToString(),
+                    AddonId = c.PluginId.ToString(),
                     ParentId = c.ParentId?.ToString(),
                     Body = c.Body,
                     Author = ToAuthor(c.AuthorId, c.AuthorName, c.AuthorAvatar),
