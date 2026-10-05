@@ -10,13 +10,14 @@ namespace ClouderyApi.Modules.Cloudery.Application;
 public sealed class ResultAnalysisAppService(ResultAnalysisService service)
 {
     /// <summary>
-    /// 解读一份量表结果；请求体缺失或缺少 testId 时返回 null（控制器映射为 400 裸对象）。
+    /// 解读一份量表结果；缺少 testId 时返回 null（控制器映射为 400 裸对象）。
+    /// 请求体整体缺失由 [ApiController] 先行返回 400，这里拿到的一定非 null。
     /// </summary>
     public async Task<ResultAnalysisOut?> AnalyzeAsync(
-        ResultAnalysisIn? body,
+        ResultAnalysisIn body,
         CancellationToken cancellationToken = default)
     {
-        if (body is null || string.IsNullOrWhiteSpace(body.TestId)) return null;
+        if (string.IsNullOrWhiteSpace(body.TestId)) return null;
 
         return await service.AnalyzeAsync(body, cancellationToken);
     }

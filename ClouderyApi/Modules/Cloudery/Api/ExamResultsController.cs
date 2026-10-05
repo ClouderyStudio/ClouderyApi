@@ -32,7 +32,6 @@ public sealed class ExamResultsController(ExamResultAppService app) : Controller
     public async Task<IActionResult> Upsert([FromBody] ExamResultIn body, CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
-        if (body is null) return Rejected("缺少请求体");
 
         return await SyncCore(userId, new List<ExamResultIn> { body }, cancellationToken);
     }
@@ -43,8 +42,9 @@ public sealed class ExamResultsController(ExamResultAppService app) : Controller
     {
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
-        // 只取回、不上传也是合法用法（换设备后第一次打开页面就是这种情形）
-        return await SyncCore(userId, body?.Records, cancellationToken);
+        // 只取回、不上传也是合法用法（换设备后第一次打开页面就是这种情形）；
+        // records 缺失按空处理，否则会走到 SyncAsync 里 records.Count 的 NRE。
+        return await SyncCore(userId, body.Records ?? [], cancellationToken);
     }
 
     /// <summary>删除一条记录（云端 Id 或站点本机记录键）</summary>
