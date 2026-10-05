@@ -10,12 +10,15 @@ git push origin master
 GitHub Actions (ubuntu-latest)
   dotnet restore / build / test / publish
   清理 appsettings.json、pdb、uploads
+      │  只读校验服务器配置（必填密钥齐全？JSON 合法？）
+      │      └─ 不通过 → 中止，服务器文件不动
+      ▼
       │  scp 覆盖（不删除目标目录其它文件）
       ▼
 1Panel 服务器  宿主目录  DEPLOY_TARGET
       │         └─ 挂载进容器 /app
       ▼
-docker restart DEPLOY_CONTAINER  →  curl 健康检查
+--migrate --seed  →  docker restart DEPLOY_CONTAINER  →  curl 健康检查
 ```
 
 ---
@@ -46,6 +49,34 @@ mkdir -p /opt/1panel/apps/clouderyapi/app/uploads/posts
 ```bash
 scp ClouderyApi/appsettings.json root@<服务器>:/opt/1panel/apps/clouderyapi/app/
 ```
+
+#### `Scforge:AccessTokenSecret` 是必填项
+
+`Scforge` 段里有两个键**每次新增必填**，配漏了服务会直接拒绝启动：
+
+```json
+"Scforge": {
+  "AccessTokenSecret": "<openssl rand -base64 48 的输出，≥ 32 字符>",
+  "AccessTokenMinutes": 120
+}
+```
+
+```bash
+openssl rand -base64 48
+```
+
+- **为什么必填**：隐私插件（口令访问）的解锁令牌靠它 HMAC-SHA256 签名。留空或短于 32 字符时
+  `Program.cs` 直接抛 `InvalidOperationException` 拒绝启动 —— 这是刻意的，因为用空密钥签发的令牌
+  任何人都能伪造，口令访问等于形同虚设。
+- **只配在服务器上，不要配进 GitHub Actions Secrets**。容器由 1Panel 创建、长期运行，流水线只做
+  `docker restart`，从不重建容器 —— Actions secret 只存在于 workflow 进程里，容器内的应用读不到。
+  要靠流水线注入就只能改写服务器上那份 `appsettings.json`，等于把同一密钥多复制一份到 GitHub。
+  现有的数据库连接串、`Casdoor:ClientSecret`、OSS `AccessKeySecret` 也都是这个惯例。
+- **换密钥会让所有已签发的解锁令牌立即失效**（用户需重新输口令），这是预期行为。
+
+流水线在 scp 上传**之前**会做一次只读自检：文件存在、JSON 合法、密钥长度 ≥ 32。
+任一不满足就中止部署，服务器上的旧 DLL 不被覆盖，容器继续跑旧版本 —— 不会出现
+「DLL 换了但容器没重启，下次重启才炸」的悬空状态。
 
 ### 3. 创建容器
 
@@ -114,6 +145,8 @@ cat deploy_key.pub >> ~/.ssh/authorized_keys
 流水线做了这些保护：
 
 - `concurrency` 保证同一分支不会并发部署，避免两次推送互相覆盖文件。
+- **上传前**先只读校验服务器上的 `appsettings.json`（必填密钥齐全、JSON 合法、长度达标），
+  不通过就中止，服务器文件保持原样。
 - 上传时 `rm: false` —— **不删除目标目录中的其它文件**，所以 `appsettings.json` 和 `uploads/` 不会丢。
 - 上传前显式删除 `publish/appsettings.json`，杜绝用仓库里的配置覆盖线上配置。
 - 重启后校验 `docker inspect ... .State.Running`，没起来就打印最近 100 行日志并以失败结束。

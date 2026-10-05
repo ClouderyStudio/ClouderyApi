@@ -69,6 +69,75 @@ jobs:
           echo "本次将上传的文件数：$(find publish -type f | wc -l)"
           du -sh publish
 
+      - name: 部署前自检服务器配置
+        # 只读校验，不改任何东西。放在 scp 之前：密钥缺失时整个部署中止，
+        # 服务器上的旧 DLL 不被覆盖，下次重启容器仍能正常起来。
+        # 反过来放在后面的话，DLL 已覆盖而容器不重启，等到下次重启才炸，日志里只有一个
+        # InvalidOperationException，排查成本高得多。
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          passphrase: ${{ secrets.DEPLOY_PASSPHRASE }}
+          command_timeout: 60s
+          script: |
+            set -e
+            APP_DIR="${{ secrets.DEPLOY_TARGET }}"
+            echo "自检服务器配置 $APP_DIR/appsettings.json"
+
+            # 1Panel 宿主是 Ubuntu/Debian 一般自带 python3，但没有就明说，
+            # 不要让它以 "command not found" 的形式中止，那看不出是自检环境问题。
+            if ! command -v python3 >/dev/null 2>&1; then
+              echo "::error::服务器上没有 python3，无法解析 appsettings.json，自检跳过"
+              echo "::error::请人工确认 $APP_DIR/appsettings.json 里 Scforge:AccessTokenSecret 已配置且长度 ≥ 32"
+              exit 1
+            fi
+
+            # 用 python3 解析而不是 grep：只要 JSON 合法就一定读得准。
+            # 密钥值只进 shell 变量，绝不 echo，unset 后才继续。
+            SECRET="$(APP_DIR="$APP_DIR" python3 - <<'PY'
+            import json, os, sys
+
+            path = os.path.join(os.environ["APP_DIR"], "appsettings.json")
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    config = json.load(handle)
+            except FileNotFoundError:
+                print("__MISSING_FILE__")
+                sys.exit(0)
+            except Exception as exc:
+                print("__BAD_JSON__" + str(exc))
+                sys.exit(0)
+
+            value = (config.get("Scforge") or {}).get("AccessTokenSecret") or ""
+            print(value if value else "__EMPTY__")
+            PY
+            )"
+
+            case "$SECRET" in
+              __MISSING_FILE__)
+                echo "::error::服务器上找不到 appsettings.json，本次部署已中止（未覆盖任何文件）"
+                echo "::error::按 DEPLOY.md 第一节第 2 步，把本地配置 scp 到 $APP_DIR/ 下"
+                exit 1 ;;
+              __BAD_JSON__*)
+                echo "::error::appsettings.json 不是合法 JSON：${SECRET#__BAD_JSON__}"
+                exit 1 ;;
+              __EMPTY__)
+                echo "::error::Scforge:AccessTokenSecret 未配置（空值），本次部署已中止（未覆盖任何文件）"
+                echo "::error::隐私插件的解锁令牌靠它 HMAC 签名，缺失时服务会拒绝启动。生成：openssl rand -base64 48"
+                exit 1 ;;
+            esac
+
+            if [ "${#SECRET}" -lt 32 ]; then
+              echo "::error::Scforge:AccessTokenSecret 只有 ${#SECRET} 个字符，少于 32，本次部署已中止"
+              exit 1
+            fi
+
+            unset SECRET
+            echo "自检通过：配置存在、JSON 合法、签名密钥长度合规（密钥值不落日志）"
+
       - name: 上传到服务器
         uses: appleboy/scp-action@v0.1.7
         with:

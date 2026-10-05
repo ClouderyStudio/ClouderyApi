@@ -4,6 +4,14 @@
 * text=auto
 
 ###############################################################################
+# Shell scripts must stay LF. They run on the Linux server (and in CI),
+# where CRLF makes bash fail with `$'\r': command not found`.
+# `* text=auto` above would let Windows checkouts rewrite them to CRLF,
+# so pin them explicitly.
+###############################################################################
+*.sh text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by
