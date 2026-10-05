@@ -4,6 +4,7 @@ using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Http;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -61,7 +62,7 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
                 return ApiError.Result(409, "保存失败：ID 可能冲突");
         }
 
-        return CreatedAtAction("GetExamPaper", new { id = result.Paper!.Id }, result.Paper);
+        return Created(Url.LowercaseActionUrl("GetExamPaper", new { id = result.Paper!.Id }), result.Paper);
     }
 
     [HttpPut("{id}")]

@@ -123,8 +123,8 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var location = response.Headers.Location;
         Assert.NotNull(location);
-        // 控制器路由写成 cloudery/[controller]，生成的 Location 用声明大小写 Members。
-        Assert.StartsWith("/cloudery/Members/", location!.AbsolutePath);
+        // 201 的 Location 由 LocationUrlExtensions.LowercaseActionUrl 显式生成小写路径，与文档/前端拼写一致。
+        Assert.StartsWith("/cloudery/members/", location!.AbsolutePath);
 
         var (_, created) = await JsonHttp.ReadAsync(response);
         var id = created.RootElement.GetProperty("id").GetString();

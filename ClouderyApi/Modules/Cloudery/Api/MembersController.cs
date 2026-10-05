@@ -4,6 +4,7 @@ using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Http;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -49,7 +50,7 @@ public class MembersController(MembersAppService members) : ControllerBase
             return ApiError.Result(409, "记录冲突");
         }
 
-        return CreatedAtAction("GetClouderyMember", new { id = created.Id }, created);
+        return Created(Url.LowercaseActionUrl("GetClouderyMember", new { id = created.Id }), created);
     }
 
     [HttpDelete("{id}")]

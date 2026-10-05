@@ -2,6 +2,7 @@ using ClouderyApi.Modules.Cloudery.Domain;
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using ClouderyApi.Modules.Cloudery.Application.Mapping;
 using Microsoft.EntityFrameworkCore;
+using ClouderyApi.Shared.Time;
 
 namespace ClouderyApi.Modules.Cloudery.Application;
 
@@ -63,7 +64,7 @@ public sealed class ExamPaperAppService(IClouderyDbContext db)
     /// <summary>新增试卷：Id 由服务端生成；UpdatedAt 由服务端盖章。</summary>
     public async Task<ExamPaperWriteResult> CreateAsync(ExamPaperInput input, CancellationToken cancellationToken = default)
     {
-        var paper = ExamPaper.Create(input.Name, input.Sections, DateTime.UtcNow);
+        var paper = ExamPaper.Create(input.Name, input.Sections, UtcClock.Now());
 
         if (await db.ExamPapers.AnyAsync(p => p.Id == paper.Id, cancellationToken))
             return new(ExamPaperWriteOutcome.DuplicateId, null);
@@ -87,7 +88,7 @@ public sealed class ExamPaperAppService(IClouderyDbContext db)
         var existing = await db.ExamPapers.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (existing == null) return ExamPaperWriteOutcome.NotFound;
 
-        existing.ReplaceContent(input.Name, input.Sections, DateTime.UtcNow);
+        existing.ReplaceContent(input.Name, input.Sections, UtcClock.Now());
         await db.SaveChangesAsync(cancellationToken);
 
         return ExamPaperWriteOutcome.Ok;

@@ -4,6 +4,7 @@ using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Http;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -44,7 +45,7 @@ public class WhitelistsController(WhitelistsAppService whitelists) : ControllerB
             return ApiError.Result(409, "记录冲突");
         }
 
-        return CreatedAtAction("GetWhitelist", new { id = created.Id }, created);
+        return Created(Url.LowercaseActionUrl("GetWhitelist", new { id = created.Id }), created);
     }
 
     [HttpDelete("{id}")]

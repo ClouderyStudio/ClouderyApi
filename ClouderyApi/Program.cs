@@ -47,7 +47,17 @@ var builder = WebApplication.CreateBuilder(
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<MhopApiExceptionFilter>();
+})
+.AddJsonOptions(options =>
+{
+    // 全站（MHOP 走自己的 MhopJson.Options）时间一律按 UTC 序列化并带 Z：
+    // 数据库 datetime(6) 读回来是 Unspecified，不标 UTC 前端会按本地时间解析（附录 C.4）。
+    options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
 });
+
+// 201 的 Location 一律小写（路由匹配本就不区分大小写，但对外 URL 与文档/前端拼写一致）：
+// 由 ClouderyApi/Shared/Http/LocationUrlExtensions.cs 显式生成，刻意不用全局 LowercaseUrls
+// ——那会把 Swagger 的路由表也改成小写，撞 SwaggerRouteSnapshotTests 的契约基线（附录 C.5）。
 
 // 模型校验失败（[ApiController] 自动 400）也走统一错误体：{ detail, errors }。
 builder.Services.Configure<ApiBehaviorOptions>(options =>

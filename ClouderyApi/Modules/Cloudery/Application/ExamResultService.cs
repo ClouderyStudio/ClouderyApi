@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ClouderyApi.Shared.Time;
 using ClouderyApi.Modules.Cloudery.Domain;
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -50,7 +51,7 @@ public sealed class ExamResultService(IClouderyDbContext db)
             throw new ExamResultRejectedException($"一次最多同步 {MaxRecordsPerSync} 条记录，请分批上传");
         }
 
-        var now = DateTime.UtcNow;
+        var now = UtcClock.Now();
         var rows = await db.ExamResults.Where(r => r.UserId == userId).ToListAsync(cancellationToken);
         var uploaded = 0;
 
@@ -212,7 +213,8 @@ public sealed class ExamResultService(IClouderyDbContext db)
         if (value is null) return null;
         var v = value.Value;
         var utc = v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : v;
-        return DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        // 列是 datetime(6)：不截到微秒的话 MySQL 会四舍五入，读回来与写进去不是同一个值。
+        return UtcClock.TruncateToMicrosecond(utc);
     }
 
     private static string? Truncate(string? value, int max)

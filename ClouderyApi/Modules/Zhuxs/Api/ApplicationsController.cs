@@ -4,6 +4,7 @@ using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Http;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -49,7 +50,7 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
             return ApiError.Result(409, "记录冲突");
         }
 
-        return CreatedAtAction("GetZhuxsApplication", new { id = created.Id }, created);
+        return Created(Url.LowercaseActionUrl("GetZhuxsApplication", new { id = created.Id }), created);
     }
 
     [HttpDelete("{id}")]

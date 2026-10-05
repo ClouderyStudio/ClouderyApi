@@ -4,6 +4,7 @@ using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Http;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -49,7 +50,7 @@ public class TermsController(TermsAppService terms) : ControllerBase
             return ApiError.Result(409, "记录冲突");
         }
 
-        return CreatedAtAction("GetZhuxsTerm", new { id = created.Id }, created);
+        return Created(Url.LowercaseActionUrl("GetZhuxsTerm", new { id = created.Id }), created);
     }
 
     [HttpDelete("{id}")]
