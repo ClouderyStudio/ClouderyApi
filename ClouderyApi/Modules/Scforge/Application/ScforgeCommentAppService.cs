@@ -17,18 +17,33 @@ public sealed record ScforgeCommentListDto(List<ScforgeCommentDto> Items, int To
 public sealed class ScforgeCommentAppService(
     IScforgeDbContext db,
     ScforgeVoteAppService votes,
+    ScforgeAccessAppService access,
     ILogger<ScforgeCommentAppService> logger)
 {
     public async Task<ScforgeCommentListDto> ListAsync(
         Guid pluginId,
         ScforgeActor actor,
         ScforgeAdminContext admin,
+        string? accessToken = null,
         CancellationToken cancellationToken = default)
     {
-        var exists = await db.ScforgePlugins
+        var plugin = await db.ScforgePlugins
             .AsNoTracking()
-            .AnyAsync(p => p.Id == pluginId && p.Status == ScforgeContentStatus.Published, cancellationToken);
-        if (!exists) throw new ScforgeApiException(404, "插件不存在或已被删除");
+            .FirstOrDefaultAsync(p => p.Id == pluginId, cancellationToken);
+
+        // 未发布一律按「不存在」处理（不区分「没审过」与「真没有」，避免探测未发布内容）。
+        if (plugin is null || (plugin.Status != ScforgeContentStatus.Published && !actor.IsAuthorOf(plugin.AuthorId) && !admin.IsAdmin))
+        {
+            throw new ScforgeApiException(404, "插件不存在或已被删除");
+        }
+
+        // 评论树同样受隐私约束：不判定的话，任何人都能读到隐私插件下的讨论，
+        // 既泄漏了「这个插件存在、有人在用」，也让「隐藏」变得没有意义。
+        var unlocked = access.IsUnlocked(plugin, accessToken);
+        if (!await access.CanAccessAsync(plugin, actor, admin, unlocked, cancellationToken))
+        {
+            ScforgeAccessAppService.Deny(plugin);
+        }
 
         var comments = await db.ScforgeComments
             .AsNoTracking()
@@ -52,6 +67,7 @@ public sealed class ScforgeCommentAppService(
         ScforgeCommentCreateIn body,
         ScforgeActor actor,
         ScforgeAdminContext admin,
+        string? accessToken = null,
         CancellationToken cancellationToken = default)
     {
         var userId = actor.RequireUserId();
@@ -64,6 +80,13 @@ public sealed class ScforgeCommentAppService(
         if (plugin.Status != ScforgeContentStatus.Published && !actor.IsAuthorOf(plugin.AuthorId) && !admin.IsAdmin)
         {
             throw new ScforgeApiException(404, "插件不存在或已被删除");
+        }
+
+        // 同上：没权限的人不能往隐私插件下面灌评论 —— 那等于公开确认它存在。
+        var unlocked = access.IsUnlocked(plugin, accessToken);
+        if (!await access.CanAccessAsync(plugin, actor, admin, unlocked, cancellationToken))
+        {
+            ScforgeAccessAppService.Deny(plugin);
         }
 
         var text = (body.Body ?? string.Empty).Trim();

@@ -93,6 +93,7 @@ public static class ScforgeMapper
         ReviewNote = plugin.ReviewNote,
         ReviewedAt = ToBeijing(plugin.ReviewedAt),
         ReviewedBy = plugin.ReviewedBy,
+        AccessMode = plugin.AccessMode,
     };
 
     public static ScforgeAddonDetailDto ToDetail(
@@ -101,7 +102,9 @@ public static class ScforgeMapper
         int myVote,
         bool canManage,
         bool canReview,
-        bool canManageContent)
+        bool canManageContent,
+        bool hasAccess = true,
+        bool accessUnlocked = false)
     {
         var published = versions.Where(v => v.Status == ScforgeContentStatus.Published).ToList();
         var latest = published.Count > 0 ? published[0] : null;
@@ -139,19 +142,29 @@ public static class ScforgeMapper
             ReviewNote = summary.ReviewNote,
             ReviewedAt = summary.ReviewedAt,
             ReviewedBy = summary.ReviewedBy,
-            Description = plugin.Description,
-            Readme = plugin.Readme,
-            SourceUrl = plugin.SourceUrl,
-            IssuesUrl = plugin.IssuesUrl,
-            License = plugin.License,
-            LicenseUrl = plugin.LicenseUrl,
-            DonationUrl = plugin.DonationUrl,
-            DiscordUrl = plugin.DiscordUrl,
-            Gallery = plugin.Gallery,
+            AccessMode = summary.AccessMode,
+            AccessUnlocked = accessUnlocked,
+            HasAccess = hasAccess,
+            // 无权访问时只给最小外壳：名称、简介、图标、作者足以渲染「这是个受保护的插件」，
+            // 描述 / readme / 截图 / 版本列表一律不下发 —— 脱敏必须在服务端做，
+            // 靠前端隐藏等于把内容已经发到了浏览器。
+            Description = hasAccess ? plugin.Description : string.Empty,
+            Readme = hasAccess ? plugin.Readme : string.Empty,
+            SourceUrl = hasAccess ? plugin.SourceUrl : null,
+            IssuesUrl = hasAccess ? plugin.IssuesUrl : null,
+            License = hasAccess ? plugin.License : null,
+            LicenseUrl = hasAccess ? plugin.LicenseUrl : null,
+            DonationUrl = hasAccess ? plugin.DonationUrl : null,
+            DiscordUrl = hasAccess ? plugin.DiscordUrl : null,
+            Gallery = hasAccess ? plugin.Gallery : [],
+            // 提示语是给访客看的，无权访问的人也需要它（否则解锁框下什么都不写，
+            // 访客不知道该去哪拿口令）；「是否已设口令」只对作者有意义。
+            AccessHint = plugin.AccessHint,
+            HasAccessPassword = !string.IsNullOrEmpty(plugin.AccessPasswordHash),
             CanManage = canManage,
             CanReview = canReview,
             CanManageContent = canManageContent,
-            Versions = versions.Select(v => ToVersion(v, plugin)).ToList(),
+            Versions = hasAccess ? versions.Select(v => ToVersion(v, plugin)).ToList() : [],
         };
     }
 

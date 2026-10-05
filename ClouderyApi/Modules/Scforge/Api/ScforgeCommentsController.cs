@@ -19,6 +19,12 @@ public sealed class ScforgeCommentsController(
     ScforgeAdminAccessor adminAccessor,
     ScforgeCurrentUser current) : ScforgeControllerBase
 {
+    /// <summary>读取请求头里的解锁令牌；缺失返回 null（按未解锁处理）。</summary>
+    private string? AccessToken() =>
+        Request.Headers.TryGetValue(ScforgeAccessAppService.TokenHeader, out var value)
+            ? value.ToString()
+            : null;
+
     /// <summary>资源的评论树（顶层评论 + 嵌套回复）。</summary>
     [HttpGet("addons/{addonId:guid}/comments")]
     public Task<IActionResult> List(Guid addonId, CancellationToken cancellationToken = default) =>
@@ -26,7 +32,7 @@ public sealed class ScforgeCommentsController(
         {
             var actor = ToActor(current);
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
-            return Ok(await comments.ListAsync(addonId, actor, admin, cancellationToken));
+            return Ok(await comments.ListAsync(addonId, actor, admin, AccessToken(), cancellationToken));
         });
 
     /// <summary>发表评论；带 parentId 时是对某条评论的回复。</summary>
@@ -39,7 +45,7 @@ public sealed class ScforgeCommentsController(
         {
             var actor = ToActor(current);
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
-            var comment = await comments.CreateAsync(addonId, body, actor, admin, cancellationToken);
+            var comment = await comments.CreateAsync(addonId, body, actor, admin, AccessToken(), cancellationToken);
             return Ok(new { success = true, comment });
         });
 

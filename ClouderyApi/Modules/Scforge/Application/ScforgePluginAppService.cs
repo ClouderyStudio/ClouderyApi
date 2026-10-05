@@ -31,6 +31,7 @@ public sealed class ScforgePluginAppService(
     IScforgeFileStore files,
     ScforgeVoteAppService votes,
     ScforgeGameVersionAppService gameVersions,
+    ScforgeAccessAppService access,
     ILogger<ScforgePluginAppService> logger)
 {
     private const int MaxDownloadNameLength = 255;
@@ -160,11 +161,16 @@ public sealed class ScforgePluginAppService(
     /// 详情：idOrSlug 接受 GUID 或 slug。
     /// 公开可见 = 插件已通过审核且至少有一个已通过审核的版本；
     /// 作者与管理员可预览未通过的内容（管理员需要它来做审核）。
+    ///
+    /// 隐私插件**不返回 404**，而是返回脱敏外壳 + <c>hasAccess=false</c>：
+    /// 作者本就要靠 slug 把链接分享出去，「存在但你没权限」不是需要隐藏的信息。
+    /// 真正的内容（描述 / readme / 截图 / 版本）在无权时一律不下发。
     /// </summary>
     public async Task<ScforgeAddonDetailDto> GetAsync(
         string idOrSlug,
         ScforgeActor actor,
         ScforgeAdminContext admin,
+        string? accessToken = null,
         CancellationToken cancellationToken = default)
     {
         var plugin = await FindAsync(idOrSlug, cancellationToken)
@@ -192,8 +198,18 @@ public sealed class ScforgePluginAppService(
             if (versions.Count == 0) throw new ScforgeApiException(404, "插件不存在或已被删除");
         }
 
-        var myVote = await GetVoteAsync(actor.UserId, ScforgeVoteTargets.Plugin, plugin.Id, cancellationToken);
-        return ScforgeMapper.ToDetail(plugin, versions, myVote, isAuthor, admin.CanReview, admin.CanManageContent);
+        var unlocked = access.IsUnlocked(plugin, accessToken);
+        var hasAccess = await access.CanAccessAsync(plugin, actor, admin, unlocked, cancellationToken);
+
+        // 无权访问时把版本列表也清掉再交给映射器（它会把正文一并脱敏）。
+        var visibleVersions = hasAccess ? versions : [];
+
+        var myVote = hasAccess
+            ? await GetVoteAsync(actor.UserId, ScforgeVoteTargets.Plugin, plugin.Id, cancellationToken)
+            : 0;
+
+        return ScforgeMapper.ToDetail(
+            plugin, visibleVersions, myVote, isAuthor, admin.CanReview, admin.CanManageContent, hasAccess, unlocked);
     }
 
     /// <summary>当前用户发布的插件（含待审核与已驳回）。</summary>
@@ -317,6 +333,17 @@ public sealed class ScforgePluginAppService(
         }
 
         plugin.Gallery = await SaveGalleryAsync(form.Gallery, cancellationToken);
+
+        // 隐私设置：缺省公开。口令现算哈希，明文不落库。
+        // 走访问服务而不是就地赋值 —— 创建与编辑必须共用同一套规则，否则两边会漂移。
+        // 此刻插件还没入库，名单表里不会有它的行，ApplyModeAsync 的清理逻辑天然空转。
+        await access.ApplyModeAsync(
+            plugin,
+            ScforgeAccessMode.Normalize(form.AccessMode),
+            form.AccessPassword,
+            form.AccessHint,
+            passwordProvided: !string.IsNullOrEmpty(form.AccessPassword),
+            cancellationToken);
 
         var version = BuildVersion(
             plugin.Id, stored, versionText!, form.Channel, form.Changelog,
@@ -471,11 +498,53 @@ public sealed class ScforgePluginAppService(
             plugin.Gallery = saved;
         }
 
-        MarkPending(plugin);
+        // ---- 隐私访问 ----
+        // 与内容编辑的关键区别：**改隐私不触发重新审核**。
+        // 审核管的是「这个插件能不能给公众看」，而隐私是作者对访问范围的控制。
+        // 若一并 MarkPending，一个已发布的插件仅仅换个口令就会当场从公开目录消失、
+        // 老链接全部失效 —— 那是纯粹的误伤。
+        var privacyChanged = form.AccessMode is not null
+                             || form.AccessPassword is not null
+                             || form.AccessHint is not null
+                             || form.AccessGrantUserIds is not null;
+
+        if (form.AccessMode is not null || form.AccessPassword is not null || form.AccessHint is not null)
+        {
+            var target = ScforgeAccessMode.Normalize(
+                form.AccessMode ?? plugin.AccessMode);
+
+            if (form.AccessHint is not null)
+            {
+                EnsureText(form.AccessHint, "访问说明", ScforgeCatalog.MaxAccessHintLength, required: false);
+            }
+
+            await access.ApplyModeAsync(
+                plugin,
+                target,
+                form.AccessPassword,
+                form.AccessHint,
+                passwordProvided: !string.IsNullOrEmpty(form.AccessPassword),
+                cancellationToken);
+        }
+
+        // 白名单整体替换。必须在模式切换之后：切到非白名单模式时名单会被清空，
+        // 此时若再把名单写回去就成了「看不见但仍生效」的授权。
+        if (form.AccessGrantUserIds is not null && plugin.AccessMode == ScforgeAccessMode.Whitelist)
+        {
+            await access.ReplaceGrantsAsync(pluginId, form.AccessGrantUserIds, actor, admin, cancellationToken);
+        }
+
+        // 只有内容真的变了才重新审核：隐私调整不参与。
+        if (!privacyChanged) MarkPending(plugin);
+
         await db.SaveChangesAsync(cancellationToken);
         await RefreshGameVersionsTextAsync(plugin, cancellationToken);
 
-        logger.LogInformation("SCForge：{Actor} 编辑了插件 {Slug}，重新进入待审核", actor.DisplayName, plugin.Slug);
+        logger.LogInformation(
+            privacyChanged
+                ? "SCForge：{Actor} 调整了插件 {Slug} 的隐私设置（{Mode}），不触发重新审核"
+                : "SCForge：{Actor} 编辑了插件 {Slug}，重新进入待审核",
+            actor.DisplayName, plugin.Slug, plugin.AccessMode);
 
         return await BuildDetailAsync(plugin, actor, admin, cancellationToken);
     }
@@ -518,6 +587,8 @@ public sealed class ScforgePluginAppService(
         await db.ScforgeVotes
             .Where(v => v.TargetType == ScforgeVoteTargets.Plugin && v.TargetId == pluginId)
             .ExecuteDeleteAsync(cancellationToken);
+
+        // 授权名单走级联删除即可（外键已配 Cascade），这里不重复清理。
 
         db.ScforgePlugins.Remove(plugin);
         await db.SaveChangesAsync(cancellationToken);
@@ -698,6 +769,7 @@ public sealed class ScforgePluginAppService(
         Guid versionId,
         ScforgeActor actor,
         ScforgeAdminContext admin,
+        string? accessToken = null,
         CancellationToken cancellationToken = default)
     {
         var version = await db.ScforgeVersions.FirstOrDefaultAsync(v => v.Id == versionId, cancellationToken)
@@ -710,6 +782,13 @@ public sealed class ScforgePluginAppService(
             (plugin.Status != ScforgeContentStatus.Published || version.Status != ScforgeContentStatus.Published))
         {
             throw new ScforgeApiException(404, "版本不存在或尚未通过审核");
+        }
+
+        // 隐私判定必须在这里再走一遍：详情页脱敏不代表直链下载也被挡住，
+        // 拿到 versionId 的人可以直接打 /versions/{id}/download 绕过界面。
+        if (!await access.CanAccessAsync(plugin, actor, admin, access.IsUnlocked(plugin, accessToken), cancellationToken))
+        {
+            ScforgeAccessAppService.Deny(plugin);
         }
 
         var opened = await files.OpenPackageAsync(version.StorageKey, cancellationToken)
@@ -728,11 +807,17 @@ public sealed class ScforgePluginAppService(
 
     /* ============================ 内部工具 ============================ */
 
-    /// <summary>公开可见的插件：已通过审核，且至少有一个已通过审核的版本。</summary>
+    /// <summary>
+    /// 公开可见的插件：已通过审核、至少有一个已通过审核的版本，**且未设隐私**。
+    ///
+    /// 隐私插件一律排除：它连「存在」都不该出现在目录、搜索与分类计数里。
+    /// 作者仍可通过 slug 直达详情页并分享链接，所以这不是「不存在」，只是不外露。
+    /// </summary>
     private IQueryable<ScforgePlugin> PublicPlugins() =>
         db.ScforgePlugins
             .AsNoTracking()
             .Where(p => p.Status == ScforgeContentStatus.Published)
+            .Where(p => p.AccessMode == ScforgeAccessMode.Public)
             .Where(p => p.Versions.Any(v => v.Status == ScforgeContentStatus.Published));
 
     private static void MarkPending(ScforgePlugin plugin)
@@ -773,7 +858,6 @@ public sealed class ScforgePluginAppService(
             admin.CanReview,
             admin.CanManageContent);
     }
-
     /// <summary>内容寻址的文件可能被多个版本共享：确认无引用后再删。</summary>
     private async Task DeleteFileIfUnusedAsync(string? storageKey, CancellationToken cancellationToken)
     {

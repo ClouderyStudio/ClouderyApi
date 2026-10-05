@@ -26,18 +26,29 @@ public enum ScforgeVoteDirection
 /// </summary>
 public sealed class ScforgeVoteAppService(
     IScforgeDbContext db,
+    ScforgeAccessAppService access,
     ILogger<ScforgeVoteAppService> logger)
 {
     public async Task<ScforgeVoteStateDto> VotePluginAsync(
         Guid pluginId,
         ScforgeVoteDirection direction,
         ScforgeActor actor,
+        ScforgeAdminContext admin,
+        string? accessToken = null,
         CancellationToken cancellationToken = default)
     {
         var userId = actor.RequireUserId();
 
         var plugin = await db.ScforgePlugins.FirstOrDefaultAsync(p => p.Id == pluginId, cancellationToken)
                      ?? throw new ScforgeApiException(404, "插件不存在或已被删除");
+
+        // 投票同样是隐私面：给一个看不到的插件点赞等于公开确认它存在，
+        // 也让作者能从赞同数反推出有多少人在用。
+        var unlocked = access.IsUnlocked(plugin, accessToken);
+        if (!await access.CanAccessAsync(plugin, actor, admin, unlocked, cancellationToken))
+        {
+            ScforgeAccessAppService.Deny(plugin);
+        }
 
         await ApplyAsync(userId, ScforgeVoteTargets.Plugin, pluginId, direction, cancellationToken);
         await RecalculatePluginAsync(plugin, cancellationToken);

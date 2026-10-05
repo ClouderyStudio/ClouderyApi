@@ -3,6 +3,7 @@ using System;
 using ClouderyApi.Modules.Scforge.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ClouderyApi.Migrations.Scforge
 {
     [DbContext(typeof(ScforgeDbContext))]
-    partial class ScforgeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261005100246_ScforgePrivacyAccess")]
+    partial class ScforgePrivacyAccess
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

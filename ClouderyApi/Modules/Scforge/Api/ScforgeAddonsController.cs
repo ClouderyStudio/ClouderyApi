@@ -21,10 +21,16 @@ namespace ClouderyApi.Modules.Scforge.Api;
 public sealed class ScforgeAddonsController(
     ScforgePluginAppService plugins,
     ScforgeVoteAppService votes,
+    ScforgeAccessAppService access,
     ScforgeAdminAccessor adminAccessor,
     ScforgeApiKeyAccessor apiKeys,
     ScforgeCurrentUser current) : ScforgeControllerBase
 {
+    /// <summary>读取请求头里的解锁令牌；缺失返回 null（按未解锁处理）。</summary>
+    private string? AccessToken() =>
+        Request.Headers.TryGetValue(ScforgeAccessAppService.TokenHeader, out var value)
+            ? value.ToString()
+            : null;
     /// <summary>分页搜索：q / category / tag / gameVersion / sort / kind / page / pageSize。kind 省略即插件与模组都返回。</summary>
     [HttpGet]
     public Task<IActionResult> Search(
@@ -90,13 +96,77 @@ public sealed class ScforgeAddonsController(
         });
 
     /// <summary>详情：<paramref name="idOrSlug"/> 接受 GUID 或 slug。</summary>
+    /// <remarks>
+    /// 隐私插件不会返回 404，而是给脱敏外壳 + <c>hasAccess=false</c>；
+    /// 已解锁的请求带上 <c>X-Scforge-Access</c> 头即可拿到完整内容。
+    /// </remarks>
     [HttpGet("{idOrSlug}")]
     public Task<IActionResult> Detail(string idOrSlug, CancellationToken cancellationToken = default) =>
         GuardAsync(async () =>
         {
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
-            var addon = await plugins.GetAsync(idOrSlug, ToActor(current), admin, cancellationToken);
+            var addon = await plugins.GetAsync(idOrSlug, ToActor(current), admin, AccessToken(), cancellationToken);
             return Ok(new { addon });
+        });
+
+    /// <summary>提交访问口令换取解锁令牌（口令模式下使用）。</summary>
+    [HttpPost("{id:guid}/access/unlock")]
+    public Task<IActionResult> Unlock(Guid id, [FromBody] ScforgeAccessUnlockIn body, CancellationToken cancellationToken = default) =>
+        GuardAsync(async () =>
+        {
+            var unlocked = await access.UnlockAsync(id, body?.Password, cancellationToken);
+            unlocked.Notice = "解锁成功，请在有效期内访问";
+            return Ok(unlocked);
+        });
+
+    /// <summary>读取授权名单（作者或有内容管理权限的管理员）。</summary>
+    [HttpGet("{id:guid}/access/grants")]
+    public Task<IActionResult> ListGrants(Guid id, CancellationToken cancellationToken = default) =>
+        GuardAsync(async () =>
+        {
+            var admin = await adminAccessor.ResolveAsync(cancellationToken);
+            var items = await access.ListGrantsAsync(id, ToActor(current), admin, cancellationToken);
+            return Ok(new { items });
+        });
+
+    /// <summary>整体替换授权名单（作者或有内容管理权限的管理员）。</summary>
+    [HttpPut("{id:guid}/access/grants")]
+    public Task<IActionResult> ReplaceGrants(
+        Guid id,
+        [FromBody] ScforgeAccessGrantsIn body,
+        CancellationToken cancellationToken = default) =>
+        GuardAsync(async () =>
+        {
+            var admin = await adminAccessor.ResolveAsync(cancellationToken);
+            var items = await access.ReplaceGrantsAsync(id, body?.UserIds, ToActor(current), admin, cancellationToken);
+            return Ok(new { success = true, items });
+        });
+
+    /// <summary>访问模式目录：前端据此渲染选项，不硬编码文案。</summary>
+    [HttpGet("access/modes")]
+    public IActionResult AccessModes() => Ok(new
+    {
+        items = new[]
+        {
+            new ScforgeAccessModeDto { Key = ScforgeAccessMode.Public, Label = "公开", Description = "任何人都能在目录里找到并下载" },
+            new ScforgeAccessModeDto { Key = ScforgeAccessMode.Password, Label = "口令访问", Description = "不进目录，拿到口令的人可访问" },
+            new ScforgeAccessModeDto { Key = ScforgeAccessMode.Whitelist, Label = "指定人员可见", Description = "不进目录，只有名单内的人可访问" },
+        },
+    });
+
+    /// <summary>
+    /// 白名单编辑器搜人：按用户名或邮箱模糊匹配。
+    /// 要求登录（匿名没有「给谁授权」的意义），限 20 条。
+    /// </summary>
+    [HttpGet("access/users")]
+    public Task<IActionResult> SearchAccessUsers(
+        [FromQuery] string? keyword,
+        CancellationToken cancellationToken = default) =>
+        GuardAsync(async () =>
+        {
+            ToActor(current).RequireUserId();
+            var items = await access.SearchCandidatesAsync(keyword, cancellationToken);
+            return Ok(new { items });
         });
 
     /// <summary>
@@ -179,7 +249,7 @@ public sealed class ScforgeAddonsController(
         GuardAsync(async () =>
         {
             var admin = await adminAccessor.ResolveAsync(cancellationToken);
-            var addon = await plugins.GetAsync(id.ToString(), ToActor(current), admin, cancellationToken);
+            var addon = await plugins.GetAsync(id.ToString(), ToActor(current), admin, AccessToken(), cancellationToken);
             return Ok(new
             {
                 upvotes = addon.Upvotes,
@@ -191,14 +261,24 @@ public sealed class ScforgeAddonsController(
 
     [HttpPut("{id:guid}/vote/up")]
     public Task<IActionResult> VoteUp(Guid id, CancellationToken cancellationToken = default) =>
-        GuardAsync(async () => Ok(await votes.VotePluginAsync(id, ScforgeVoteDirection.Up, ToActor(current), cancellationToken)));
+        GuardAsync(async () => Ok(await VotePluginAsync(id, ScforgeVoteDirection.Up, cancellationToken)));
 
     [HttpPut("{id:guid}/vote/down")]
     public Task<IActionResult> VoteDown(Guid id, CancellationToken cancellationToken = default) =>
-        GuardAsync(async () => Ok(await votes.VotePluginAsync(id, ScforgeVoteDirection.Down, ToActor(current), cancellationToken)));
+        GuardAsync(async () => Ok(await VotePluginAsync(id, ScforgeVoteDirection.Down, cancellationToken)));
 
     /// <summary>撤销投票（幂等：没有票也算成功）。</summary>
     [HttpDelete("{id:guid}/vote")]
     public Task<IActionResult> VoteClear(Guid id, CancellationToken cancellationToken = default) =>
-        GuardAsync(async () => Ok(await votes.VotePluginAsync(id, ScforgeVoteDirection.Clear, ToActor(current), cancellationToken)));
+        GuardAsync(async () => Ok(await VotePluginAsync(id, ScforgeVoteDirection.Clear, cancellationToken)));
+
+    /// <summary>投票统一入口：解析管理员上下文并带上解锁令牌，隐私判定在服务层。</summary>
+    private async Task<ScforgeVoteStateDto> VotePluginAsync(
+        Guid id,
+        ScforgeVoteDirection direction,
+        CancellationToken cancellationToken)
+    {
+        var admin = await adminAccessor.ResolveAsync(cancellationToken);
+        return await votes.VotePluginAsync(id, direction, ToActor(current), admin, AccessToken(), cancellationToken);
+    }
 }
