@@ -31,6 +31,7 @@ using ClouderyApi.Shared.Online;
 using ClouderyApi.Shared.Email;
 using ClouderyApi.Shared.Redis;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.Persistence;
 using Microsoft.AspNetCore.Mvc;
 
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
@@ -118,10 +119,6 @@ builder.Services.AddScoped<ScforgeCurrentUser>();
 // API Key 通道：把 Authorization: Bearer scf_… 换算成同形状的 Claims，
 // 让「作者本人」判定与应用层用例零改动。作用域读取走 Accessor。
 builder.Services.AddScoped<ScforgeApiKeyAccessor>();
-
-// 供 `--migrate` 前滚 SCForge 域的迁移（scforge_* 表）。
-// 必须注册：否则 --migrate 会在解析该服务时抛 InvalidOperationException 并以退出码 1 中止部署。
-builder.Services.AddScoped<ScforgeMaintenanceService>();
 
 // 文件边界：Scforge:Storage:Provider 决定实现。
 //   local = 本机磁盘（插件包私有目录 + public/ 下的图片由 /scforge/uploads 静态托管）
@@ -372,13 +369,10 @@ if (runMigrate || runSeed)
     var maintenance = maintenanceScope.ServiceProvider.GetRequiredService<DatabaseMaintenanceService>();
     try
     {
-        // SCForge 的 scforge_* 表与 MHOP 是两个独立上下文，必须分别前滚；
-        // 漏掉任何一个都会表现为「部署成功但新表不存在」。
+        // 每个 DbContext 都必须前滚；DatabaseMigrationRunner 按程序集自动发现全部上下文，
+        // 漏掉任何一个都会表现为「部署成功但新表不存在」（2026-10-04 事故）。
         if (runMigrate)
-        {
-            await maintenance.MigrateAsync();
-            await maintenanceScope.ServiceProvider.GetRequiredService<ScforgeMaintenanceService>().MigrateAsync();
-        }
+            await DatabaseMigrationRunner.MigrateAllAsync(maintenanceScope.ServiceProvider, app.Logger);
         if (runSeed) await maintenance.SeedAsync();
         return 0;
     }

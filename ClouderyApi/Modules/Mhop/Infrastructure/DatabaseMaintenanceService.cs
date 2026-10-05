@@ -1,5 +1,5 @@
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using ClouderyApi.Shared.Persistence;
 using Microsoft.Extensions.Options;
 
 namespace ClouderyApi.Modules.Mhop.Infrastructure;
@@ -16,12 +16,12 @@ public sealed class DatabaseMaintenanceService(
     IOptions<MhopOptions> options,
     ILogger<DatabaseMaintenanceService> logger)
 {
-    /// <summary>应用所有待执行的 EF 迁移。</summary>
-    public async Task MigrateAsync(CancellationToken cancellationToken = default)
-    {
-        await db.Database.MigrateAsync(cancellationToken);
-        logger.LogInformation("数据库迁移完成（MhopDbContext）");
-    }
+    /// <summary>
+    /// 启动期兜底迁移（Mhop:AutoMigrate）。只前滚 MhopDbContext；
+    /// 命令行 <c>--migrate</c> 走 <see cref="DatabaseMigrationRunner.MigrateAllAsync"/> 覆盖全部上下文。
+    /// </summary>
+    public Task MigrateAsync(CancellationToken cancellationToken = default) =>
+        DatabaseMigrationRunner.MigrateAsync(db, logger, cancellationToken);
 
     /// <summary>写入幂等种子数据（管理员账号、引导数据）；MhopSeeder 内部按存在性判断，可重复执行。</summary>
     public Task SeedAsync(CancellationToken cancellationToken = default)
