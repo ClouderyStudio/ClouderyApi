@@ -101,12 +101,15 @@ docker run -d --name cloudery-mysql -p 3306:3306 \
   `MhopDbContext`，**`ScforgeDbContext` 从未纳入**。Scforge 的表是当初手工 `dotnet ef` 建上的，
   此后新增迁移从未执行 —— 表现是**部署全绿但新表不存在**，带 Bearer 的请求一律 500，
   且因中间件跑在管道早期且覆盖所有端点，**公开接口也被匿名请求打挂**。
-  已修（新增 `ScforgeMaintenanceService` 并在 `--migrate` 一并前滚）。
-  ⚠️ **新增 DbContext 时必须同步接进 `--migrate`**；新增中间件里碰数据库的服务时，
+  现在 `--migrate` 走 `ClouderyApi/Shared/Persistence/DatabaseMigrationRunner.cs`：
+  它按程序集**自动发现全部 `DbContext`** 并逐个前滚（当前 5 个：Cloudery / Zhuxs / Identity / Scforge / Mhop），
+  新增上下文无需再改 CLI，漏接在机制上不可能（回归测试 `ClouderyApi.Tests/DatabaseMigrationRunnerTests.cs`）。
+  ⚠️ 但**新 DbContext 仍必须 `AddDbContext` 注册**，否则 `--migrate` 解析该类型时显式抛错、以退出码 1 中止部署；
+  新增中间件里碰数据库的服务时，
   **查库异常必须降级为匿名（fail-closed）**，否则一个伪造的 Authorization 头就能放大成全站故障。
 - **新建服务类必须同步 `AddScoped`**：2026-10-04 部署失败于
   `No service for type 'ScforgeMaintenanceService' has been registered.`
-  —— 编译 0 错、单测全绿，只有真部署才炸。
+  —— 编译 0 错、单测全绿，只有真部署才炸（该服务后来并入了 `DatabaseMigrationRunner`）。
   所以**新服务 / 改 `--migrate` / 改 DI 后必须在本地实跑一次**（见 2.1）。
 
 ## 7. 文档地图

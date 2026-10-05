@@ -151,7 +151,7 @@ dotnet ef migrations add <Name> --context ScforgeDbContext --output-dir Migratio
 dotnet ef database update --context ScforgeDbContext
 ```
 
-> 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境保持 `false`，改用 CLI `dotnet ClouderyApi.dll --migrate [--seed]`（`.github/workflows/deploy.yml` 在重启容器前自动执行，失败即中止部署）。
+> 首次部署 MHOP 模块前执行 `dotnet ef database update --context MhopDbContext` 创建 `mhop_*` 表。开发环境下 `Mhop:AutoMigrate` 默认为 `true`，启动时自动迁移；生产环境保持 `false`，改用 CLI `dotnet ClouderyApi.dll --migrate [--seed]`（`.github/workflows/deploy.yml` 在重启容器前自动执行，失败即中止部署）。`--migrate` 会自动发现并前滚**全部** `DbContext`（Cloudery / Zhuxs / Identity / Scforge / Mhop，见 `ClouderyApi/Shared/Persistence/DatabaseMigrationRunner.cs`），新增上下文无需改 CLI。
 
 > **命令行开关**（`dotnet ClouderyApi.dll <开关>`，执行完即退出、不启动 Web 主机）：`--migrate` 应用待执行迁移、`--seed` 写入种子数据（可同时使用）、`--sweep-orphans [--delete-orphans]` 清理对象存储中的孤儿图片（见下文「历史孤儿清理」）。
 
