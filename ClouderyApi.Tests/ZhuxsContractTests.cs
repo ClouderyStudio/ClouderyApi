@@ -90,7 +90,8 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
 
     /// <summary>
     /// 只挂 [Authorize] 的路由：默认认证方案是 Cookies，但默认 Challenge 方案是 Casdoor 包注册的
-    /// JwtBearer（scheme "Bearer"），所以未登录是 401 + WWW-Authenticate: Bearer 的空体，不是 302 跳登录页。
+    /// JwtBearer（scheme "Bearer"），所以未登录是 401 + WWW-Authenticate: Bearer；
+    /// 响应体由 ApiErrorBodyMiddleware 统一补成 { detail }，不是 302 跳登录页。
     /// </summary>
     [Fact]
     public async Task Whitelists_list_requires_authentication()
@@ -98,8 +99,8 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
         var response = await Client.GetAsync("/zhuxs/whitelists");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains(response.Headers.WwwAuthenticate, header => header.Scheme == "Bearer");
-        Assert.Empty(await response.Content.ReadAsStringAsync());
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("请先登录", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -107,9 +108,9 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
     {
         var response = await Client.PostAsync("/zhuxs/terms",
             new StringContent("{}", Encoding.UTF8, "application/json"));
-
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("请先登录", body.RootElement.GetProperty("detail").GetString());
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Empty(await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -117,9 +118,10 @@ public sealed class ZhuxsContractTests : IntegrationTestBase
     {
         var response = await Client.PostAsync("/zhuxs/applications",
             new StringContent("{}", Encoding.UTF8, "application/json"));
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("请先登录", body.RootElement.GetProperty("detail").GetString());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Empty(await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

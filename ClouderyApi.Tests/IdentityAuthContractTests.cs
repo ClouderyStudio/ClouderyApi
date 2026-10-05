@@ -50,15 +50,15 @@ public sealed class IdentityAuthContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Callback_with_empty_code_returns_400_chinese_message()
+    public async Task Callback_with_empty_code_returns_400_chinese_detail()
     {
         var response = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/identity/auth/callback",
             new { code = "", state = "", redirectUri = "" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var (_, body) = await JsonHttp.ReadAsync(response);
-        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("授权码不能为空", body.RootElement.GetProperty("message").GetString());
+        Assert.False(body.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("授权码不能为空", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -69,16 +69,16 @@ public sealed class IdentityAuthContractTests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var (_, body) = await JsonHttp.ReadAsync(response);
-        Assert.Equal("state 校验失败，请重新发起登录", body.RootElement.GetProperty("message").GetString());
+        Assert.Equal("state 校验失败，请重新发起登录", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
-    public async Task Callback_missing_required_properties_returns_framework_validation_problem()
+    public async Task Callback_missing_required_properties_returns_unified_validation_shape()
     {
         var response = await JsonHttp.SendAsync(Client, HttpMethod.Post, "/identity/auth/callback", new { });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         var (_, body) = await JsonHttp.ReadAsync(response);
         Assert.False(body.RootElement.TryGetProperty("success", out _));
         Assert.True(body.RootElement.TryGetProperty("errors", out _));
@@ -90,8 +90,8 @@ public sealed class IdentityAuthContractTests : IntegrationTestBase
         var anonymous = await Client.GetAsync("/identity/auth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
         var (_, anonymousBody) = await JsonHttp.ReadAsync(anonymous);
-        Assert.False(anonymousBody.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("未登录", anonymousBody.RootElement.GetProperty("message").GetString());
+        Assert.False(anonymousBody.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("未登录", anonymousBody.RootElement.GetProperty("detail").GetString());
 
         var userId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
         Client.DefaultRequestHeaders.Add("Cookie", AuthCookie.CreateHeader(Factory.Services, userId: userId));

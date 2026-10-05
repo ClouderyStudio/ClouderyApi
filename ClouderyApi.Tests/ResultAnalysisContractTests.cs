@@ -26,16 +26,16 @@ public sealed class ResultAnalysisContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Post_without_test_id_returns_400_chinese_message()
+    public async Task Post_without_test_id_returns_400_chinese_detail()
     {
         var (emptyStatus, emptyBody) = await JsonHttp.PostJsonAsync(Client, "/exam/result-analysis", new { });
         Assert.Equal(HttpStatusCode.BadRequest, emptyStatus);
-        Assert.False(emptyBody.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("缺少量表标识（testId）", emptyBody.RootElement.GetProperty("message").GetString());
+        Assert.False(emptyBody.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("缺少量表标识（testId）", emptyBody.RootElement.GetProperty("detail").GetString());
 
         var (blankStatus, blankBody) = await JsonHttp.PostJsonAsync(Client, "/exam/result-analysis", new { testId = "   " });
         Assert.Equal(HttpStatusCode.BadRequest, blankStatus);
-        Assert.Equal("缺少量表标识（testId）", blankBody.RootElement.GetProperty("message").GetString());
+        Assert.Equal("缺少量表标识（testId）", blankBody.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]

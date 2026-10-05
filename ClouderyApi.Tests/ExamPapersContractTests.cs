@@ -164,15 +164,15 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
         var put = await JsonHttp.SendAsync(Client, HttpMethod.Put, "/exam/ExamPapers/missing", BuildPaper("missing"));
         Assert.Equal(HttpStatusCode.NotFound, put.StatusCode);
         var (_, putBody) = await JsonHttp.ReadAsync(put);
-        Assert.Equal("未找到该试卷", putBody.RootElement.GetProperty("message").GetString());
+        Assert.Equal("未找到该试卷", putBody.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
-    public async Task Get_unknown_paper_returns_404_with_message()
+    public async Task Get_unknown_paper_returns_404_with_detail()
     {
         var (status, body) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/nope");
         Assert.Equal(HttpStatusCode.NotFound, status);
-        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("未找到该试卷", body.RootElement.GetProperty("message").GetString());
+        Assert.False(body.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("未找到该试卷", body.RootElement.GetProperty("detail").GetString());
     }
 }

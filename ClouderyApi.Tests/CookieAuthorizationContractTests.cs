@@ -21,8 +21,8 @@ public sealed class CookieAuthorizationContractTests : IntegrationTestBase
         var (status, body) = await JsonHttp.GetJsonAsync(Client, "/zhuxs/whitelists");
 
         Assert.Equal(HttpStatusCode.Forbidden, status);
-        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("无管理员权限，操作被拒绝", body.RootElement.GetProperty("message").GetString());
+        Assert.Equal(new[] { "detail" }, body.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("无管理员权限，操作被拒绝", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -41,12 +41,12 @@ public sealed class CookieAuthorizationContractTests : IntegrationTestBase
     {
         var (anonymous, anonymousBody) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/contract-paper/full");
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous);
-        Assert.Equal("请先登录", anonymousBody.RootElement.GetProperty("message").GetString());
+        Assert.Equal("请先登录", anonymousBody.RootElement.GetProperty("detail").GetString());
 
         SignIn("someone-else");
         var (forbidden, forbiddenBody) = await JsonHttp.GetJsonAsync(Client, "/exam/ExamPapers/contract-paper/full");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden);
-        Assert.Equal("无管理员权限，操作被拒绝", forbiddenBody.RootElement.GetProperty("message").GetString());
+        Assert.Equal("无管理员权限，操作被拒绝", forbiddenBody.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]

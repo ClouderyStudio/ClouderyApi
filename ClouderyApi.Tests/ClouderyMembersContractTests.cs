@@ -29,15 +29,14 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
         await db.SaveChangesAsync();
     }
 
-    private static async Task AssertProblemDetails404Async(HttpResponseMessage response)
+    private static async Task AssertUnified404Async(HttpResponseMessage response)
     {
-        // 裸 NotFound() 在 [ApiController] 下被 ClientErrorResultFilter 转成 ProblemDetails，
-        // 所以 404 并不是空体；这与控制器源码的直觉不同，是必须记录在案的基线事实。
+        // 统一错误体（见 docs/API-ERROR-SHAPE.md）：404 是 { detail }，不再走框架 ProblemDetails、也不再是空体，
+        // 因为控制器已改成 ApiError.Result 一个出口。
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         var (_, body) = await JsonHttp.ReadAsync(response);
-        Assert.False(body.RootElement.TryGetProperty("success", out _));
-        Assert.Equal(404, body.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("记录不存在", body.RootElement.GetProperty("detail").GetString());
     }
 
     private void SignInAsAdmin()
@@ -69,7 +68,7 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Get_by_id_is_anonymous_and_unknown_id_returns_problem_details_404()
+    public async Task Get_by_id_is_anonymous_and_unknown_id_returns_unified_404()
     {
         await SeedMemberAsync("member-one", "李四");
 
@@ -78,11 +77,11 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
         Assert.Equal("李四", body.RootElement.GetProperty("name").GetString());
 
         var missing = await Client.GetAsync("/cloudery/members/does-not-exist");
-        await AssertProblemDetails404Async(missing);
+        await AssertUnified404Async(missing);
     }
 
     [Fact]
-    public async Task Put_requires_authentication_with_empty_401()
+    public async Task Put_requires_authentication_with_unified_401()
     {
         var response = await JsonHttp.SendAsync(
             Client, HttpMethod.Put, "/cloudery/members/whatever",
@@ -90,11 +89,12 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains(response.Headers.WwwAuthenticate, h => h.Scheme == "Bearer");
-        Assert.Empty(await response.Content.ReadAsStringAsync());
+        var (_, body) = await JsonHttp.ReadAsync(response);
+        Assert.Equal("请先登录", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
-    public async Task Put_unknown_id_as_admin_returns_problem_details_404()
+    public async Task Put_unknown_id_as_admin_returns_unified_404()
     {
         SignInAsAdmin();
 
@@ -102,7 +102,7 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
             Client, HttpMethod.Put, "/cloudery/members/does-not-exist",
             new { name = "新名", position = "新职位" });
 
-        await AssertProblemDetails404Async(response);
+        await AssertUnified404Async(response);
     }
 
     [Fact]
@@ -156,13 +156,13 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Delete_unknown_id_as_admin_returns_problem_details_404_and_existing_returns_204()
+    public async Task Delete_unknown_id_as_admin_returns_unified_404_and_existing_returns_204()
     {
         await SeedMemberAsync("member-del", "删除我");
         SignInAsAdmin();
 
         var missing = await JsonHttp.SendAsync(Client, HttpMethod.Delete, "/cloudery/members/does-not-exist");
-        await AssertProblemDetails404Async(missing);
+        await AssertUnified404Async(missing);
 
         var deleted = await JsonHttp.SendAsync(Client, HttpMethod.Delete, "/cloudery/members/member-del");
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
@@ -172,7 +172,7 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Post_with_invalid_dto_returns_framework_validation_problem_not_cloudery_shape()
+    public async Task Post_with_invalid_dto_returns_unified_validation_shape()
     {
         SignInAsAdmin();
 
@@ -180,10 +180,10 @@ public sealed class ClouderyMembersContractTests : IntegrationTestBase
             Client, HttpMethod.Post, "/cloudery/members", new { position = "缺名字" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         var (_, body) = await JsonHttp.ReadAsync(response);
-        // 控制器里的 ModelState 检查是死代码：[ApiController] 走框架 ValidationProblemDetails，
-        // 而不是控制器里写的 {success:false,message:"参数校验失败"}。
+        // [ApiController] 的自动校验 400 也走 ApiError：{ detail, errors }，不再有 ProblemDetails。
+        Assert.Equal("参数校验失败", body.RootElement.GetProperty("detail").GetString());
         Assert.False(body.RootElement.TryGetProperty("success", out _));
         Assert.True(body.RootElement.GetProperty("errors").TryGetProperty("Name", out _));
     }

@@ -46,8 +46,8 @@ public sealed class IpRateLimitContractTests : IntegrationTestBase
         var body = JsonDocument.Parse(await limited.Content.ReadAsStringAsync());
 
         Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
-        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("分析请求过于频繁，请稍后再试", body.RootElement.GetProperty("message").GetString());
+        Assert.Equal(new[] { "detail", "retryAfterSeconds" }, body.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal("分析请求过于频繁，请稍后再试", body.RootElement.GetProperty("detail").GetString());
 
         // 固定窗口：窗口内的 8 次请求本身要花十几秒，所以剩余秒数是「300 - 已过时间」，只断言范围。
         var bodyRetryAfterSeconds = body.RootElement.GetProperty("retryAfterSeconds").GetInt32();

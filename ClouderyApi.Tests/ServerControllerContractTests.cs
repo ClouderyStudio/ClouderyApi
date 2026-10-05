@@ -88,8 +88,8 @@ public sealed class ServerControllerContractTests : IAsyncLifetime
 
         var (status, json) = await JsonHttp.ReadAsync(response);
         Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.False(json.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("非法的服务器路径", json.RootElement.GetProperty("message").GetString());
+        Assert.False(json.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("非法的服务器路径", json.RootElement.GetProperty("detail").GetString());
         Assert.Empty(_handler.Requests);
     }
 
@@ -135,8 +135,8 @@ public sealed class ServerControllerContractTests : IAsyncLifetime
 
         var (status, json) = await JsonHttp.ReadAsync(response);
         Assert.Equal(HttpStatusCode.BadGateway, status);
-        Assert.False(json.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("后端请求失败: boom", json.RootElement.GetProperty("message").GetString());
+        Assert.False(json.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("后端请求失败: boom", json.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -145,7 +145,8 @@ public sealed class ServerControllerContractTests : IAsyncLifetime
         using var response = await SendAsync(HttpMethod.Get, "/sc/Server/status", authenticated: false);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Equal("", await response.Content.ReadAsStringAsync());
+        var (_, body) = await JsonHttp.ReadAsync(response);
+        Assert.Equal("请先登录", body.RootElement.GetProperty("detail").GetString());
         Assert.Empty(_handler.Requests);
     }
 }

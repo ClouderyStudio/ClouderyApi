@@ -30,13 +30,13 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task List_requires_login_with_cloudery_error_shape()
+    public async Task List_requires_login_with_unified_error_shape()
     {
         var response = await Client.GetAsync("/exam/results");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var (_, body) = await JsonHttp.ReadAsync(response);
-        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("未登录，无法使用云端同步", body.RootElement.GetProperty("message").GetString());
+        Assert.False(body.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("未登录，无法使用云端同步", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -47,8 +47,8 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
             var response = await JsonHttp.SendAsync(Client, method, "/exam/results", new { });
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             var (_, body) = await JsonHttp.ReadAsync(response);
-            Assert.False(body.RootElement.GetProperty("success").GetBoolean());
-            Assert.Equal("未登录，无法使用云端同步", body.RootElement.GetProperty("message").GetString());
+            Assert.False(body.RootElement.TryGetProperty("success", out _));
+            Assert.Equal("未登录，无法使用云端同步", body.RootElement.GetProperty("detail").GetString());
         }
     }
 
@@ -61,7 +61,7 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Post_with_json_null_returns_framework_validation_problem()
+    public async Task Post_with_json_null_returns_unified_validation_shape()
     {
         SignIn();
         var request = new HttpRequestMessage(HttpMethod.Post, "/exam/results")
@@ -72,10 +72,10 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
         var response = await Client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         var (_, body) = await JsonHttp.ReadAsync(response);
         // 控制器里的 body == null 分支（"缺少请求体"）在 [ApiController] 下不可达。
-        Assert.False(body.RootElement.TryGetProperty("success", out _));
+        Assert.Equal("参数校验失败", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
         var unknown = await JsonHttp.SendAsync(Client, HttpMethod.Delete, "/exam/results/no-such-key");
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         var (_, unknownBody) = await JsonHttp.ReadAsync(unknown);
-        Assert.Equal("记录不存在", unknownBody.RootElement.GetProperty("message").GetString());
+        Assert.Equal("记录不存在", unknownBody.RootElement.GetProperty("detail").GetString());
 
         await SyncAsync("k-del", "PHQ-9", "2026-01-02T03:04:05Z", 1);
         var deleted = await JsonHttp.SendAsync(Client, HttpMethod.Delete, "/exam/results/k-del");
