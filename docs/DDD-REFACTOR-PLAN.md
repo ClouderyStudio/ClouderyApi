@@ -317,7 +317,7 @@
 - **机械等价证据**：第 1–3 步与第 5 步的全部 diff 只有 `using`/`namespace` 行（剔除后逐行比对零残差，第 5 步非 using 行数 = 0）；第 4 步唯一非 using 改动是 7 个 `Migrations/Mhop` 文件里 `modelBuilder.Entity("...")` 等 EF CLR 实体名字符串（176 行）；迁移文件 BOM 与行尾逐字节保持（`20260930124306_MhopBottles.Designer.cs`、`20261001035824_mssql.local_migration_832.Designer.cs` 本就无 BOM，现仍无）。
 - **验证口径**：每一步在主树单跑 `dotnet build` 0 error（唯一既有警告 `ClouderyApi/Data/ClouderyApiContext.cs(51,22)` CS8603）+ `dotnet test` **185 passed / 0 failed**（必须单跑：本机 MySQL `max_connections=151` 被多代理共用，并发会假失败）；`dotnet ef migrations list` 三上下文正常、`has-pending-model-changes` 三上下文均 No changes；旧命名空间 grep 全 0；`using ClouderyApi.Data;` 仅剩 14 处真正使用 `ClouderyApiContext` 的位置（Program.cs、Cloudery/Zhuxs 应用层、Migrations/ClouderyApi、3 个测试文件）。
 - **说明**：本文 Stage 1 / Stage 2 章节引用的路径是当时的真实路径（如 `ClouderyApi/Models/Mhop/*`、`ClouderyApi/UseCases/*`、`ClouderyApi/Data/ClouderyApiContext.cs(51,22)` 警告仍有效），Stage 3 之后统一位于 `ClouderyApi/Modules/<Ctx>/<Layer>/`；旧→新完整映射见 docs/DDD-STAGE3-MODULE-MAP.md（改造完成后已清理，可从 git 历史取回）。
-- **未做**：NetArchTest 架构测试（可选项，未引入）；拆分 `ClouderyApiContext` 属 Stage 5。
+- **架构门禁**：NetArchTest 架构测试已于 Stage 5 补入 ✅（见下方 M7 记录）；`ClouderyApiContext` 的拆分在 Stage 5 §5.1 完成。
 
 ### Stage 4 — 领域事件与事务边界 ✅ 已完成（路线 A：进程内派发；5 步 + 2 次接线守卫 + 1 次缺陷记录）
 > 施工图已单独成文并按 Stage 3 新布局刷新：docs/DDD-STAGE4-DOMAIN-EVENTS.md（改造完成后已清理，可从 git 历史取回）（第 5 步实测后已在 §四/§五 回填「内容审核那一处事务不适用」的结论）。以下 MhopForumController.cs:206/246/489、MhopBottleAdminController.cs:154/191 等行号为方案撰写时的旧值，现以施工图为准。
@@ -341,7 +341,7 @@
 - 基于 policy 的授权替换 AdminOnlyAttribute 的 service-locator。
 - 修复 SurvivalCraft 配置键不匹配（见附录 A）。
 - 启动期 Migrate/Seed 移出到部署步骤或受控后台任务（Program.cs:156-183）。
-- 每上下文独立 MigrationsHistoryTable；.editorconfig + analyzer；CI 测试门禁；限流分布式化（可选）✅ 已完成（见 M7 记录 5.7）。
+- 每上下文独立 MigrationsHistoryTable；.editorconfig + analyzer；CI 测试门禁 ✅（`e01384c`）；限流分布式化（可选）✅ 已完成（见 M7 记录 5.7）；NetArchTest 架构门禁 ✅ 已完成（见 M7 记录）。
 - 清理死代码 / 补 ExamPaper 输入 DTO。
 - **M7 里程碑记录（Stage 5，均仅本地未推送）**：
   - Options 模式（5.2）：`e21e423` CasdoorSettings、`d29e9cf` AdminOptions、`9e33613` SckeyOptions、`0048adc` CorsSettings、`041a787` MhopOptions；`8892bf9` 修复 SCKEY 配置键不匹配（附录 A）。
@@ -363,6 +363,10 @@
     - `9898c97` 测试（共享计数语义、降级回退、密钥环落点；Redis 用例走 `CLOUDERY_TEST_REDIS`，未设则该类跳过）；`bd92213` README + `ClouderyApi/appsettings.example.json` 配置说明。
     - 验证：`dotnet build ClouderyApi.sln --configuration Release -warnaserror` 0 警告 0 错误；全量测试 **260 passed / 0 failed / 0 skipped**（便携 MySQL 3307 + Redis 6379）；端到端 9 连打 `POST /exam/result-analysis` → 200×8 后 429，Redis 不可达时照旧 fail-open。
   - 5.7 测试项（既有缺口，附录 C 第 6 项 / 附录 D 第 1 项）✅ 漂流瓶 HTTP 路径契约测试已补齐：`ClouderyApi.Tests/MhopBottleContractTests.cs`（前台 7 条）+ `ClouderyApi.Tests/MhopBottleAdminContractTests.cs`（管理端 6 条），覆盖 8 条前台路由未登录 401 形状、投瓶/详情/发消息/结束/举报的成功与 404·409·422 文案、匿名响应绝不含身份字段、after_id 增量与 hidden 消息不下发、管理端鉴权阶梯、stats 精确计数、分页夹取 page/size、remove/restore/approve 状态机与重复 approve 409、消息 hide/restore 对前台可见性的影响。实测 `dotnet test --filter FullyQualifiedName~MhopBottle` → 15 passed / 0 failed。
+
+  - NetArchTest 架构门禁 ✅ 已完成：`ClouderyApi.Tests/ClouderyApi.Tests.csproj` 引入 `NetArchTest.Rules 1.3.2`，新增 `ClouderyApi.Tests/ArchitectureTests.cs` 9 条门禁（选型非空校验、Domain 不依赖外层/EF/AspNetCore、Api 不依赖 EF、内层不依赖 MVC、Shared 不依赖 Modules、Cloudery/Zhuxs 的 Api+Application 不绕过 `IClouderyDbContext`/`IZhuxsDbContext`、控制器必须位于 `Modules/<Ctx>/Api`、DbContext 必须位于 `*.Infrastructure.Persistence`）。实测 `dotnet test --filter FullyQualifiedName~ArchitectureTests` → 9 passed / 0 failed。
+    - 坑：选类型必须用 `ResideInNamespaceStartingWith(完整命名空间)`；`ResideInNamespaceContaining(".Api")` 会误配根命名空间 `ClouderyApi`（自身含 "Api"），进而选出 Application/Infrastructure 类型造成假失败。
+  - Cloudery / Zhuxs 领域收口 ✅ 已完成（对外契约逐字不变、无新迁移）：`GradeRequest`/`ExamGradeItem`/`ExamGradeResult` 由 `Modules/Cloudery/Api/Contracts/ExamGradeDtos.cs` 移入 `Modules/Cloudery/Domain/ExamGrading.cs`（`ExamPaperGrader` 不再反向依赖 Api）；补领域工厂/行为方法 `ExamPaper.Create` / `ExamPaper.ReplaceContent` / `Whitelist.Create` / `Application.Create` / `Term.Create`，`ClouderyApi/Modules/Zhuxs/Domain/Term.cs` 去掉 `using Microsoft.EntityFrameworkCore;` 与 `TermInfo`/`TermFile` 上的 `[Keyless]`（二者仅作 JSON 列类型）；对应 5 个应用服务改用工厂。
 
 ---
 
