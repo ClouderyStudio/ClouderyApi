@@ -520,8 +520,8 @@ curl -X POST https://api.cldery.com/scforge/plugins \
 - 列表只显示前缀与掩码（`scf_a1b2…****`），够认出"哪一把"但反推不出令牌。
 - 吊销是软删除（写 `RevokedAt` + 原因），保留行便于审计。
 - **Cookie 会话优先**：已登录时忽略 Bearer，不会被 Key 覆盖真实身份。
-- 校验失败**不直接拒绝**，由各写端点按既有约定返回 `401 {"success":false,"message":"请先登录"}`，
-  对外错误形状不变。作用域不足返回 `403`，脚本据此能区分"密钥失效"和"权限不够"。
+- 校验失败**不直接拒绝**，由各写端点返回统一错误体 `401 {"detail":"请先登录"}`。
+  作用域不足返回 `403 {"detail":"当前 API Key 缺少「…」作用域"}`，脚本据此能区分"密钥失效"和"权限不够"。
 
 > 迁移：`ScforgeApiKeys`（`Migrations/Scforge`）新增 `scforge_api_keys` 表。
 > 迁移 ID 沿用全局唯一约定（四个域共用 `__EFMigrationsHistory`）。
@@ -542,7 +542,7 @@ curl -X POST https://api.cldery.com/scforge/plugins \
 | --- | --- |
 | `Modules/Scforge/Domain/` | 聚合（Plugin / Version / Comment / Vote / Admin）、`ScforgeCatalog`、`ScforgeContentStatus`、`ScforgeAdminRoles`、`ScforgePermissionSet`、模块内业务异常 |
 | `Modules/Scforge/Application/` | `ScforgePluginAppService` / `ScforgeCommentAppService` / `ScforgeVoteAppService` / **`ScforgeAdminAppService`**、`ScforgeActor`、`ScforgeAdminContext`、`IScforgeDbContext`、`IScforgeFileStore`、`Mapping/ScforgeMapper.cs` |
-| `Modules/Scforge/Api/` | **四个控制器**（插件 / 版本 / 评论 / 后台）+ `ScforgeControllerBase`（裸对象与业务异常翻译）+ `Contracts/` |
+| `Modules/Scforge/Api/` | **四个控制器**（插件 / 版本 / 评论 / 后台）+ `ScforgeControllerBase`（统一错误体与业务异常翻译）+ `Contracts/` |
 | `Modules/Scforge/Infrastructure/` | `ScforgeDbContext`(+Factory)、**`Storage/` 下的 `LocalScforgeFileStore` / `OssScforgeFileStore` / `ScforgeFilePolicy` / `ScforgePackageInspector`**、`ScforgeCurrentUser`、`ScforgeAdminAccessor`、`ScforgeOptions`、`ScforgeUploadPaths` |
 | `Shared/Directory/IUserDirectory.cs` + `Modules/Identity/Application/UserDirectory.cs` | 跨模块只读用户目录（后台按用户名 / 邮箱指定管理员） |
 | `Migrations/Scforge/` | `ScforgeInitial`（四张表）、`ScforgeReviewAndAdmins`（审核字段 + `scforge_admins`） |

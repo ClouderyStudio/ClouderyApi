@@ -15,7 +15,7 @@ namespace ClouderyApi.Modules.Scforge.Api;
 ///
 /// 认证方式与 SCForge 其余写端点一致：不挂 <c>[Authorize]</c>，由
 /// <see cref="ScforgeControllerBase"/> 的异常翻译产出
-/// <c>{"success":false,"message":…}</c>；调用者身份由 Cookie 会话或 API Key 两条通道之一提供。
+/// <c>{"detail":"…"}</c>（统一错误体）；调用者身份由 Cookie 会话或 API Key 两条通道之一提供。
 /// </summary>
 [Route("scforge/api-keys")]
 public sealed class ScforgeApiKeysController(

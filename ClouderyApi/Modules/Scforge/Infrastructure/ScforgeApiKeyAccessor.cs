@@ -36,7 +36,7 @@ public sealed class ScforgeApiKeyAccessor(IHttpContextAccessor accessor)
 
     /// <summary>
     /// 要求某个作用域；不足则抛 403 业务异常（由 <c>ScforgeControllerBase.GuardAsync</c> 翻译成
-    /// <c>{"success":false,"message":…}</c>，与既有错误形状一致）。
+    /// <c>{"detail":"…"}</c>，与统一错误形状一致）。
     ///
     /// 注意抛 403 而不是 401：身份是有效的，只是这把 Key 的权限不够 ——
     /// 这与「没登录」是两种不同的运维问题，脚本据此能区分是密钥失效还是范围不够。

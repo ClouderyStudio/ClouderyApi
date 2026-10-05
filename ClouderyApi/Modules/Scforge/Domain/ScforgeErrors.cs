@@ -3,9 +3,10 @@ namespace ClouderyApi.Modules.Scforge.Domain;
 /// <summary>
 /// SCForge 域规则被违反（字段非法、状态不允许、配额超限…）。
 ///
-/// 刻意**不复用** <c>Shared.Exceptions.DomainRuleException</c>：全局
-/// <c>MhopApiExceptionFilter</c> 会把它渲染成 MHOP 形状的 <c>{ detail }</c> 响应，
-/// 而 SCForge 与 Cloudery / Zhuxs 一致，对外一律是 <c>{ success, message }</c> 裸对象。
+/// 刻意**不复用** <c>Shared.Exceptions.DomainRuleException</c>：那个异常由全局
+/// <c>MhopApiExceptionFilter</c> 处理，语义属于 MHOP 模块；SCForge 要自己决定状态码
+/// （400 / 401 / 403 / 404 / 409），所以由 <c>ScforgeControllerBase.GuardAsync</c> 翻译成
+/// 统一错误体 <c>{ "detail": "…" }</c>（<c>Shared.Json.ApiError</c> 产出）。
 /// 领域层只承载面向用户的中文原因，由控制器翻译成 HTTP 状态码。
 /// </summary>
 public sealed class ScforgeRuleException(string message) : Exception(message);
