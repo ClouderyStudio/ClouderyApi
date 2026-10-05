@@ -41,6 +41,8 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Scforge__UploadDir", ScforgeUploadRoot);
         // 集成测试始终走本地存储，不碰真实 OSS。
         Environment.SetEnvironmentVariable("Scforge__Storage__Provider", "local");
+        // Data Protection 密钥环指向系统临时目录：默认落内容根，测试里就是仓库工作树。
+        Environment.SetEnvironmentVariable("DataProtection__KeysDirectory", DataProtectionKeysRoot);
 
         // Casdoor 节在 Program.cs 构建服务阶段（AddCasdoor）就被读取，那时只有 CreateBuilder 的
         // 环境变量源可见；ConfigureAppConfiguration 追加的源要等宿主最终配置才生效，来不及。
@@ -59,6 +61,10 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
     public static string ScforgeUploadRoot { get; } =
         Path.Combine(Path.GetTempPath(), "cloudery-tests-scforge");
 
+    /// <summary>Data Protection 密钥环目录（系统临时目录下的一次性位置）。</summary>
+    public static string DataProtectionKeysRoot { get; } =
+        Path.Combine(Path.GetTempPath(), "cloudery-tests-dataprotection");
+
     public string DatabaseName { get; }
 
     public string ConnectionString { get; }
@@ -73,6 +79,7 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Mhop:Storage:Provider", "local");
         builder.UseSetting("Scforge:UploadDir", ScforgeUploadRoot);
         builder.UseSetting("Scforge:Storage:Provider", "local");
+        builder.UseSetting("DataProtection:KeysDirectory", DataProtectionKeysRoot);
         builder.UseSetting("Casdoor:Endpoint", "https://casdoor.example.com");
         builder.UseSetting("Casdoor:OrganizationName", "test");
         builder.UseSetting("Casdoor:ApplicationName", "test");

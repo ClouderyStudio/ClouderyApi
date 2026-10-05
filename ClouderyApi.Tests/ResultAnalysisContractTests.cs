@@ -5,8 +5,9 @@ using ClouderyApi.Tests.TestSupport;
 namespace ClouderyApi.Tests;
 
 /// <summary>
-/// 结果解读（exam/result-analysis）契约。注意 IpRateLimit 用进程内静态字典（key=ip|path），
-/// 因此本类对同一路径的请求数必须远小于 8；其他测试类不访问该路径，故不会互相污染。
+/// 结果解读（exam/result-analysis）契约。注意 IpRateLimit 限 8 次 / 300 秒（key=ip|path），
+/// 本类对同一路径的请求数必须远小于 8；计数走 IRateLimitStore（宿主内单例，每个测试方法一个宿主），
+/// 因此不会与其它测试类互相污染。
 /// 构造函数把 LLM 端点指向不可达地址，保证 engine=local 的本地兜底路径确定可测。
 /// </summary>
 public sealed class ResultAnalysisContractTests : IntegrationTestBase
