@@ -16,6 +16,7 @@ public interface IScforgeDbContext
     DbSet<ScforgeAdmin> ScforgeAdmins { get; }
     DbSet<ScforgeGameVersion> ScforgeGameVersions { get; }
     DbSet<ScforgeApiKey> ScforgeApiKeys { get; }
+    DbSet<ScforgeAccessGrant> ScforgeAccessGrants { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

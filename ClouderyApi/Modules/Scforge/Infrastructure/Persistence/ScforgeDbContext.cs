@@ -22,6 +22,7 @@ public class ScforgeDbContext(DbContextOptions<ScforgeDbContext> options) : DbCo
     public DbSet<ScforgeAdmin> ScforgeAdmins { get; set; } = null!;
     public DbSet<ScforgeGameVersion> ScforgeGameVersions { get; set; } = null!;
     public DbSet<ScforgeApiKey> ScforgeApiKeys { get; set; } = null!;
+    public DbSet<ScforgeAccessGrant> ScforgeAccessGrants { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +63,24 @@ public class ScforgeDbContext(DbContextOptions<ScforgeDbContext> options) : DbCo
                 .WithOne()
                 .HasForeignKey(v => v.PluginId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // 授权名单随插件级联删除：插件没了，授权也失去意义，留着只是悬空数据。
+            entity.HasMany(p => p.AccessGrants)
+                .WithOne()
+                .HasForeignKey(g => g.PluginId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScforgeAccessGrant>(entity =>
+        {
+            entity.Property(e => e.UserId).IsRequired();
+            entity.Property(e => e.UserName).IsRequired();
+
+            // 授权判定热路径：按 (插件, 用户) 查一次，必须唯一且覆盖索引。
+            entity.HasIndex(e => new { e.PluginId, e.UserId }).IsUnique();
+
+            // 名单按加入时间展示。
+            entity.HasIndex(e => new { e.PluginId, e.CreatedAt });
         });
 
         modelBuilder.Entity<ScforgeVersion>(entity =>

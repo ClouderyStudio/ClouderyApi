@@ -106,6 +106,12 @@ public static class ScforgeCatalog
     public const int MaxDependencies = 20;
     public const int MaxGameVersionsPerRelease = 10;
 
+    /// <summary>白名单模式下单个插件最多授权多少人。</summary>
+    public const int MaxAccessGrants = 200;
+
+    /// <summary>访问说明（口令模式下的提示语）长度上限。</summary>
+    public const int MaxAccessHintLength = 200;
+
     /// <summary>分类键是否合法。</summary>
     public static bool IsCategory(string? key) => key is not null && Categories.ContainsKey(key);
 

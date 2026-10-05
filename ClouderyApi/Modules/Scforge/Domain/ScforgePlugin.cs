@@ -125,6 +125,25 @@ public class ScforgePlugin
     [MaxLength(80)]
     public string? ReviewedBy { get; set; }
 
+    /// <summary>
+    /// 访问模式：public / password / whitelist，见 <see cref="ScforgeAccessMode"/>。
+    /// 存量数据靠 EF 的默认值回填成 public，行为与引入隐私前完全一致。
+    /// </summary>
+    [Required]
+    [MaxLength(16)]
+    public string AccessMode { get; set; } = ScforgeAccessMode.Public;
+
+    /// <summary>
+    /// 口令哈希（仅 password 模式）。**只存 PBKDF2 派生值**，明文永不落库、
+    /// 任何接口都取不回来。切走 password 模式时应用层会把它置空。
+    /// </summary>
+    [MaxLength(160)]
+    public string? AccessPasswordHash { get; set; }
+
+    /// <summary>作者设置的访问说明（口令模式下可写「问某某要口令」），仅授权者可见。</summary>
+    [MaxLength(200)]
+    public string? AccessHint { get; set; }
+
     /// <summary>平台精选标记。</summary>
     public bool Featured { get; set; }
 
@@ -134,9 +153,21 @@ public class ScforgePlugin
 
     public List<ScforgeVersion> Versions { get; set; } = [];
 
+    /// <summary>白名单模式的授权名单（仅该模式下有值）。</summary>
+    public List<ScforgeAccessGrant> AccessGrants { get; set; } = [];
+
     /// <summary>净评分：赞同减反对。</summary>
     public int Score => Upvotes - Downvotes;
 
     /// <summary>是否已通过审核（对公众可见）。</summary>
     public bool IsPublished => Status == ScforgeContentStatus.Published;
+
+    /// <summary>
+    /// 是否会出现在公开目录（搜索 / 精选 / 最近 / 分类计数）。
+    /// 隐私插件一律不出现 —— 挡住了「无意间被人翻到」，代价是没有曝光量。
+    /// </summary>
+    public bool IsPubliclyListed => AccessMode == ScforgeAccessMode.Public;
+
+    /// <summary>是否需要口令解锁（决定详情页要不要渲染解锁门）。</summary>
+    public bool RequiresPassword => AccessMode == ScforgeAccessMode.Password;
 }

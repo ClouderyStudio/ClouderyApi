@@ -20,6 +20,16 @@ public sealed class ScforgeOptions
     public int MaxPageSize { get; set; } = 60;
 
     /// <summary>
+    /// 口令解锁令牌的签名密钥（HMAC-SHA256）。
+    /// **必须配置**：留空时启动即抛错 —— 用默认密钥等于没签名，任何人都能伪造解锁令牌。
+    /// 换密钥会让所有已签发的解锁令牌立即失效（用户需重新输口令），这是预期行为。
+    /// </summary>
+    public string AccessTokenSecret { get; set; } = string.Empty;
+
+    /// <summary>解锁令牌有效期（分钟），默认 120，运行时收敛到 5 ~ 1440。</summary>
+    public int AccessTokenMinutes { get; set; } = 120;
+
+    /// <summary>
     /// 插件包与图片的存放位置：local=本机磁盘（插件包私有目录 + /scforge/uploads 静态托管图片）；
     /// oss=阿里云 OSS（图片公共读并返回外链，插件包保持私有、仍经下载接口流出）。
     /// </summary>

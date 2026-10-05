@@ -61,6 +61,21 @@ public class ScforgeAddonSummaryDto
 
     /// <summary>已通过审核的版本数（公开可见的版本）。</summary>
     public int PublishedVersionCount { get; set; }
+
+    /// <summary>
+    /// 访问模式：public / password / whitelist。前端据此决定
+    /// 「是否进公开目录」与「详情页要不要渲染解锁门」。
+    /// </summary>
+    public string AccessMode { get; set; } = "public";
+
+    /// <summary>当前调用者是否已通过口令解锁（仅 password 模式可能为 true）。</summary>
+    public bool AccessUnlocked { get; set; }
+
+    /// <summary>
+    /// 当前调用者是否已获授权（作者 / 管理员 / 名单内 / 已解锁恒为 true）。
+    /// 为 false 时前端只展示脱敏外壳，不下发描述、readme 与版本列表。
+    /// </summary>
+    public bool HasAccess { get; set; } = true;
 }
 
 /// <summary>详情页：列表字段 + 正文、链接、截图文集与全部版本。</summary>
@@ -75,6 +90,20 @@ public sealed class ScforgeAddonDetailDto : ScforgeAddonSummaryDto
     public string? DonationUrl { get; set; }
     public string? DiscordUrl { get; set; }
     public List<string> Gallery { get; set; } = [];
+
+    /// <summary>
+    /// 作者留的访问说明（口令模式下显示在解锁框下方）。公开模式恒为 null。
+    /// </summary>
+    public string? AccessHint { get; set; }
+
+    /// <summary>
+    /// 该插件是否**已经设了口令**。
+    ///
+    /// 口令只存哈希、取不回来，因此编辑页需要这个标志来决定输入框是
+    /// 「首次填写」还是「留空表示不修改」—— 没有它作者只能靠猜，
+    /// 每次编辑都要重设一遍口令。
+    /// </summary>
+    public bool HasAccessPassword { get; set; }
 
     /// <summary>当前用户是否为作者本人：可编辑资料、发布/编辑版本、删除。</summary>
     public bool CanManage { get; set; }
@@ -312,4 +341,50 @@ public class ScforgeUserCandidateDto
 
     /// <summary>已经是管理员时的现有角色，便于前端提示。</summary>
     public string? CurrentRole { get; set; }
+}
+
+/* ------------------------------------------------------------------ */
+/* 隐私访问                                                            */
+/* ------------------------------------------------------------------ */
+
+/// <summary>口令解锁成功后的凭据：令牌明文只在这里出现一次。</summary>
+public class ScforgeAccessUnlockDto
+{
+    public bool Success { get; set; }
+
+    /// <summary>解锁令牌，之后详情与下载请求带在 <c>X-Scforge-Access</c> 头里。</summary>
+    public string Token { get; set; } = string.Empty;
+
+    /// <summary>令牌过期时间（北京时间）。</summary>
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>冗余回传，便于前端确认当前模式。</summary>
+    public string AccessMode { get; set; } = "public";
+
+    public string Notice { get; set; } = string.Empty;
+}
+
+/// <summary>白名单模式下的一名授权用户。</summary>
+public class ScforgeAccessGrantDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>一个可授予的访问模式（前端不硬编码，直接用后端下发的目录）。</summary>
+public class ScforgeAccessModeDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+}
+
+/// <summary>白名单编辑器里「搜人」的结果项。</summary>
+public class ScforgeAccessCandidateDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string? Avatar { get; set; }
 }

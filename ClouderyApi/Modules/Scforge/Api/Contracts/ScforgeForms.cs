@@ -37,6 +37,17 @@ public class ScforgeAddonCreateForm
     public string? DonationUrl { get; set; }
     public string? DiscordUrl { get; set; }
 
+    // ---- 隐私访问（可选，缺省即公开）----
+
+    /// <summary>访问模式：public / password / whitelist。</summary>
+    public string? AccessMode { get; set; }
+
+    /// <summary>访问口令明文；仅 <c>AccessMode=password</c> 时必填。只在这一次请求里出现。</summary>
+    public string? AccessPassword { get; set; }
+
+    /// <summary>访问说明（口令模式下的提示语，例：「问服主群要口令」）。</summary>
+    public string? AccessHint { get; set; }
+
     /// <summary>资源图标（可选）：JPG / PNG / WebP / GIF。</summary>
     public IFormFile? Icon { get; set; }
 
@@ -71,11 +82,31 @@ public class ScforgeAddonEditForm
     public string? DonationUrl { get; set; }
     public string? DiscordUrl { get; set; }
 
+    // ---- 隐私访问 ----
+    // 编辑页改这几项**不触发重新审核**：隐私是作者对访问范围的控制，
+    // 不是内容变更，没有必要让插件从已发布掉回待审核（那会让老链接当场失效）。
+
+    /// <summary>访问模式：public / password / whitelist。留空表示不改。</summary>
+    public string? AccessMode { get; set; }
+
+    /// <summary>新口令明文；仅在需要更换口令时填写，留空表示沿用原口令。</summary>
+    public string? AccessPassword { get; set; }
+
+    /// <summary>访问说明（口令模式下的提示语）。</summary>
+    public string? AccessHint { get; set; }
+
+    /// <summary>
+    /// 白名单模式的完整名单（userId 数组）。传空数组即清空名单；
+    /// 为 <c>null</c> 表示不动名单。整体替换语义，避免前端做集合 diff。
+    /// </summary>
+    public List<string>? AccessGrantUserIds { get; set; }
+
     /// <summary>传入即替换图标。</summary>
     public IFormFile? Icon { get; set; }
 
     /// <summary>传入即整体替换截图列表（最多 6 张）。</summary>
     public List<IFormFile>? Gallery { get; set; }
+
 
     /// <summary>清空图标。</summary>
     public bool? ClearIcon { get; set; }
@@ -160,4 +191,18 @@ public class ScforgeCommentCreateIn
 public class ScforgeCommentUpdateIn
 {
     public string? Body { get; set; }
+}
+
+/// <summary>提交访问口令换取解锁令牌。</summary>
+public class ScforgeAccessUnlockIn
+{
+    /// <summary>访问口令明文；只在这一次请求里出现，服务端只留哈希。</summary>
+    public string? Password { get; set; }
+}
+
+/// <summary>整体替换白名单模式的授权名单。</summary>
+public class ScforgeAccessGrantsIn
+{
+    /// <summary>完整的 userId 列表；空数组即清空。</summary>
+    public List<string>? UserIds { get; set; }
 }

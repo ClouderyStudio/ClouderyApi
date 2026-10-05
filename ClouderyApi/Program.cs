@@ -16,6 +16,7 @@ using ClouderyApi.Modules.Mhop.Domain.Events;
 using ClouderyApi.Modules.Zhuxs.Application;
 using ClouderyApi.Modules.Zhuxs.Infrastructure.Persistence;
 using ClouderyApi.Modules.Scforge.Application;
+using ClouderyApi.Modules.Scforge.Domain;
 using ClouderyApi.Modules.Scforge.Infrastructure;
 using ClouderyApi.Modules.Scforge.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -151,6 +152,11 @@ builder.Services.AddScoped<ScforgeAdminAccessor>();
 builder.Services.AddScoped<ScforgeAdminAppService>();
 builder.Services.AddScoped<ScforgeGameVersionAppService>();
 builder.Services.AddScoped<ScforgeApiKeyAppService>();
+
+// 隐私访问：口令哈希（无状态，可单例）与访问判定 / 解锁令牌签发。
+// 签名密钥在下方启动时校验 —— 留空会让任何人伪造解锁令牌，因此直接拒绝启动。
+builder.Services.AddSingleton<ScforgeAccessHasher>();
+builder.Services.AddScoped<ScforgeAccessAppService>();
 
 // 跨模块用户目录（Identity 实现）：SCForge 指定管理员时按用户名/邮箱找人。
 builder.Services.AddScoped<IUserDirectory, ClouderyApi.Modules.Identity.Application.UserDirectory>();
@@ -355,6 +361,17 @@ builder.Services.AddSwaggerGen(u =>
 });
 
 var app = builder.Build();
+
+// ===== SCForge 隐私访问：解锁令牌签名密钥必须配置 =====
+// 用默认 / 空密钥签发的令牌任何人都能伪造，等于「口令模式形同虚设」。
+// 因此这里直接拒绝启动，而不是降级成 warning —— 隐私功能失效要在部署时就暴露。
+var scforgeAccessSecret = app.Configuration["Scforge:AccessTokenSecret"];
+if (string.IsNullOrWhiteSpace(scforgeAccessSecret) || scforgeAccessSecret.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Scforge:AccessTokenSecret 未配置或短于 32 个字符。隐私插件的解锁令牌靠它签名，"
+        + "缺失等于任何人都能伪造口令绕过。生成方式：openssl rand -base64 48");
+}
 
 // ===== 维护工具：清理对象存储中的历史孤儿图片 =====
 // 用法：dotnet ClouderyApi.dll --sweep-orphans [--delete-orphans]
