@@ -25,6 +25,9 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
     public const string TestSeedAdminUsername = "admin";
     public const string TestSeedAdminPassword = "test-only-admin-pwd";
 
+    /// <summary>隐私解锁令牌的测试签名密钥（≥32 字符，通过 Program 的启动校验）。</summary>
+    public const string TestAccessTokenSecret = "test-only-scforge-access-token-secret-0123456789";
+
     public ClouderyApiFactory(string databaseName)
     {
         DatabaseName = databaseName;
@@ -42,6 +45,9 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Scforge__UploadDir", ScforgeUploadRoot);
         // 集成测试始终走本地存储，不碰真实 OSS。
         Environment.SetEnvironmentVariable("Scforge__Storage__Provider", "local");
+        // 隐私插件的解锁令牌签名密钥：Program 在启动时强制校验（缺失即拒绝启动），
+        // 测试用固定的测试密钥，断言可复现。生产不会出现这个值。
+        Environment.SetEnvironmentVariable("Scforge__AccessTokenSecret", TestAccessTokenSecret);
         // Data Protection 密钥环指向系统临时目录：默认落内容根，测试里就是仓库工作树。
         Environment.SetEnvironmentVariable("DataProtection__KeysDirectory", DataProtectionKeysRoot);
 
@@ -87,6 +93,7 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Mhop:Storage:Provider", "local");
         builder.UseSetting("Scforge:UploadDir", ScforgeUploadRoot);
         builder.UseSetting("Scforge:Storage:Provider", "local");
+        builder.UseSetting("Scforge:AccessTokenSecret", TestAccessTokenSecret);
         builder.UseSetting("DataProtection:KeysDirectory", DataProtectionKeysRoot);
         builder.UseSetting("Casdoor:Endpoint", "https://casdoor.example.com");
         builder.UseSetting("Casdoor:OrganizationName", "test");

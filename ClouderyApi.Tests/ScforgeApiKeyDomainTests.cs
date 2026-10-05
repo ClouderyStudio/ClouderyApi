@@ -203,6 +203,7 @@ public sealed class ScforgeApiKeyDomainTests
         public DbSet<ScforgeVote> ScforgeVotes => throw new NotSupportedException();
         public DbSet<ScforgeAdmin> ScforgeAdmins => throw new NotSupportedException();
         public DbSet<ScforgeGameVersion> ScforgeGameVersions => throw new NotSupportedException();
+        public DbSet<ScforgeAccessGrant> ScforgeAccessGrants => throw new NotSupportedException();
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

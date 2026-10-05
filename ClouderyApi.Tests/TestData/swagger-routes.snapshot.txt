@@ -65,12 +65,15 @@ GET /misc/LongLink/jump/{decodedOriginLink}
 GET /sc/Server/get/{path}
 GET /sc/Server/{path}
 GET /scforge/addons
+GET /scforge/addons/access/modes
+GET /scforge/addons/access/users
 GET /scforge/addons/featured
 GET /scforge/addons/mine
 GET /scforge/addons/mine/summary
 GET /scforge/addons/recent
 GET /scforge/addons/{addonId}/comments
 GET /scforge/addons/{idOrSlug}
+GET /scforge/addons/{id}/access/grants
 GET /scforge/addons/{id}/vote
 GET /scforge/admin/addons
 GET /scforge/admin/admins
@@ -141,6 +144,7 @@ POST /mhop/upload/image
 POST /sc/Server/{path}
 POST /scforge/addons
 POST /scforge/addons/{addonId}/comments
+POST /scforge/addons/{id}/access/unlock
 POST /scforge/addons/{id}/resubmit
 POST /scforge/addons/{id}/versions
 POST /scforge/admin/addons/{id}/review
@@ -166,6 +170,7 @@ PUT /mhop/auth/profile
 PUT /mhop/forum/posts/{postId}
 PUT /mhop/forum/replies/{replyId}
 PUT /scforge/addons/{id}
+PUT /scforge/addons/{id}/access/grants
 PUT /scforge/addons/{id}/vote/down
 PUT /scforge/addons/{id}/vote/up
 PUT /scforge/admin/addons/{id}
