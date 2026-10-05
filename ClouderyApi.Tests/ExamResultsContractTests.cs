@@ -159,4 +159,143 @@ public sealed class ExamResultsContractTests : IntegrationTestBase
         Assert.Equal(1, body.RootElement.GetProperty("deleted").GetInt32());
         Assert.Equal("云端记录已清空", body.RootElement.GetProperty("message").GetString());
     }
+
+    [Fact]
+    public async Task Sync_without_records_field_is_treated_as_empty_instead_of_500()
+    {
+        SignIn();
+
+        // 只取回、不上传：records 缺失曾经会在 SyncAsync 里 records.Count 抛 NRE（500）。
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/results/sync", new { });
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.True(body.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(0, body.RootElement.GetProperty("uploaded").GetInt32());
+        Assert.Equal(0, body.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal(JsonValueKind.Array, body.RootElement.GetProperty("results").ValueKind);
+    }
+
+    /// <summary>
+    /// 附录 C.4：写入与读回的时间必须逐字相同（截到微秒 + 统一 UtcDateTimeConverter 带 Z），
+    /// 否则客户端按 ISO-8601 解析会得到错误的时刻。
+    /// </summary>
+    [Fact]
+    public async Task Saved_at_and_updated_at_round_trip_identically_and_carry_utc_z()
+    {
+        SignIn();
+
+        var first = await SyncAsync("k-utc", "PHQ-9", "2026-01-02T03:04:05.123456Z", 7);
+        Assert.Equal(HttpStatusCode.OK, first.Status);
+        var row = first.Body.GetProperty("results")[0];
+        var savedAt = row.GetProperty("savedAt").GetString()!;
+        var updatedAt = row.GetProperty("updatedAt").GetString()!;
+        Assert.EndsWith("Z", savedAt);
+        Assert.EndsWith("Z", updatedAt);
+
+        var (listStatus, list) = await JsonHttp.GetJsonAsync(Client, "/exam/results");
+        Assert.Equal(HttpStatusCode.OK, listStatus);
+        var readBack = list.RootElement.GetProperty("results")[0];
+
+        // 写路径（内存里的现在值）与读路径（MySQL datetime(6) 往返）逐字相同。
+        Assert.Equal(savedAt, readBack.GetProperty("savedAt").GetString());
+        Assert.Equal(updatedAt, readBack.GetProperty("updatedAt").GetString());
+
+        var parsed = DateTime.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind);
+        Assert.Equal(DateTimeKind.Utc, parsed.Kind);
+        Assert.Equal(new DateTime(2026, 1, 2, 3, 4, 5, 123, DateTimeKind.Utc).AddTicks(4560), parsed);
+        Assert.Equal(0, parsed.Ticks % TimeSpan.TicksPerMicrosecond);
+    }
+
+    [Fact]
+    public async Task Saved_at_without_timezone_is_persisted_as_utc()
+    {
+        SignIn();
+
+        var (status, body) = await SyncAsync("k-noz", "PHQ-9", "2026-01-02T03:04:05", 1);
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        var savedAt = body.GetProperty("results")[0].GetProperty("savedAt").GetString()!;
+        Assert.EndsWith("Z", savedAt);
+        Assert.Equal(
+            new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+            DateTime.Parse(savedAt, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind));
+    }
+
+    [Fact]
+    public async Task Sync_rejects_more_than_200_records()
+    {
+        SignIn();
+
+        var records = Enumerable.Range(0, 201)
+            .Select(i => new { clientKey = $"k{i}", testId = "phq9", payload = new { score = i } })
+            .ToArray();
+
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/results/sync", new { records });
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("一次最多同步 200 条记录，请分批上传", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task Sync_rejects_oversized_payload()
+    {
+        SignIn();
+
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/results/sync", new
+        {
+            records = new[] { new { clientKey = "k-big", testId = "phq9", payload = new string('x', 300_000) } },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("单条结果过大，无法上传到云端", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task Sync_rejects_record_without_payload()
+    {
+        SignIn();
+
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/results/sync", new
+        {
+            records = new[] { new { clientKey = "k-nopayload", testId = "phq9" } },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("记录缺少结果正文（payload）", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    /// <summary>每用户最多保留最新的 200 条：第三次同步后最早的一批被裁掉。</summary>
+    [Fact]
+    public async Task Sync_prunes_to_the_newest_200_records_per_user()
+    {
+        SignIn();
+
+        for (var batch = 0; batch < 3; batch++)
+        {
+            var records = Enumerable.Range(0, 100).Select(i => new
+            {
+                clientKey = $"p-{batch}-{i}",
+                testId = "phq9",
+                savedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMinutes(batch * 100 + i)
+                    .ToString("O"),
+                payload = new { score = i },
+            }).ToArray();
+
+            var (status, body) = await JsonHttp.PostJsonAsync(Client, "/exam/results/sync", new { records });
+            Assert.Equal(HttpStatusCode.OK, status);
+            if (batch == 2) Assert.Equal(200, body.RootElement.GetProperty("total").GetInt32());
+        }
+
+        var (listStatus, list) = await JsonHttp.GetJsonAsync(Client, "/exam/results");
+        Assert.Equal(HttpStatusCode.OK, listStatus);
+        Assert.Equal(200, list.RootElement.GetProperty("total").GetInt32());
+        var rows = list.RootElement.GetProperty("results").EnumerateArray().ToArray();
+        Assert.Equal(200, rows.Length);
+        Assert.DoesNotContain(rows, r => r.GetProperty("clientKey").GetString()!.StartsWith("p-0-"));
+        Assert.Contains(rows, r => r.GetProperty("clientKey").GetString() == "p-2-99");
+    }
+
 }
+

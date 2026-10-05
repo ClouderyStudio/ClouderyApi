@@ -65,4 +65,38 @@ public sealed class ApiErrorShapeContractTests : IntegrationTestBase
         var (_, body) = await JsonHttp.ReadAsync(response);
         AssertOnlyDetail(body, "请先登录");
     }
+
+    private void SignInAsAdmin()
+        => Client.DefaultRequestHeaders.Add(
+            "Cookie",
+            AuthCookie.CreateHeader(Factory.Services, AuthCookie.TestAdminCasdoorId));
+
+    /// <summary>
+    /// 附录 C.3：同一个 API 里「未知资源」的 404 不再有两种形状——
+    /// Cloudery / ExamResults / ExamPapers / Zhuxs 六条路径都收敛成 { detail }。
+    /// </summary>
+    [Fact]
+    public async Task Cross_module_404s_share_one_shape()
+    {
+        SignInAsAdmin();
+
+        var cases = new (HttpMethod Method, string Path, string Detail)[]
+        {
+            (HttpMethod.Get, "/cloudery/members/does-not-exist", "记录不存在"),
+            (HttpMethod.Delete, "/exam/results/does-not-exist", "记录不存在"),
+            (HttpMethod.Get, "/exam/ExamPapers/does-not-exist", "未找到该试卷"),
+            (HttpMethod.Get, "/zhuxs/whitelists/does-not-exist", "记录不存在"),
+            (HttpMethod.Get, "/zhuxs/terms/does-not-exist", "记录不存在"),
+            (HttpMethod.Get, "/zhuxs/applications/does-not-exist", "记录不存在"),
+        };
+
+        foreach (var (method, path, detail) in cases)
+        {
+            var response = await JsonHttp.SendAsync(Client, method, path);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            var (_, body) = await JsonHttp.ReadAsync(response);
+            AssertOnlyDetail(body, detail);
+        }
+    }
 }

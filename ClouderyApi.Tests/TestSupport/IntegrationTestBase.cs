@@ -19,6 +19,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         await MySqlTestServer.CreateDatabaseAsync(_databaseName);
 
         Factory = new ClouderyApiFactory(_databaseName);
+        ConfigureFactory(Factory);
         Client = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
@@ -28,7 +29,13 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         await Factory.PrepareAuxiliarySchemasAsync();
     }
 
-    public Task DisposeAsync()
+    /// <summary>派生类可覆盖：在 CreateClient 之前配置工厂（例如替换上游 HttpClient 的处理器）。</summary>
+    protected virtual void ConfigureFactory(ClouderyApiFactory factory)
+    {
+    }
+
+    /// <summary>派生类可覆盖：在释放宿主之后停掉自己拉起的桩服务（先调用 base）。</summary>
+    public virtual Task DisposeAsync()
     {
         Client?.Dispose();
         Factory?.Dispose();

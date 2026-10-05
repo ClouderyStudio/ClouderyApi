@@ -175,4 +175,21 @@ public sealed class ExamPapersContractTests : IntegrationTestBase
         Assert.False(body.RootElement.TryGetProperty("success", out _));
         Assert.Equal("未找到该试卷", body.RootElement.GetProperty("detail").GetString());
     }
+
+    [Fact]
+    public async Task Put_and_delete_existing_paper_return_204()
+    {
+        SignInAsAdmin();
+        var paperId = await CreatePaperAsync();
+
+        var put = await JsonHttp.SendAsync(Client, HttpMethod.Put, $"/exam/ExamPapers/{paperId}", BuildPaper(paperId));
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+
+        var deleted = await JsonHttp.SendAsync(Client, HttpMethod.Delete, $"/exam/ExamPapers/{paperId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+
+        var (afterStatus, afterBody) = await JsonHttp.GetJsonAsync(Client, $"/exam/ExamPapers/{paperId}");
+        Assert.Equal(HttpStatusCode.NotFound, afterStatus);
+        Assert.Equal("未找到该试卷", afterBody.RootElement.GetProperty("detail").GetString());
+    }
 }

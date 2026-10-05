@@ -6,6 +6,7 @@ using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Modules.Scforge.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,6 +70,13 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
 
     public string ConnectionString { get; }
 
+    /// <summary>
+    /// 派生/用例可设置的测试钩子：在 Program 的注册之后追加（或覆盖）服务，
+    /// 例如把上游 HttpClient 的处理器换成桩、或替换 DbContext 接口。
+    /// 必须在宿主首次构建（CreateClient / Services）之前赋值。
+    /// </summary>
+    public Action<IServiceCollection>? ConfigureTestServices { get; set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -96,6 +104,11 @@ public sealed class ClouderyApiFactory : WebApplicationFactory<Program>
         {
             ["Authorization:Admins:0"] = AuthCookie.TestAdminCasdoorId,
         }));
+
+        if (ConfigureTestServices is not null)
+        {
+            builder.ConfigureTestServices(ConfigureTestServices);
+        }
     }
 
     /// <summary>
