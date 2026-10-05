@@ -16,6 +16,6 @@ public sealed class LlmOptions
 
     public string Model { get; set; } = "glm-4-flash";
 
-    /// <summary>单次请求超时（秒），<=0 时按 30 秒处理。</summary>
+    /// <summary>单次请求超时（秒），<c>&lt;= 0</c> 时按 30 秒处理。</summary>
     public int TimeoutSeconds { get; set; } = 30;
 }

@@ -25,6 +25,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using ClouderyApi.Shared.Directory;
+using ClouderyApi.Shared.OpenApi;
 using ClouderyApi.Shared.Filters;
 using ClouderyApi.Shared.RateLimit;
 using ClouderyApi.Shared.Online;
@@ -348,6 +349,9 @@ builder.Services.AddSwaggerGen(u =>
             Email = "justqiyi@qq.com"
         }
     });
+
+    // 对外文档：只含 SCForge 公开面（/scforge 下非 admin），带 scf_ API Key 安全方案
+    ScforgePublicDocument.Apply(u);
 });
 
 var app = builder.Build();
@@ -539,7 +543,11 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
 
-    app.UseSwaggerUI(u => { u.SwaggerEndpoint("/swagger/v1/swagger.json", "WebAPI_v1"); });
+    app.UseSwaggerUI(u =>
+    {
+        u.SwaggerEndpoint("/swagger/v1/swagger.json", "WebAPI_v1");
+        u.SwaggerEndpoint($"/swagger/{ScforgePublicDocument.Name}/swagger.json", "SCForge 开放 API");
+    });
 }
 
 app.Run();

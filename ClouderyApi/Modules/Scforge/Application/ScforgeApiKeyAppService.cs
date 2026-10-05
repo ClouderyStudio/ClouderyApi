@@ -95,7 +95,7 @@ public sealed class ScforgeApiKeyAppService(IScforgeDbContext db)
             .ToListAsync(cancellationToken);
 
     /// <summary>
-    /// 吊销一把 Key。只能吊销自己的（<paramref name="userId"/> 非空时）或超管指定任意人。
+    /// 吊销一把 Key。只能吊销自己的（<paramref name="ownerUserId"/> 非空时）或超管指定任意人。
     /// 重复吊销是幂等的，不会报错 —— 运维脚本重跑不应失败。
     /// </summary>
     public async Task<bool> RevokeAsync(

@@ -6,7 +6,7 @@ namespace ClouderyApi.Shared.Http;
 /// <summary>
 /// 生成对外资源地址（201 Created 的 Location）。
 /// 路由匹配本就不区分大小写，但对外暴露的 URL 一律小写，与文档与前端拼写的路径一致
-/// （声明路由是 cloudery/[controller]，<see cref="ControllerBase.CreatedAtAction"/> 会生成
+/// （声明路由是 cloudery/[controller]，<see cref="ControllerBase.CreatedAtAction(string, object)"/> 会生成
 /// /cloudery/Members/{id}）。
 ///</summary>
 /// <remarks>

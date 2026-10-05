@@ -10,6 +10,10 @@
         <Product>ClouderyApi</Product>
         <Authors>云术工作室 (Cloudery Studio)</Authors>
         <Copyright>Copyright 2023-2026 Cloudery Studio, All rights reserved.</Copyright>
+        <!-- XML 文档注释：Swashbuckle 用它给 OpenAPI 的 operation / schema 填中文描述（见 Shared/OpenApi/ScforgePublicDocument.cs）。
+             未注释的成员不阻断构建（1591/1572/1573/1574/1587 仅提示），本仓库以 -warnaserror 构建，故显式 NoWarn。 -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);1591;1572;1573;1574;1587</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
