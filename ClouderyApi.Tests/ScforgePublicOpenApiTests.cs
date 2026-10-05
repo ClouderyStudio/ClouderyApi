@@ -10,7 +10,9 @@ namespace ClouderyApi.Tests;
 /// SCForge 对外 OpenAPI 文档（/swagger/scforge-public/swagger.json）的契约测试：
 ///   1. 只收录 /scforge 下的非 admin 端点，且端点集合与预期清单逐条一致；
 ///   2. 声明 scf_ API Key 安全方案，并挂到文档级 security；
-///   3. 与入库产物 docs/openapi/scforge-public.json 无漂移（缺失时写出产物并失败，重跑即绿）。
+///   3. 与入库产物 docs/openapi/scforge-public.json 无漂移（缺失时写出产物并失败，重跑即绿）；
+///   4. 文档文本不出现平台相关的换行 —— Swashbuckle 拼多行 XML 注释时用的是 Environment.NewLine，
+///      不归一就会让 Windows 生成的产物在 Linux CI 上被判为漂移（见 ScforgePublicDocument 的文档过滤器）。
 /// 产物是 ClouderyDoc 文档站 /api 分区的数据源，接口有改动必须重跑本测试重新生成并提交。
 /// </summary>
 public sealed class ScforgePublicOpenApiTests : IntegrationTestBase
@@ -86,6 +88,31 @@ public sealed class ScforgePublicOpenApiTests : IntegrationTestBase
         return [.. routes];
     }
 
+    /// <summary>递归取出 JSON 里所有字符串值（对象键不算，键里不会有换行）。</summary>
+    private static IEnumerable<string> StringsOf(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var (_, value) in obj)
+                {
+                    foreach (var text in StringsOf(value)) yield return text;
+                }
+
+                break;
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    foreach (var text in StringsOf(item)) yield return text;
+                }
+
+                break;
+            case JsonValue value when value.TryGetValue<string>(out var text):
+                yield return text;
+                break;
+        }
+    }
+
     [Fact]
     public async Task Public_document_lists_exactly_the_scforge_public_endpoints()
     {
@@ -119,6 +146,17 @@ public sealed class ScforgePublicOpenApiTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Public_document_text_has_no_platform_dependent_newlines()
+    {
+        var document = await FetchDocumentAsync();
+        var offenders = StringsOf(document).Where(text => text.Contains('\r')).Distinct().ToArray();
+        Assert.True(
+            offenders.Length == 0,
+            "文档文本里出现了 \\r（Swashbuckle 的 Environment.NewLine 痕迹），会让产物在 Windows / Linux 之间漂移："
+                + string.Join(" | ", offenders.Take(3)));
+    }
+
+    [Fact]
     public async Task Public_document_matches_committed_artifact()
     {
         var live = JsonNode.Parse(await FetchRawAsync());
@@ -127,8 +165,10 @@ public sealed class ScforgePublicOpenApiTests : IntegrationTestBase
         if (!File.Exists(path))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            // 产物本身也固定用 \n，任何机器重新生成都是同一份字节
             var pretty = JsonSerializer.Serialize(live, new JsonSerializerOptions { WriteIndented = true })
-                + Environment.NewLine;
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                + "\n";
             await File.WriteAllTextAsync(path, pretty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             Assert.Fail("已生成对外文档产物：" + path + "，请重新运行本测试确认全绿。");
         }

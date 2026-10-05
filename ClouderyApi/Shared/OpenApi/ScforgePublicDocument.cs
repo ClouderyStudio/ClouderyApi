@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -109,6 +110,67 @@ public static class ScforgePublicDocument
         if (File.Exists(xmlPath))
         {
             options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+        }
+
+        // 换行归一：让产物与 Linux CI 逐字节一致（见过滤器注释）
+        options.DocumentFilter<NewlineNormalizingDocumentFilter>();
+    }
+
+    /// <summary>
+    /// 把对外文档里所有文本的换行统一成 \n。
+    ///
+    /// 起因：Swashbuckle 在 humanize 多行 XML 注释时用 Environment.NewLine 拼行，
+    /// 同一份注释在 Windows 上生成 "\r\n"、在 Linux 上生成 "\n"，
+    /// 于是入库产物（Windows 生成）在 CI（Linux）上与运行时文档不一致，
+    /// ScforgePublicOpenApiTests.Public_document_matches_committed_artifact 会失败。
+    /// 文档过滤器在所有生成器之后运行，这里做最后一道归一，两个平台就能产出同一份 JSON。
+    /// </summary>
+    private sealed class NewlineNormalizingDocumentFilter : IDocumentFilter
+    {
+        public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
+        {
+            // v1 全量文档（含 admin，仅供内部开发看）保持原样，只归一对外开放文档
+            if (!string.Equals(swaggerDoc.Info?.Title, Title, StringComparison.Ordinal)) return;
+
+            Normalize(swaggerDoc, new HashSet<object?>(ReferenceEqualityComparer.Instance));
+        }
+
+        /// <summary>递归遍历 OpenAPI 对象图，把字符串属性里的 \r\n / \r 归一成 \n。</summary>
+        private static void Normalize(object? node, HashSet<object?> visited)
+        {
+            if (node is null or string || node.GetType().IsValueType) return;
+            if (node.GetType().Namespace?.StartsWith("Microsoft.OpenApi", StringComparison.Ordinal) != true) return;
+            if (!visited.Add(node)) return;
+
+            foreach (var property in node.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.GetIndexParameters().Length > 0) continue;
+
+                var value = property.GetValue(node);
+                if (value is string text)
+                {
+                    if (property.CanWrite && text.Contains('\r'))
+                    {
+                        property.SetValue(node, text.Replace("\r\n", "\n").Replace('\r', '\n'));
+                    }
+
+                    continue;
+                }
+
+                // OpenAPI 模型里的集合都是 Dictionary / List；键（路径、schema 名、方案名）不含换行，只递归值
+                if (value is System.Collections.IDictionary dictionary)
+                {
+                    foreach (var item in dictionary.Values) Normalize(item, visited);
+                }
+                else if (value is System.Collections.IEnumerable sequence)
+                {
+                    foreach (var item in sequence) Normalize(item, visited);
+                }
+                else
+                {
+                    Normalize(value, visited);
+                }
+            }
         }
     }
 }
