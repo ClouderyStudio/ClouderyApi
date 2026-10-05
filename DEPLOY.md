@@ -37,17 +37,25 @@ mcr.microsoft.com/dotnet/aspnet:10.0
 
 ### 2. 准备宿主应用目录
 
-假设用 `/opt/1panel/apps/clouderyapi/app`（对应下面的 `DEPLOY_TARGET`）：
+目录按你的实际部署定，没有唯一答案。**本项目线上现役路径是 `/www/dotnet/api`**
+（`clouderyapi` 容器把 `/www/dotnet/api` 挂载成容器内 `/app`），下面的命令以它为例：
 
 ```bash
-mkdir -p /opt/1panel/apps/clouderyapi/app/uploads/avatars
-mkdir -p /opt/1panel/apps/clouderyapi/app/uploads/posts
+# 先确认线上到底挂的哪：docker inspect clouderyapi --format '{{range .Mounts}}{{.Source}}{{println}}{{end}}'
+mkdir -p /www/dotnet/api/uploads/avatars
+mkdir -p /www/dotnet/api/uploads/posts
 ```
 
 把本地的 `appsettings.json` 传一份上去（**该文件被 `.gitignore` 忽略、不进仓库，流水线也不会覆盖它**）：
 
 ```bash
-scp ClouderyApi/appsettings.json root@<服务器>:/opt/1panel/apps/clouderyapi/app/
+scp ClouderyApi/appsettings.json root@<服务器>:/www/dotnet/api/
+```
+
+补 `Scforge:AccessTokenSecret` 有现成脚本（幂等，已合规则跳过、不轮换密钥、自动备份）：
+
+```bash
+bash set-scforge-access-secret.sh /www/dotnet/api
 ```
 
 #### `Scforge:AccessTokenSecret` 是必填项
@@ -77,6 +85,21 @@ openssl rand -base64 48
 流水线在 scp 上传**之前**会做一次只读自检：文件存在、JSON 合法、密钥长度 ≥ 32。
 任一不满足就中止部署，服务器上的旧 DLL 不被覆盖，容器继续跑旧版本 —— 不会出现
 「DLL 换了但容器没重启，下次重启才炸」的悬空状态。
+
+#### 已上线实例（2026-10-05 核对）
+
+| 项 | 实际值 |
+| ---- | ---- |
+| 宿主机 | `<SERVER_HOST>`（Debian 13，`x86_64`） |
+| 容器 | `clouderyapi`，镜像 `mcr.microsoft.com/dotnet/aspnet:10.0` |
+| 端口 | 容器 `8080` → 宿主 `127.0.0.1:8080`（仅回环，由 Nginx 反代） |
+| 挂载 | `/www/dotnet/api` → `/app` |
+| 辅助挂载 | `/www/1panel/runtime/dotnet/clouderyapi/{run.sh,.env}` |
+| 数据库 | 容器 `<MYSQL_CONTAINER>`，库名 `api` |
+| **健康检查端点** | **`/mhop/health`** —— `/health`、`/healthz`、`/` 都是 404，别拿它们探活 |
+| 迁移命令 | `docker exec clouderyapi dotnet ClouderyApi.dll --migrate` |
+
+连接凭据不写在本仓库，见本地 `<LOCAL_CREDENTIALS_FILE>`（已 gitignore）。
 
 ### 3. 创建容器
 
@@ -129,7 +152,7 @@ cat deploy_key.pub >> ~/.ssh/authorized_keys
 | `DEPLOY_USER` | ✅ | SSH 用户名 | `root` |
 | `DEPLOY_SSH_KEY` | ✅ | 部署私钥全文 | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
 | `DEPLOY_PASSPHRASE` | ⬜ | 私钥的密码短语；**推荐用无密码短语的部署密钥并留空** | （留空） |
-| `DEPLOY_TARGET` | ✅ | 宿主应用目录（容器挂载源），**必须绝对路径** | `/opt/1panel/apps/clouderyapi/app` |
+| `DEPLOY_TARGET` | ✅ | 宿主应用目录（容器挂载源），**必须绝对路径** | `/www/dotnet/api` |
 | `DEPLOY_CONTAINER` | ✅ | 容器名 | `clouderyapi` |
 | `DEPLOY_HEALTH_URL` | ⬜ | 健康检查地址，留空则跳过 | `https://api.example.com/mhop/health` |
 
