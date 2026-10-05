@@ -74,7 +74,11 @@ ClouderyApi/
 │   ├── Exceptions/                # DomainRuleException / MhopApiException / MhopApiExceptionFilter
 │   ├── Filters/                   # IpRateLimitAttribute（按 IP + 路径限流）
 │   ├── Json/                      # MhopJson（snake_case + UTC）
-│   └── Options/                   # AdminOptions / CasdoorSettings / CorsSettings / SckeyOptions
+│   ├── RateLimit/                 # IRateLimitStore（进程内 / Redis 两种限流计数实现）
+│   ├── Online/                    # IOnlineTrackerStore（在线人数：进程内 / Redis ZSET 两种实现）
+│   ├── Email/                     # IEmailCodeStore（邮箱验证码：进程内 / Redis+Lua 两种实现）
+│   ├── Redis/                     # RedisConnection（全进程共用一条连接）+ Data Protection 密钥环落点
+│   └── Options/                   # AdminOptions / CasdoorSettings / CorsSettings / SckeyOptions / RedisOptions
 ├── Migrations/                    # 各 Context 独立迁移目录：Cloudery/、Zhuxs/、Identity/、Mhop/、Scforge/
 └── Properties/launchSettings.json # 开发启动配置（端口 5171 / 7288）
 ```
@@ -107,6 +111,8 @@ cp ClouderyApi/appsettings.example.json ClouderyApi/appsettings.json
 | `Env:SCKEY_API_BASE`、`Env:SCKEY_BEARER_TOKEN` | Server 酱（SCKEY）推送配置 |
 | `Authorization:Admins` | 管理员 CasdoorId 列表，用于白名单/申请/周目/成员等敏感写操作 |
 | `TrustedProxies` | 可信反向代理（`Proxies` 精确 IP / `Networks` CIDR）。生产在 Nginx 之后必填，否则按 IP 的限流会把全站算作一个客户端；**绝不要信任任意来源**。留空 = 不启用。见下方「反向代理与限流」 |
+| `Redis` | 可选的 Redis 后端（限流计数 / 在线人数 / 邮箱验证码 / Cookie 密钥环）：`ConnectionString` 留空 = 不接入，各功能走进程内或文件系统实现（本地开发 / CI / 集成测试零依赖）；填入（如 `127.0.0.1:6379,abortConnect=false`，云 Redis 通常再要 `password=***,ssl=true`）后状态跨实例共享、重启不清零。`KeyPrefix` 默认 `cloudery:`。见下方「限流计数 / 在线人数 / 验证码的存放（可选 Redis）」 |
+| `DataProtection:KeysDirectory` | Cookie（Casdoor 登录态）密钥环目录，留空 = 内容根下的 `keys/`（1Panel 已挂载宿主目录，容器重建不丢）；配了 Redis 时密钥环改存 Redis、本项忽略 |
 | `Mhop` | MHOP 模块：`Jwt`（密钥 / 有效期）、`Llm`（OpenAI 兼容大模型，留空走本地兜底）、`Smtp`（邮箱验证码，`Host` 留空为开发模式；`AllowInvalidCertificate` 生产保持 false）、`Casdoor`（统一身份登录开关与回调地址）、`LekeHotline`、`UploadDir`、`SeedAdminPassword`（种子超管口令，留空则随机生成并记日志）、`AutoMigrate` / `Seed`（生产建议 `false`，改用 CLI `--migrate` / `--seed`） |
 | `Llm` | 结果解读与 MHOP 共用的大模型配置（OpenAI 兼容）：`BaseUrl` / `ApiKey` / `Model`（默认 `glm-4-flash`）/ `TimeoutSeconds`（默认 30）；留空时逐项回退到旧配置 `Mhop:Llm` |
 
@@ -694,7 +700,8 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
   帖子图宽度超过 800 时等比缩放，统一以 **WebP（质量 82）** 保存。差异有两点：实现库 Pillow →
   **SixLabors.ImageSharp**（纯托管，可被 Costura 嵌入）；落盘目标由写死本地目录改为可切换的 `IMhopObjectStorage`
   （本地磁盘或远端阿里云 OSS，见上一节）。
-- **在线人数 / 邮箱验证码**：与 Python 版一致为单进程内存实现，多实例部署请替换为 Redis。
+- **在线人数 / 邮箱验证码**：与 Python 版行为一致；默认同样是进程内实现，但填上 `Redis:ConnectionString` 即换成
+  Redis（在线人数 ZSET、验证码 Lua 原子校验），多实例部署不必再改代码。见下方「限流计数 / 在线人数 / 验证码的存放（可选 Redis）」。
 - **SMTP**：内置极简 SMTP 客户端，同时支持隐式 SSL（465）与 STARTTLS（587）。
 
 ### 默认账号
@@ -728,6 +735,34 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 
 两项都留空 = 不信任任何代理，沿用直连行为（本地开发适用）。**只填自己控制的代理地址**：
 信任任意来源等于让攻击者自己伪造 `X-Forwarded-For`，每次请求换IP，限流形同虚设。
+
+### 限流计数 / 在线人数 / 验证码的存放（可选 Redis）
+
+限流计数（`IRateLimitStore`）、在线人数（`IOnlineTrackerStore`）与邮箱验证码（`IEmailCodeStore`）默认都放在进程内：
+单容器部署足够，但**重启即清零**、多实例时各算各的（验证码还会因为请求落到不同容器而校验失败）。
+填上 `Redis` 节即全部切到 Redis 共享状态（键前缀 `cloudery:`），Cookie 认证的密钥环也一并落到 Redis：
+
+```json
+"Redis": {
+  "ConnectionString": "127.0.0.1:6379,abortConnect=false,connectTimeout=2000",
+  "KeyPrefix": "cloudery:"
+}
+```
+
+- 留空 = **完全不建立连接**，行为与接入 Redis 之前一致（CI 与集成测试因此不依赖 Redis）；生产可用
+  环境变量 `Redis__ConnectionString` 注入，避免把口令写进配置文件。
+- 全进程共用一条连接（`Shared/Redis/RedisConnection.cs`），四项功能不会各开一份连接池；连不上时按各自策略降级。
+- **限流计数**：在 Lua 里原子完成（`INCR` + 首次 `EXPIRE`），窗口从该 IP 的第一次请求起算；
+  Redis 暂停/断连时**降级为进程内计数（fail-open）**并记 warning——限流暂时退化，但正常请求不会变成 500。
+  429 的响应体与文案逐字不变（`[IpRateLimit]` 仍是 `{ success, message, retryAfterSeconds }` + `Retry-After` 头）。
+- **在线人数**：Redis ZSET（成员 = 客户端标识，分值 = 心跳毫秒时间戳），心跳写入、过期清理与计数在一条 Lua 里完成，
+  窗口沿用 90 秒；连不上时同样 fail-open 回退进程内计数。
+- **邮箱验证码**：验证码、60 秒重发间隔与 IP 每小时配额都在 Redis，校验与一次性消费（错 5 次作废）由 Lua 保证原子，
+  多实例下同一个验证码不会因为落到不同容器而失效。**这一项是 fail-closed**：Redis 不可用时发送与校验直接拒绝
+  （错误体与文案不变），宁可暂时登录不了，也不放宽频控、更不退回无验证码校验。
+- **Cookie 密钥环（Data Protection）**：默认落内容根下的 `keys/`（容器里是 `/app/keys`，1Panel 已把宿主目录挂到
+  `/app`，因此**容器重建不再让全体用户掉线**）；配了 Redis 则改存 Redis，多实例共用同一密钥环、只需登录一次。
+  目录可用 `DataProtection:KeysDirectory` 指定（相对路径按内容根解析）；`keys/` 已写进 `.gitignore`，不会被提交。
 
 ## 测试
 
