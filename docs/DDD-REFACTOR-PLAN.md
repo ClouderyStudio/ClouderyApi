@@ -341,7 +341,7 @@
 - 基于 policy 的授权替换 AdminOnlyAttribute 的 service-locator。
 - 修复 SurvivalCraft 配置键不匹配（见附录 A）。
 - 启动期 Migrate/Seed 移出到部署步骤或受控后台任务（Program.cs:156-183）。
-- 每上下文独立 MigrationsHistoryTable；.editorconfig + analyzer；CI 测试门禁；限流分布式化（可选）。
+- 每上下文独立 MigrationsHistoryTable；.editorconfig + analyzer；CI 测试门禁；限流分布式化（可选）✅ 已完成（见 M7 记录 5.7）。
 - 清理死代码 / 补 ExamPaper 输入 DTO。
 - **M7 里程碑记录（Stage 5，均仅本地未推送）**：
   - Options 模式（5.2）：`e21e423` CasdoorSettings、`d29e9cf` AdminOptions、`9e33613` SckeyOptions、`0048adc` CorsSettings、`041a787` MhopOptions；`8892bf9` 修复 SCKEY 配置键不匹配（附录 A）。
@@ -354,7 +354,15 @@
   - **验证口径**：`dotnet build ClouderyApi.sln --configuration Release -warnaserror` 0 警告 0 错误；`--filter "FullyQualifiedName~ClouderyMembersContractTests|FullyQualifiedName~ZhuxsContractTests|FullyQualifiedName~ExamPapersContractTests|FullyQualifiedName~ExamResult"` → 29 passed / 0 failed（36s，按 m02529 只跑受影响范围）；两上下文 `has-pending-model-changes` 均 No changes。README 的 DbContext / 迁移章节已同步。
   - 5.4 启动期 Migrate/Seed 移出：新增 `ClouderyApi/Modules/Mhop/Infrastructure/DatabaseMaintenanceService.cs`（`MigrateAsync` / `SeedAsync`，共用 DI 的 `MhopDbContext` + `MhopPasswordHasher`），新增 CLI 开关 `--migrate` / `--seed`（与既有 `--sweep-orphans` 同机制：在 `WebApplication.CreateBuilder` 之前摘出裸开关并过滤，执行完 `return 0`，失败 `return 1`）；`MhopOptions.Seed` 默认 `true` → `false`，`Mhop:AutoMigrate` 保持「留空时 Development 为 true」；启动期仅在配置显式打开时兜底调用同一服务。迁移一律前滚、Seed 幂等。
   - `.github/workflows/deploy.yml` 在 `docker restart` 之前执行 `docker exec "$CONTAINER" dotnet ClouderyApi.dll --migrate --seed`（失败回退 `-w /app`），`set -e` 保证迁移失败即中止部署，不会带着未迁移的库重启。
-  - **未做**：5.7 限流分布式化（可选项）。
+  - 5.7 限流分布式化（可选项）✅ 已完成（3 次提交，均仅本地未推送，引入 StackExchange.Redis 3.3.1）：
+    - `be42b79` 限流计数 / 在线人数 / 邮箱验证码支持可选 Redis 后端：新增 `ClouderyApi/Shared/Options/RedisOptions.cs`、`ClouderyApi/Shared/Redis/{RedisConnection,RedisServiceExtensions}.cs`（全进程一条连接，`AbortOnConnectFail=false`，`TryAddSingleton`），`ClouderyApi/Shared/RateLimit/`、`ClouderyApi/Shared/Online/`、`ClouderyApi/Shared/Email/` 各一接口两实现。
+    - **唯一开关** `Redis:ConnectionString`（生产用环境变量 `Redis__ConnectionString`）；留空 = 纯内存实现、不建任何连接，CI / 集成测试 / 本地默认零改动。
+    - 降级语义：限流（`RedisRateLimitStore`，Lua INCR + 首次 EXPIRE）与在线人数（`RedisOnlineTrackerStore`，Lua ZADD/ZREMRANGEBYSCORE/PEXPIRE/ZCARD，键 `online`）异常 **fail-open** 回退进程内实现，经 `RedisFallbackThrottle` 每 30 秒一条 warning；验证码（`RedisEmailCodeStore`，三段 Lua 保原子，键 `emailcode:code|sent|ip:*`）**fail-closed**。
+    - 对外契约逐字不变：429 体 `{success:false,message:"分析请求过于频繁，请稍后再试",retryAfterSeconds}` 与 `Retry-After` 头保持同源。
+    - 另附 Data Protection 密钥环 Redis 持久化（`ClouderyApi/Shared/Redis/DataProtectionExtensions.cs`，键前缀 `dataprotection:keys`，`SetApplicationName("ClouderyApi")`）；未配 Redis 时落盘 `DataProtection:KeysDirectory`（留空 = ContentRoot/keys），`keys/` 已进 .gitignore。
+    - `9898c97` 测试（共享计数语义、降级回退、密钥环落点；Redis 用例走 `CLOUDERY_TEST_REDIS`，未设则该类跳过）；`bd92213` README + `ClouderyApi/appsettings.example.json` 配置说明。
+    - 验证：`dotnet build ClouderyApi.sln --configuration Release -warnaserror` 0 警告 0 错误；全量测试 **260 passed / 0 failed / 0 skipped**（便携 MySQL 3307 + Redis 6379）；端到端 9 连打 `POST /exam/result-analysis` → 200×8 后 429，Redis 不可达时照旧 fail-open。
+  - 5.7 测试项（既有缺口，附录 C 第 6 项 / 附录 D 第 1 项）✅ 漂流瓶 HTTP 路径契约测试已补齐：`ClouderyApi.Tests/MhopBottleContractTests.cs`（前台 7 条）+ `ClouderyApi.Tests/MhopBottleAdminContractTests.cs`（管理端 6 条），覆盖 8 条前台路由未登录 401 形状、投瓶/详情/发消息/结束/举报的成功与 404·409·422 文案、匿名响应绝不含身份字段、after_id 增量与 hidden 消息不下发、管理端鉴权阶梯、stats 精确计数、分页夹取 page/size、remove/restore/approve 状态机与重复 approve 409、消息 hide/restore 对前台可见性的影响。实测 `dotnet test --filter FullyQualifiedName~MhopBottle` → 15 passed / 0 failed。
 
 ---
 
@@ -421,10 +429,10 @@
 3. **同一 API 内 404 有两种形状**：`GET/PUT/DELETE /cloudery/members/{unknown}` 的空参 `NotFound()` 被 ClientErrorResultFilter 转为 404 + `application/problem+json`（`type` 指向 rfc9110#section-15.5.5，**非空体**）；而 `/exam/ExamPapers/{unknown}`、`/exam/results/{unknown}` → 404 + `{success:false,message}`。
 4. **同一资源时间格式跨端点不一致**：`POST /exam/results`(`/sync`) 的 `savedAt` 形如 `2026-01-02T03:04:05Z`、`updatedAt` 带 `Z` + 7 位小数；`GET /exam/results` 经 MySQL `datetime(6)` 往返后同字段**无 `Z`、6 位小数**（Kind/精度丢失），客户端按 ISO-8601 带时区解析会得到错误时刻。基线刻意只断言字段顺序与业务字段，未断言时间字面量以免固化缺陷。
 5. **`Location` 使用声明大小写**：`CreatedAtAction` 生成 `/cloudery/Members/{id}`、`/exam/ExamPapers/{id}`（与请求的全小写路径不同，路由匹配不区分大小写）；Stage 2 若改路由必须同步。
-6. 未覆盖分支（无缺陷，仅测试缺口）：`MembersController` PUT 的并发 rethrow、Zhuxs 三控制器写成功路径与 `DbUpdateException`/`DbUpdateConcurrencyException`、Auth 的真实 Casdoor callback 成功路径、`ResultAnalysisService` 的 LLM 成功路径（测试把 `Llm__BaseUrl` 指向 `http://127.0.0.1:1` 强制 `engine="local"`）、`IpRateLimitAttribute` 的 429（静态字典 key=`ip|path`，会污染同路径测试）、`ExamResultService` 的 200 条/256KB 上限、`ExamPapers` 的 PUT/DELETE 成功（204）。
+6. 未覆盖分支（无缺陷，仅测试缺口）：`MembersController` PUT 的并发 rethrow、Zhuxs 三控制器写成功路径与 `DbUpdateException`/`DbUpdateConcurrencyException`、Auth 的真实 Casdoor callback 成功路径、`ResultAnalysisService` 的 LLM 成功路径（测试把 `Llm__BaseUrl` 指向 `http://127.0.0.1:1` 强制 `engine="local"`）、`IpRateLimitAttribute` 的 429（已由 `ClouderyApi.Tests/IpRateLimitContractTests.cs` 覆盖，Redis 批次）、`ExamResultService` 的 200 条/256KB 上限、`ExamPapers` 的 PUT/DELETE 成功（204）。
 
 ## 附录 D：Stage 4 领域事件施工中暴露的既有缺陷（第 1 项已修，其余未修）
 
 1. **`MhopBottle.Status` 的 EF sentinel 与数据库默认值冲突 → 投瓶 AI 初筛从未执行**：`ClouderyApi/Modules/Mhop/Infrastructure/Persistence/MhopDbContext.cs:104` 为 `e.Property(b => b.Status).HasDefaultValue(MhopBottleStatus.Drifting)`（=1），而 `MhopBottleStatus.Pending = 0`（`ClouderyApi/Modules/Mhop/Domain/MhopBottle.cs:15`）恰为 `int` 的 CLR 默认值。EF Core 把「值等于 sentinel」当作未赋值，INSERT 时省略 `status` 列，于是数据库默认值 1（漂流中）生效。实测（临时探针直插实体再读回，探针已删）：`inMemory=0 persisted=1 aiReviewedAt=null`。连带后果：`ClouderyApi/Modules/Mhop/Application/MhopContentReviewService.cs:163` 的 `if (!rescreen && bottle.Status != MhopBottleStatus.Pending) return;` 立即早退，**投瓶的 AI 初筛实际不执行**（瓶子以「漂流中」直接入库；敏感词与危机标记的同步拦截不受影响，仍在入库前生效）。
    领域事件化前后行为一致（事件化前是 Save 之后直接调 `QueueBottleReview`，队列读到的是同一份 `status=1`），因此不属 Stage 4 引入。修复候选：给该属性加 `.HasSentinel(-1)`（或改用 `ValueGeneratedNever()`），不动数据库默认值、预期无需迁移；但会把投瓶恢复为「先待审核、AI 通过后自动入海」，属**对外可见行为与时序变更**，需批准后单独立项，并与「瓶子 HTTP 路径无契约测试」的缺口一起补测试。
-    **修复（`c8a16ef`，用户已批准行为变更）**：给该属性追加 `.HasSentinel(-1)`（sentinel 取 -1，非合法状态），保持数据库默认值不变。模型快照无变化（`has-pending-model-changes --context MhopDbContext` = No changes），无需新迁移。行为变化：投瓶恢复「先待审核 → AI 通过后自动入海」；AI/LLM 不可用时瓶子停在待审核等待人工放行，与 MhopModeration 的既有降级语义一致。新增守卫 `ClouderyApi.Tests/MhopBottlePersistenceTests.cs` 2 条（写入 Pending 后新 scope 读回必须仍为 Pending；模型里 Status 的 Sentinel 必须为 -1）；变异验证：去掉 `.HasSentinel(-1)` 两条均失败。瓶子 HTTP 路径仍无契约测试（既有缺口，见附录 C 第 6 项）。
+    **修复（`c8a16ef`，用户已批准行为变更）**：给该属性追加 `.HasSentinel(-1)`（sentinel 取 -1，非合法状态），保持数据库默认值不变。模型快照无变化（`has-pending-model-changes --context MhopDbContext` = No changes），无需新迁移。行为变化：投瓶恢复「先待审核 → AI 通过后自动入海」；AI/LLM 不可用时瓶子停在待审核等待人工放行，与 MhopModeration 的既有降级语义一致。新增守卫 `ClouderyApi.Tests/MhopBottlePersistenceTests.cs` 2 条（写入 Pending 后新 scope 读回必须仍为 Pending；模型里 Status 的 Sentinel 必须为 -1）；变异验证：去掉 `.HasSentinel(-1)` 两条均失败。瓶子 HTTP 路径的契约测试缺口已补齐（见 Stage 5 M7 记录「5.7 测试项」）。
