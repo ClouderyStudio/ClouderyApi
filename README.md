@@ -73,7 +73,7 @@ ClouderyApi/
 │   ├── Domain/                    # IDomainEvent 等领域事件基座与 DomainEventDispatcher
 │   ├── Exceptions/                # DomainRuleException / MhopApiException / MhopApiExceptionFilter
 │   ├── Filters/                   # IpRateLimitAttribute（按 IP + 路径限流）
-│   ├── Json/                      # MhopJson（snake_case + UTC）
+│   ├── Json/                      # MhopJson（snake_case + 北京时间 +08:00）
 │   ├── RateLimit/                 # IRateLimitStore（进程内 / Redis 两种限流计数实现）
 │   ├── Online/                    # IOnlineTrackerStore（在线人数：进程内 / Redis ZSET 两种实现）
 │   ├── Email/                     # IEmailCodeStore（邮箱验证码：进程内 / Redis+Lua 两种实现）
@@ -252,7 +252,7 @@ dotnet ef database update --context ScforgeDbContext
 - **幂等 upsert**：同一用户下 `clientKey` 唯一（唯一索引 `IX_ExamResults_UserId_ClientKey`，MySQL 允许多个 NULL），重复同步不会产生重复记录；`clientKey` 缺省时以 `testId@<savedAt ISO>` 兜底。
 - **防旧设备回灌**：已存在的记录只有在新 `savedAt` **不早于**已存 `savedAt` 时才覆盖，晚到的旧设备不会把新结果改回旧数据。
 - **配额**：单次最多 200 条、单用户只保留最新 200 条（超量自动裁剪）、单条 `payload` 上限 256 KB；超限返回 400 `{ "detail": "一次最多同步 200 条记录，请分批上传" }`。
-- **时间**：`savedAt` / `updatedAt` 一律归一化为 UTC 后入库（MySQL `datetime` 不保留时区），返回 ISO 8601。
+- **时间**：`savedAt` / `updatedAt` 一律归一化为 UTC 后入库（MySQL `datetime` 不保留时区），对外返回 ISO 8601 北京时间（`+08:00`，见 `ClouderyApi/Shared/Time/BeijingTime.cs`）。
 - **错误**：未登录 `401 { "detail": "未登录，无法使用云端同步" }`；`payload` 缺失或记录超限 `400`；目标记录不存在 `404`。错误体统一为 `{ "detail": "..." }`（不经 `MhopOk`，见 [docs/API-ERROR-SHAPE.md](docs/API-ERROR-SHAPE.md)）；成功体仍是裸对象。
 - 路由**未挂** `[Authorize]`：为统一返回中文 401 体，鉴权在控制器内手动完成（`TryGetUserId`）。
 
@@ -398,7 +398,7 @@ SCForge 是生存战争（SurvivalCraft）插件、模组资源平台，动线�
 | GET / POST | `/scforge/admin/admins` | 超管 | 管理员列表 / 指定或调整管理员 |
 | DELETE | `/scforge/admin/admins/{id}` | 超管 | 撤销管理员 |
 
-响应一律为**裸对象**（`{ success, message, ... }`），字段名 camelCase，时间 UTC 带 `Z`；
+响应一律为**裸对象**（`{ success, message, ... }`），字段名 camelCase，时间统一为北京时间（`+08:00`）；
 业务异常输出 `{ success:false, message }`，状态码 400 / 401 / 403 / 404 / 409。
 
 ### 数据表与迁移
@@ -567,7 +567,7 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
 - **认证方式**：MHOP 使用自带的 HS256 JWT + PBKDF2-SHA256 密码哈希（格式 `pbkdf2_sha256$轮数$盐$散列`），
   与 Cloudery 主站的 Casdoor Cookie 会话相互独立、互不影响；也可用 Casdoor 统一身份账号登录（见下节），
   服务端自动绑定 / 创建本地 `mhop_users` 账号后签发同一种 MHOP JWT。
-- **序列化**：MHOP 控制器统一通过 `MhopJson.Options` 输出**蛇形字段名**与 **UTC（带 Z）时间**；
+- **序列化**：MHOP 控制器统一通过 `MhopJson.Options` 输出**蛇形字段名**与 **北京时间（`+08:00`）**；
   请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致，也是**全站**统一形状，见 [docs/API-ERROR-SHAPE.md](docs/API-ERROR-SHAPE.md)）。
 - **AI**：`Modules/Mhop/Infrastructure/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
   未配置或调用失败时降级为内置共情式规则回复；任何引擎下检测到危机信号都会强制前置援助热线。

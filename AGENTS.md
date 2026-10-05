@@ -60,7 +60,7 @@ docker run -d --name cloudery-mysql -p 3306:3306 \
 - 路由、CORS 白名单不变；路由表由 `ClouderyApi.Tests/SwaggerRouteSnapshotTests.cs` 守住。
 - JSON：成功体维持现状（MHOP snake_case + 扁平对象；Cloudery / Zhuxs 裸对象 `{ success, message, ... }`）；**所有错误体统一为 `{ "detail": "..." }`**（可选 `errors` / `retryAfterSeconds`，由 `ClouderyApi/Shared/Json/ApiError.cs` 与 `ApiErrorBodyMiddleware` 产出，见 `docs/API-ERROR-SHAPE.md`）。**中文文案不得改写**。
 - 鉴权形状：只挂 `[Authorize]` 的端点未登录 → `401` + `WWW-Authenticate: Bearer`，响应体由 `ApiErrorBodyMiddleware` 补成 `{"detail":"请先登录"}`（**不是** 302 跳转）；`[AdminOnly]`（端点授权元数据 ≤1 条）由授权处理器直接写 `401 {"detail":"请先登录"}`；已登录非管理员一律 `403 {"detail":"无管理员权限，操作被拒绝"}`。
-- 时间统一 UTC 带 `Z`；`inc_view` 必须是字符串（ASP.NET bool 绑定不接受 `"1"`，见 `ClouderyApi/Modules/Mhop/Api/MhopForumController.cs:45-48` 与同文件 `:127` 的 `IsTruthy`）。
+- 时间统一按**北京时间（UTC+8，`+08:00`）**对外输出，数据库仍存 UTC（`ClouderyApi/Shared/Time/BeijingTime.cs` + `ClouderyApi/Shared/Json/BeijingDateTimeConverter.cs`；MHOP 走 `MhopJson.cs` 的同口径转换器）；`inc_view` 必须是字符串（ASP.NET bool 绑定不接受 `"1"`，见 `ClouderyApi/Modules/Mhop/Api/MhopForumController.cs:45-48` 与同文件 `:127` 的 `IsTruthy`）。
 - 数据库表名 / 列 / 索引不变，迁移只前滚、不写破坏性 `Down`；模型快照应与迁移一致（`dotnet ef migrations has-pending-model-changes --context <Ctx>` 应为 No changes）。
 - 任何改动都要 `dotnet build -warnaserror` 通过，并按范围跑测试。**涉及迁移 / DI / 启动路径 / 中间件时，「build 与单测通过」不算验证过**——必须按 2.1 在本地实跑（本地 MySQL 8 + `--migrate`）。
 
