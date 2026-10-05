@@ -30,6 +30,10 @@
         <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.9" />
         <!-- 固定 3.1.x：4.x 起内置 SixLabors 许可证校验任务，Release 构建缺少 license key 会直接失败 -->
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+        <!-- Data Protection 密钥环可选落到 Redis（多实例共享会话密钥）；Redis:ConnectionString 留空时改用文件系统 -->
+        <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.10" />
+        <!-- 限流计数 / 在线人数 / 邮箱验证码的可选 Redis 后端：Redis:ConnectionString 留空时不建立任何连接（本地开发 / CI 零依赖） -->
+        <PackageReference Include="StackExchange.Redis" Version="3.3.1" />
         <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     </ItemGroup>
 

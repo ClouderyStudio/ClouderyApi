@@ -373,6 +373,10 @@ uploads/
 ClouderyApi/scforge-uploads/
 scforge-uploads/
 
+# Data Protection 密钥环（默认落内容根 keys/，运行时生成，绝不能进版本库）
+keys/
+ClouderyApi/keys/
+
 # 本地调研 / 临时产物（不属于源码）
 undefined/
 commit-msg.txt

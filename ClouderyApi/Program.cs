@@ -24,9 +24,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
-using System.Collections.Concurrent;
 using ClouderyApi.Shared.Directory;
 using ClouderyApi.Shared.Filters;
+using ClouderyApi.Shared.RateLimit;
+using ClouderyApi.Shared.Online;
+using ClouderyApi.Shared.Email;
+using ClouderyApi.Shared.Redis;
 
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
 var sweepOrphans = args.Any(a => a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase));
@@ -221,6 +224,19 @@ builder.Services.PostConfigure<SckeyOptions>(options =>
 });
 builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection(CorsSettings.SectionName));
 
+// 限流计数存储：配了 Redis:ConnectionString 就跨实例共享（重启不清零），
+// 留空则走进程内实现，本地开发与集成测试不依赖任何外部服务。
+builder.Services.AddRateLimitStore(builder.Configuration);
+
+// 在线人数与邮箱验证码存储：与限流同一套开关——配了 Redis:ConnectionString 就跨实例共享，
+// 留空则用进程内实现。验证码是安全凭证，Redis 不可用时按 fail-closed 拒绝（见 RedisEmailCodeStore）。
+builder.Services.AddOnlineTrackerStore(builder.Configuration);
+builder.Services.AddEmailCodeStore(builder.Configuration);
+
+// Data Protection 密钥环：默认写在容器内 ~/.aspnet，容器一重建就全员掉线。
+// 配了 Redis 落 Redis（多实例共享），否则落到内容根下的 keys/（1Panel 把宿主目录挂到 /app，可持久）。
+builder.Services.AddClouderyDataProtection(builder.Configuration, builder.Environment);
+
 // 管理员 policy 授权（Stage 5.3）：[AdminOnly] 只声明 policy，判定与 401/403 形状在 Shared/Authorization。
 builder.Services.AddAdminOnlyAuthorization();
 
@@ -375,24 +391,22 @@ if (mhopOptions.Seed)
     }
 }
 
-// ===== 基础限流（内存固定窗口，按客户端 IP） =====
-// 缓解登录/发布/点赞等接口被爆破或刷量；分布式场景可替换为 Redis 实现。
-var rateLimitStore = new ConcurrentDictionary<string, (int count, long windowStart)>();
+// ===== 基础限流（固定窗口，按客户端 IP） =====
+// 缓解登录/发布/点赞等接口被爆破或刷量。计数落在 IRateLimitStore：
+// 配了 Redis:ConnectionString 就是跨实例共享的计数（重启不清零），留空则是原来的进程内实现。
+var rateLimitStore = app.Services.GetRequiredService<IRateLimitStore>();
+app.Logger.LogInformation("限流计数存储：{Store}", rateLimitStore.GetType().Name);
+var onlineTrackerStore = app.Services.GetRequiredService<IOnlineTrackerStore>();
+app.Logger.LogInformation("在线人数存储：{Store}", onlineTrackerStore.GetType().Name);
+var emailCodeStore = app.Services.GetRequiredService<IEmailCodeStore>();
+app.Logger.LogInformation("邮箱验证码存储：{Store}", emailCodeStore.GetType().Name);
 app.Use(async (context, next) =>
 {
     const int maxRequests = 300;      // 每窗口内最大请求数
     const int windowSeconds = 60;     // 窗口时长(秒)
     var ip = ClientIp.Resolve(context);
-    var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    // AddOrUpdate 是单次原子操作；早先的「GetOrAdd → 读 → 改 → 写」四步存在竞态，
-    // 并发下会丢失计数，实际放行量被放大数倍。
-    var entry = rateLimitStore.AddOrUpdate(
-        ip,
-        _ => (count: 1, windowStart: now),
-        (_, current) => now - current.windowStart >= windowSeconds
-            ? (count: 1, windowStart: now)
-            : (count: current.count + 1, windowStart: current.windowStart));
-    if (entry.count > maxRequests)
+    var counter = await rateLimitStore.IncrementAsync($"ratelimit:global:{ip}", windowSeconds);
+    if (counter.Count > maxRequests)
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.Response.WriteAsJsonAsync(new { success = false, message = "请求过于频繁，请稍后再试" });

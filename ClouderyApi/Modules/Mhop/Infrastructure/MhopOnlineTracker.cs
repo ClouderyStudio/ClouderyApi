@@ -1,31 +1,22 @@
-using System.Collections.Concurrent;
+using ClouderyApi.Shared.Online;
 
 namespace ClouderyApi.Modules.Mhop.Infrastructure;
 
 /// <summary>
-/// 在线人数：心跳 + 滑动窗口计数。单机内存实现，接口语义与 Redis 一致；
-/// 上生产替换为 Redis ZSET 即可。
+/// 在线人数：心跳 + 滑动窗口计数。真正的状态在 <see cref="IOnlineTrackerStore"/> 里
+/// （未配 Redis 时是进程内实现，配了就是跨实例共享的 Redis ZSET）；
+/// 本类只固定窗口长度并转调，调用点不必关心用的是哪种存储。
 /// </summary>
 public sealed class MhopOnlineTracker
 {
-    private const long WindowMilliseconds = 90_000;
+    /// <summary>心跳窗口：超过这么久没有心跳就视为离线。</summary>
+    public static readonly TimeSpan Window = TimeSpan.FromSeconds(90);
 
-    private readonly ConcurrentDictionary<string, long> _lastSeen = new(StringComparer.Ordinal);
+    private readonly IOnlineTrackerStore _store;
 
-    public int Heartbeat(string key)
-    {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        _lastSeen[key] = now;
-        foreach (var pair in _lastSeen)
-        {
-            if (now - pair.Value > WindowMilliseconds) _lastSeen.TryRemove(pair.Key, out _);
-        }
-        return _lastSeen.Count;
-    }
+    public MhopOnlineTracker(IOnlineTrackerStore store) => _store = store;
 
-    public int Count()
-    {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        return _lastSeen.Count(pair => now - pair.Value <= WindowMilliseconds);
-    }
+    public ValueTask<int> HeartbeatAsync(string key) => _store.HeartbeatAsync(key, Window);
+
+    public ValueTask<int> CountAsync() => _store.CountAsync(Window);
 }

@@ -96,10 +96,10 @@ public sealed class AuthAppService
         if (!MhopEmailCodeService.ValidEmail(email))
             throw new DomainRuleException("邮箱格式不正确");
 
-        if (!_emailCodes.CheckIpRate(ip))
+        if (!await _emailCodes.CheckIpRateAsync(ip))
             throw new MhopApiException(429, "请求过于频繁，请稍后再试");
 
-        var (code, retryAfter) = _emailCodes.IssueCode(email);
+        var (code, retryAfter) = await _emailCodes.IssueCodeAsync(email);
         if (code is null)
             throw new MhopApiException(429, $"发送太频繁，请 {retryAfter} 秒后重试");
 
@@ -140,7 +140,7 @@ public sealed class AuthAppService
         var email = (body.Email ?? string.Empty).Trim().ToLowerInvariant();
         if (!MhopEmailCodeService.ValidEmail(email))
             throw new DomainRuleException("邮箱格式不正确");
-        if (!_emailCodes.VerifyCode(email, body.Code ?? string.Empty))
+        if (!await _emailCodes.VerifyCodeAsync(email, body.Code ?? string.Empty))
             throw new DomainRuleException("验证码错误或已过期");
 
         var user = await _db.MhopUsers.FirstOrDefaultAsync(u => u.Email == email);

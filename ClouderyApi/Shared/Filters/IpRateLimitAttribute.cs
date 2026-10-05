@@ -1,5 +1,6 @@
-using System.Collections.Concurrent;
+using System.Globalization;
 using ClouderyApi.Shared.Json;
+using ClouderyApi.Shared.RateLimit;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -8,15 +9,12 @@ namespace ClouderyApi.Shared.Filters;
 /// <summary>
 /// 按客户端 IP 的固定窗口限流，用于成本敏感或易被刷的公开接口（如 AI 解读）。
 /// 全局中间件已有 300 次/分钟的宽松额度（Program.cs），这里用更紧的额度叠加限制单接口。
-/// 计数放在静态字典里：本应用是单实例部署，与全局限流器保持同样的实现口径；
-/// 若将来多实例，请改为共享存储（Redis）或网关限流。
+/// 计数落在 <see cref="IRateLimitStore"/>：配了 <c>Redis:ConnectionString</c> 就跨实例共享、重启不清零，
+/// 留空则是进程内实现（与接入 Redis 之前的行为完全一致）。
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
 public sealed class IpRateLimitAttribute : ActionFilterAttribute
 {
-    private static readonly ConcurrentDictionary<string, Window> Hits = new(StringComparer.Ordinal);
-    private static long _lastSweepUnixSeconds;
-
     /// <summary>窗口内允许的请求数。</summary>
     public int MaxRequests { get; set; } = 10;
 
@@ -30,28 +28,32 @@ public sealed class IpRateLimitAttribute : ActionFilterAttribute
     /// </summary>
     public bool UseMhopErrorShape { get; set; }
 
-    public override void OnActionExecuting(ActionExecutingContext context)
+    /// <summary>
+    /// 重写异步版过滤器方法而不是同步的 <c>OnActionExecuting</c>：计数现在可能是一次 Redis 往返，
+    /// 在同步方法里等异步结果会白占一个线程池线程（限流是每个请求都要经过的路径）。
+    /// </summary>
+    public override async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        if (MaxRequests <= 0 || WindowSeconds <= 0) return;
+        if (MaxRequests <= 0 || WindowSeconds <= 0)
+        {
+            await next();
+            return;
+        }
 
         var path = context.HttpContext.Request.Path.Value ?? string.Empty;
         var ip = ClientIp.Resolve(context.HttpContext);
-        var key = ip + "|" + path;
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // 特性由 MVC 构造、没有构造注入，只能从请求作用域取服务；这里取到的是单例存储。
+        var store = context.HttpContext.RequestServices.GetRequiredService<IRateLimitStore>();
+        var counter = await store.IncrementAsync($"ratelimit:endpoint:{ip}|{path}", WindowSeconds);
 
-        Sweep(now);
+        if (counter.Count <= MaxRequests)
+        {
+            await next();
+            return;
+        }
 
-        var window = Hits.AddOrUpdate(
-            key,
-            _ => new Window(1, now),
-            (_, current) => now - current.WindowStart >= WindowSeconds
-                ? new Window(1, now)
-                : new Window(current.Count + 1, current.WindowStart));
-
-        if (window.Count <= MaxRequests) return;
-
-        var retryAfter = Math.Max(1, WindowSeconds - (now - window.WindowStart));
-        context.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString();
+        var retryAfter = counter.RetryAfterSeconds;
+        context.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
 
         if (UseMhopErrorShape)
         {
@@ -74,27 +76,4 @@ public sealed class IpRateLimitAttribute : ActionFilterAttribute
 
     /// <summary>限流文案。对外逐字不变，既有断言依赖它。</summary>
     private const string RateLimitMessage = "分析请求过于频繁，请稍后再试";
-
-    /// <summary>
-    /// 顺带清理过期窗口，避免长期运行后字典无限增长。
-    /// 只清当前 path 前缀的条目：Hits 被所有限流端点共享，而各自的窗口长度不同，
-    /// 用本实例的 WindowSeconds 判定会误删其他端点尚未过期的窗口（等于提前放行）。
-    /// </summary>
-    private void Sweep(long now)
-    {
-        if (now - Interlocked.Read(ref _lastSweepUnixSeconds) < 600) return;
-        Interlocked.Exchange(ref _lastSweepUnixSeconds, now);
-
-        foreach (var (key, window) in Hits)
-        {
-            // 只清理超过 1 小时的窗口：Hits 被所有限流端点共享且各自窗口长度不同，
-            // 若用本实例的 WindowSeconds 判定，会误删其他端点尚未过期的活跃窗口（等于提前放行）。
-            if (now - window.WindowStart >= MaxSweepAgeSeconds) Hits.TryRemove(key, out _);
-        }
-    }
-
-    /// <summary>清理阈值：取 1 小时，足够覆盖当前所有窗口配置且不会误删活跃窗口。</summary>
-    private const int MaxSweepAgeSeconds = 3600;
-
-    private sealed record Window(int Count, long WindowStart);
 }

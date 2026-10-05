@@ -63,7 +63,7 @@ public sealed class ForumAppService
             Posts = await _db.MhopPosts.CountAsync(p => p.Status == ContentStatus.Published),
             Replies = await _db.MhopReplies.CountAsync(r => r.Status == ContentStatus.Published),
             Users = await _db.MhopUsers.CountAsync(),
-            Online = _online.Count(),
+            Online = await _online.CountAsync(),
         };
     }
 

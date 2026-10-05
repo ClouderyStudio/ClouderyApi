@@ -62,7 +62,7 @@ public sealed class AdminAppService
                 r => r.AiFlag != string.Empty && r.Status != ContentStatus.Draft),
             NewPosts24h = await _db.MhopPosts.CountAsync(p => p.CreatedAt >= since),
             NewUsers24h = await _db.MhopUsers.CountAsync(u => u.CreatedAt >= since),
-            Online = _online.Count(),
+            Online = await _online.CountAsync(),
         };
     }
 

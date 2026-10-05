@@ -27,16 +27,16 @@ public class MhopCommonController : MhopControllerBase
     public IActionResult Hotlines() => MhopOk(_hotlines ??= BuildHotlines());
 
     [HttpPost("online/heartbeat")]
-    public IActionResult Heartbeat([FromBody] HeartbeatIn body)
+    public async Task<IActionResult> Heartbeat([FromBody] HeartbeatIn body)
     {
         var key = (body.Key ?? string.Empty).Trim();
         if (key.Length > 64) key = key[..64];
         if (key.Length == 0) key = "anon";
-        return MhopOk(new { online = _online.Heartbeat(key) });
+        return MhopOk(new { online = await _online.HeartbeatAsync(key) });
     }
 
     [HttpGet("online/count")]
-    public IActionResult Count() => MhopOk(new { online = _online.Count() });
+    public async Task<IActionResult> Count() => MhopOk(new { online = await _online.CountAsync() });
 
     /// <summary>紧急援助热线（首页置顶 + 危机场景强制提示）。</summary>
     private List<HotlineOut> BuildHotlines()
