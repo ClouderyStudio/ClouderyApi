@@ -251,9 +251,9 @@ dotnet ef database update --context ScforgeDbContext
 
 - **幂等 upsert**：同一用户下 `clientKey` 唯一（唯一索引 `IX_ExamResults_UserId_ClientKey`，MySQL 允许多个 NULL），重复同步不会产生重复记录；`clientKey` 缺省时以 `testId@<savedAt ISO>` 兜底。
 - **防旧设备回灌**：已存在的记录只有在新 `savedAt` **不早于**已存 `savedAt` 时才覆盖，晚到的旧设备不会把新结果改回旧数据。
-- **配额**：单次最多 200 条、单用户只保留最新 200 条（超量自动裁剪）、单条 `payload` 上限 256 KB；超限返回 400 裸对象（如 `{ "success": false, "message": "一次最多同步 200 条记录，请分批上传" }`）。
+- **配额**：单次最多 200 条、单用户只保留最新 200 条（超量自动裁剪）、单条 `payload` 上限 256 KB；超限返回 400 `{ "detail": "一次最多同步 200 条记录，请分批上传" }`。
 - **时间**：`savedAt` / `updatedAt` 一律归一化为 UTC 后入库（MySQL `datetime` 不保留时区），返回 ISO 8601。
-- **错误**：未登录 `401 { "success": false, "message": "未登录，无法使用云端同步" }`；`payload` 缺失或记录超限 `400`；目标记录不存在 `404`。Cloudery 模块风格，返回**裸对象**（不经 `MhopOk`）。
+- **错误**：未登录 `401 { "detail": "未登录，无法使用云端同步" }`；`payload` 缺失或记录超限 `400`；目标记录不存在 `404`。错误体统一为 `{ "detail": "..." }`（不经 `MhopOk`，见 [docs/API-ERROR-SHAPE.md](docs/API-ERROR-SHAPE.md)）；成功体仍是裸对象。
 - 路由**未挂** `[Authorize]`：为统一返回中文 401 体，鉴权在控制器内手动完成（`TryGetUserId`）。
 
 ### 相关代码与配置
@@ -568,7 +568,7 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
   与 Cloudery 主站的 Casdoor Cookie 会话相互独立、互不影响；也可用 Casdoor 统一身份账号登录（见下节），
   服务端自动绑定 / 创建本地 `mhop_users` 账号后签发同一种 MHOP JWT。
 - **序列化**：MHOP 控制器统一通过 `MhopJson.Options` 输出**蛇形字段名**与 **UTC（带 Z）时间**；
-  请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致）。
+  请求体用 `[JsonPropertyName]` 显式绑定蛇形键名。错误统一为 `{ "detail": "..." }`（与 FastAPI 一致，也是**全站**统一形状，见 [docs/API-ERROR-SHAPE.md](docs/API-ERROR-SHAPE.md)）。
 - **AI**：`Modules/Mhop/Infrastructure/MhopAiService.cs` 调用任意 OpenAI 兼容 `/chat/completions`；
   未配置或调用失败时降级为内置共情式规则回复；任何引擎下检测到危机信号都会强制前置援助热线。
 - **后台任务**：帖子**首次审核通过**时，通过独立 DI 作用域异步生成一条 AI 回复并写入 `mhop_ai_logs`（关联 `reply_id`，可在后台撤回 / 恢复）。
@@ -763,6 +763,13 @@ dotnet ClouderyApi.dll --sweep-orphans --delete-orphans  # 确认无误后实际
 - **Cookie 密钥环（Data Protection）**：默认落内容根下的 `keys/`（容器里是 `/app/keys`，1Panel 已把宿主目录挂到
   `/app`，因此**容器重建不再让全体用户掉线**）；配了 Redis 则改存 Redis，多实例共用同一密钥环、只需登录一次。
   目录可用 `DataProtection:KeysDirectory` 指定（相对路径按内容根解析）；`keys/` 已写进 `.gitignore`，不会被提交。
+
+## 统一错误响应体
+
+所有 **≥ 400** 的响应，只要没有业务体，统一为 `{ "detail": "中文文案" }`；400 模型校验额外带 `errors`，429 额外带 `retryAfterSeconds`（与 `Retry-After` 头同源）。框架产生的空体 401 / 404 / 405 / 415 与未处理异常 500 由 `ApiErrorBodyMiddleware`（管道最前）补齐，控制器统一用 `ApiError.Result` 出口。
+
+成功体、路由表与上游透传（`/server/{...}`）不变；完整映射表、四个产生路径、前端消费与历史决策见
+[docs/API-ERROR-SHAPE.md](docs/API-ERROR-SHAPE.md)。
 
 ## 测试
 

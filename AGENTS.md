@@ -58,8 +58,8 @@ docker run -d --name cloudery-mysql -p 3306:3306 \
 对外契约必须**逐字不变**：
 
 - 路由、CORS 白名单不变；路由表由 `ClouderyApi.Tests/SwaggerRouteSnapshotTests.cs` 守住。
-- JSON：MHOP 用 snake_case + `{ "detail": "..." }` 错误体（`ClouderyApi/Shared/Json/MhopJson.cs`）；Cloudery / Zhuxs 返回裸对象 `{ success, message, ... }`。**中文文案不得改写**。
-- 鉴权形状：只挂 `[Authorize]` 的端点未登录 → `401` + `WWW-Authenticate: Bearer` + 空响应体（**不是** 302 跳转）；只有 `[AdminOnly]`（端点授权元数据 ≤1 条）才由授权处理器写 `401 {"success":false,"message":"请先登录"}`；已登录非管理员一律 `403 {"success":false,"message":"无管理员权限，操作被拒绝"}`。
+- JSON：成功体维持现状（MHOP snake_case + 扁平对象；Cloudery / Zhuxs 裸对象 `{ success, message, ... }`）；**所有错误体统一为 `{ "detail": "..." }`**（可选 `errors` / `retryAfterSeconds`，由 `ClouderyApi/Shared/Json/ApiError.cs` 与 `ApiErrorBodyMiddleware` 产出，见 `docs/API-ERROR-SHAPE.md`）。**中文文案不得改写**。
+- 鉴权形状：只挂 `[Authorize]` 的端点未登录 → `401` + `WWW-Authenticate: Bearer`，响应体由 `ApiErrorBodyMiddleware` 补成 `{"detail":"请先登录"}`（**不是** 302 跳转）；`[AdminOnly]`（端点授权元数据 ≤1 条）由授权处理器直接写 `401 {"detail":"请先登录"}`；已登录非管理员一律 `403 {"detail":"无管理员权限，操作被拒绝"}`。
 - 时间统一 UTC 带 `Z`；`inc_view` 必须是字符串（ASP.NET bool 绑定不接受 `"1"`，见 `ClouderyApi/Modules/Mhop/Api/MhopForumController.cs:45-48` 与同文件 `:127` 的 `IsTruthy`）。
 - 数据库表名 / 列 / 索引不变，迁移只前滚、不写破坏性 `Down`；模型快照应与迁移一致（`dotnet ef migrations has-pending-model-changes --context <Ctx>` 应为 No changes）。
 - 任何改动都要 `dotnet build -warnaserror` 通过，并按范围跑测试。**涉及迁移 / DI / 启动路径 / 中间件时，「build 与单测通过」不算验证过**——必须按 2.1 在本地实跑（本地 MySQL 8 + `--migrate`）。
@@ -80,7 +80,7 @@ docker run -d --name cloudery-mysql -p 3306:3306 \
 - **公开资料接口不得下发登录凭据**。`GET /mhop/auth/users/{id}` 匿名可访问，`MhopAuthMapper.ToUserOut` 必须传 `maskEmail: true` + `maskPhone: true` + `exposePermissions: false`；本人 / 后台接口用默认值。邮箱是邮箱验证码登录的唯一凭据，泄漏即可按 id 遍历全站 PII。
 - **客户端 IP 一律走 `ClientIp.Resolve(HttpContext)`**，不要直接读 `RemoteIpAddress`。生产在 Nginx 之后，直读拿到的是代理 IP，限流会退化成「全站一个桶」。可信代理在 `TrustedProxies` 节显式声明——**绝不要信任任意来源**，否则伪造 `X-Forwarded-For` 就能绕过限流。
 - **`Mhop:Smtp:AllowInvalidCertificate` 生产保持 false**。打开后 TLS 不校验证书，登录验证码会被中间人截获。
-- **触发 LLM 的端点必须挂 `[IpRateLimit]`**：目前是 `/mhop/assessments`、`/mhop/forum/posts`、`/mhop/forum/posts/{id}/replies`、`/mhop/bottles`、`/mhop/bottles/{id}/messages`。挂在 MHOP 控制器上必须带 `UseMhopErrorShape = true`，否则 429 响应体形状不对（MHOP 前端读 `detail`）。新增同类端点时一并补上。
+- **触发 LLM 的端点必须挂 `[IpRateLimit]`**：目前是 `/mhop/assessments`、`/mhop/forum/posts`、`/mhop/forum/posts/{id}/replies`、`/mhop/bottles`、`/mhop/bottles/{id}/messages`。429 响应体由 `ApiError` 统一写成 `{ "detail": ..., "retryAfterSeconds": ... }`（MHOP 前端读 `detail`）。新增同类端点时一并补上。
 
 ## 5. 提交与协作约定
 
