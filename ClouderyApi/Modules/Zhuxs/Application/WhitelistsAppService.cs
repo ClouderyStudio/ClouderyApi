@@ -31,8 +31,7 @@ public class WhitelistsAppService(IZhuxsDbContext db)
     /// <summary>新增一条邀请码；唯一键冲突抛 <see cref="ZhuxsWriteConflictException"/>。</summary>
     public async Task<WhitelistOut> CreateAsync(WhitelistDto dto, CancellationToken cancellationToken = default)
     {
-        // 主键由服务端生成，客户端不可指定（防 over-posting）
-        var whitelist = new Whitelist { Id = Guid.NewGuid().ToString("N"), Code = dto.Code };
+        var whitelist = Whitelist.Create(dto.Code);
         db.ZhuxsWhitelists.Add(whitelist);
         try
         {

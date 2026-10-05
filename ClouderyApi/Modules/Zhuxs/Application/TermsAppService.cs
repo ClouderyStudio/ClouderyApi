@@ -50,14 +50,7 @@ public class TermsAppService(IZhuxsDbContext db)
     /// <summary>新增一条进度；唯一键冲突抛 <see cref="ZhuxsWriteConflictException"/>。</summary>
     public async Task<TermOut> CreateAsync(TermDto dto, CancellationToken cancellationToken = default)
     {
-        var term = new Term
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            RecordDate = dto.RecordDate,
-            Description = dto.Description,
-            Information = dto.Information,
-            Files = dto.Files
-        };
+        var term = Term.Create(dto.RecordDate, dto.Description, dto.Information, dto.Files);
 
         db.ZhuxsTerms.Add(term);
         try

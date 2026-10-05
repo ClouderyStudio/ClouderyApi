@@ -35,6 +35,23 @@ public class ExamPaper
     public required string Name { get; set; }
     public required List<ExamSection> Sections { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>新增试卷：Id 由服务端生成、UpdatedAt 由服务端盖章（调用方不再各自拼装）。</summary>
+    public static ExamPaper Create(string name, List<ExamSection> sections, DateTime now) => new()
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        Name = name,
+        Sections = sections,
+        UpdatedAt = now,
+    };
+
+    /// <summary>整卷覆盖：只改 Name / Sections / UpdatedAt，主键与其它字段不动。</summary>
+    public void ReplaceContent(string name, List<ExamSection> sections, DateTime now)
+    {
+        Name = name;
+        Sections = sections;
+        UpdatedAt = now;
+    }
 }
 
 /// <summary>下发给测试端的试卷视图（故意不包含 Answer / Note，避免答案暴露在客户端网络层）</summary>

@@ -1,9 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ClouderyApi.Modules.Zhuxs.Domain;
 
-[Keyless]
 public class TermInfo
 {
     public required string Name { get; set; }
@@ -14,7 +12,6 @@ public class TermInfo
     public required int Playercount { get; set; }
 }
 
-[Keyless]
 public class TermFile
 {
     public required string Filename { get; set; }
@@ -31,4 +28,14 @@ public class Term
     [Column(TypeName = "json")] public required TermInfo Information { get; set; }
 
     [Column(TypeName = "json")] public List<TermFile>? Files { get; set; }
+
+    /// <summary>新增一条进度：主键由服务端生成，客户端不可指定。</summary>
+    public static Term Create(string recordDate, string description, TermInfo information, List<TermFile>? files) => new()
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        RecordDate = recordDate,
+        Description = description,
+        Information = information,
+        Files = files,
+    };
 }

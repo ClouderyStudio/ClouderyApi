@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ClouderyApi.Modules.Cloudery.Api.Contracts;
+namespace ClouderyApi.Modules.Cloudery.Domain;
 
 /// <summary>判分请求：answers 以 "s-q" 为键，值为 string（单选/判断/简答）或 string[]（多选）</summary>
 public class GradeRequest

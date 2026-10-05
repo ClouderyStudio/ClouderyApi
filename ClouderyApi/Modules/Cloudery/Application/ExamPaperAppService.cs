@@ -63,13 +63,7 @@ public sealed class ExamPaperAppService(IClouderyDbContext db)
     /// <summary>新增试卷：Id 由服务端生成；UpdatedAt 由服务端盖章。</summary>
     public async Task<ExamPaperWriteResult> CreateAsync(ExamPaperInput input, CancellationToken cancellationToken = default)
     {
-        var paper = new ExamPaper
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = input.Name,
-            Sections = input.Sections,
-            UpdatedAt = DateTime.UtcNow,
-        };
+        var paper = ExamPaper.Create(input.Name, input.Sections, DateTime.UtcNow);
 
         if (await db.ExamPapers.AnyAsync(p => p.Id == paper.Id, cancellationToken))
             return new(ExamPaperWriteOutcome.DuplicateId, null);
@@ -93,9 +87,7 @@ public sealed class ExamPaperAppService(IClouderyDbContext db)
         var existing = await db.ExamPapers.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (existing == null) return ExamPaperWriteOutcome.NotFound;
 
-        existing.Name = input.Name;
-        existing.Sections = input.Sections;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.ReplaceContent(input.Name, input.Sections, DateTime.UtcNow);
         await db.SaveChangesAsync(cancellationToken);
 
         return ExamPaperWriteOutcome.Ok;

@@ -1,6 +1,4 @@
 using System.Text.Json;
-using ClouderyApi.Modules.Cloudery.Domain;
-using ClouderyApi.Modules.Cloudery.Api.Contracts;
 
 namespace ClouderyApi.Modules.Cloudery.Domain;
 

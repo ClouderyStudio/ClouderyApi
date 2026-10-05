@@ -49,14 +49,7 @@ public class ApplicationsAppService(IZhuxsDbContext db)
     /// <summary>新增一条报名；唯一键冲突抛 <see cref="ZhuxsWriteConflictException"/>。</summary>
     public async Task<ApplicationOut> CreateAsync(ApplicationDto dto, CancellationToken cancellationToken = default)
     {
-        // 主键服务端生成；Passed 恒为 false，需管理员在 PUT 阶段审核通过（防 over-posting 绕过审核）
-        var application = new ClouderyApi.Modules.Zhuxs.Domain.Application
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Passed = false,
-            SubmissionDate = DateTime.UtcNow,
-            Sharables = dto.Sharables
-        };
+        var application = ClouderyApi.Modules.Zhuxs.Domain.Application.Create(dto.Sharables);
 
         db.ZhuxsApplications.Add(application);
         try
