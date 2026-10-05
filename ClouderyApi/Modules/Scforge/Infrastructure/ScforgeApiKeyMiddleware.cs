@@ -18,7 +18,7 @@ namespace ClouderyApi.Modules.Scforge.Infrastructure;
 ///   1. **Cookie 会话优先**：已经登录了就当 Cookie 用户，不看 Bearer —— 避免用 Key 冒充降级。
 ///   2. 只认本模块的令牌前缀 <c>scf_</c>，别的 Bearer（如 MHOP JWT）原样放行给后续处理器。
 ///   3. 校验失败**不直接拒绝**，而是让请求以匿名身份继续 —— 由各写端点按既有约定返回
-///      <c>401 {"success":false,"message":"请先登录"}</c>，保持对外错误形状不变（AGENTS.md 硬约束）。
+///      <c>401 {"detail":"请先登录"}</c>（全站统一错误体，见 docs/API-ERROR-SHAPE.md）。
 ///   4. 查库本身失败（表未迁移、连接抖动）同样按"校验失败"处理：降级为匿名并记警告。
 ///      本中间件在管道早期、对**所有**端点执行，一旦让它把异常抛出去，整个站点的公开接口
 ///      都会被一个伪造的 Authorization 头打成 500 —— 那是可被匿名触发的放大故障。

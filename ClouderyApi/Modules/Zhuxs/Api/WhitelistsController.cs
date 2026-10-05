@@ -3,6 +3,7 @@ using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -26,7 +27,7 @@ public class WhitelistsController(WhitelistsAppService whitelists) : ControllerB
     public async Task<ActionResult<WhitelistOut>> GetWhitelist(string id)
     {
         var whitelist = await whitelists.FindAsync(id);
-        if (whitelist == null) return NotFound();
+        if (whitelist == null) return ApiError.Result(404, "记录不存在");
         return whitelist;
     }
 
@@ -40,7 +41,7 @@ public class WhitelistsController(WhitelistsAppService whitelists) : ControllerB
         }
         catch (ZhuxsWriteConflictException)
         {
-            return Conflict(new { success = false, message = "记录冲突" });
+            return ApiError.Result(409, "记录冲突");
         }
 
         return CreatedAtAction("GetWhitelist", new { id = created.Id }, created);
@@ -49,6 +50,6 @@ public class WhitelistsController(WhitelistsAppService whitelists) : ControllerB
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteWhitelist(string id)
     {
-        return await whitelists.DeleteAsync(id) ? NoContent() : NotFound();
+        return await whitelists.DeleteAsync(id) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 }

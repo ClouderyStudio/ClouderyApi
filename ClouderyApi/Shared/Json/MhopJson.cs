@@ -19,9 +19,12 @@ public static class MhopJson
         Converters = { new MhopUtcDateTimeConverter() },
     };
 
-    /// <summary>统一错误响应体 { detail: "..." }，与 FastAPI 的 HTTPException 一致。</summary>
+    /// <summary>
+    /// 统一错误响应体 { detail: "..." }，与 FastAPI 的 HTTPException 一致。
+    /// 实现见 <see cref="ApiError.Result"/>（全站错误形状的唯一出口）。
+    /// </summary>
     public static IActionResult Error(int statusCode, string detail)
-        => new JsonResult(new { detail }, Options) { StatusCode = statusCode };
+        => ApiError.Result(statusCode, detail);
 }
 
 /// <summary>数据库中读取的 DateTime 为 Unspecified，统一按 UTC 输出并带 Z 后缀，避免前端时区解析歧义。</summary>

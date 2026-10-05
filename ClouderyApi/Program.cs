@@ -30,6 +30,8 @@ using ClouderyApi.Shared.RateLimit;
 using ClouderyApi.Shared.Online;
 using ClouderyApi.Shared.Email;
 using ClouderyApi.Shared.Redis;
+using ClouderyApi.Shared.Json;
+using Microsoft.AspNetCore.Mvc;
 
 // 维护开关在交给配置系统之前先摘出来：命令行配置提供程序不接受没有取值的裸开关。
 var sweepOrphans = args.Any(a => a.Equals("--sweep-orphans", StringComparison.OrdinalIgnoreCase));
@@ -42,7 +44,28 @@ var builder = WebApplication.CreateBuilder(
                     && !a.Equals("--migrate", StringComparison.OrdinalIgnoreCase)
                     && !a.Equals("--seed", StringComparison.OrdinalIgnoreCase)).ToArray());
 
-builder.Services.AddControllers(options => options.Filters.Add<MhopApiExceptionFilter>());
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<MhopApiExceptionFilter>();
+});
+
+// 模型校验失败（[ApiController] 自动 400）也走统一错误体：{ detail, errors }。
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    // 关掉框架把 4xx「空结果」映射成 application/problem+json 的行为，
+    // 统一改由 ApiErrorBodyMiddleware 补 { detail }（见 docs/API-ERROR-SHAPE.md）。
+    options.SuppressMapClientErrors = true;
+    options.InvalidModelStateResponseFactory = context => ApiError.Result(
+        StatusCodes.Status400BadRequest,
+        ApiError.ValidationDetail,
+        context.ModelState
+            .Where(entry => entry.Value?.Errors.Count > 0)
+            .ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value!.Errors
+                    .Select(error => string.IsNullOrEmpty(error.ErrorMessage) ? "参数不合法" : error.ErrorMessage)
+                    .ToArray()));
+});
 
 builder.Services.AddHttpClient("Casdoor"); // 供 AuthController 通过 IHttpClientFactory 使用
 builder.Services.AddHttpClient("SckeyServer"); // 供 ServerController 转发 SCKEY 请求
@@ -360,6 +383,9 @@ if (runMigrate || runSeed)
 if (useForwardedHeaders)
     app.UseForwardedHeaders();
 
+// 错误响应兜底：框架产生的空体 4xx/5xx 与未处理异常都补成统一的 { detail } 形状（见 docs/API-ERROR-SHAPE.md）。
+app.UseMiddleware<ApiErrorBodyMiddleware>();
+
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
 // 默认关闭（Mhop:AutoMigrate 留空时仅 Development 打开）：生产由部署脚本显式执行 --migrate。
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
@@ -409,7 +435,7 @@ app.Use(async (context, next) =>
     if (counter.Count > maxRequests)
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        await context.Response.WriteAsJsonAsync(new { success = false, message = "请求过于频繁，请稍后再试" });
+        await ApiError.WriteAsync(context, StatusCodes.Status429TooManyRequests, "请求过于频繁，请稍后再试");
         return;
     }
     await next();
@@ -437,7 +463,7 @@ if(!app.Environment.IsDevelopment())
                     if (!allowedOriginSet.Contains(originValue))
                     {
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        await context.Response.WriteAsJsonAsync(new { success = false, message = "跨站请求被拒绝" });
+                        await ApiError.WriteAsync(context, StatusCodes.Status403Forbidden, "跨站请求被拒绝");
                         return;
                     }
                 }

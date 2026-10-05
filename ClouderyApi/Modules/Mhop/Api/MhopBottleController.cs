@@ -21,7 +21,7 @@ public class MhopBottleController(
 
     /// <summary>扔出一个瓶子。每次投瓶都会触发一次 AI 内容审核，按 IP 限流保护模型开销。</summary>
     [HttpPost]
-    [IpRateLimit(MaxRequests = 20, WindowSeconds = 300, UseMhopErrorShape = true)]
+    [IpRateLimit(MaxRequests = 20, WindowSeconds = 300)]
     public async Task<IActionResult> Throw([FromBody] ThrowIn body)
     {
         var user = await current.RequireAsync();
@@ -89,7 +89,7 @@ public class MhopBottleController(
 
     /// <summary>发送一条消息。每次都会触发一次 AI 内容审核，按 IP 限流。</summary>
     [HttpPost("{id:int}/messages")]
-    [IpRateLimit(MaxRequests = 30, WindowSeconds = 300, UseMhopErrorShape = true)]
+    [IpRateLimit(MaxRequests = 30, WindowSeconds = 300)]
     public async Task<IActionResult> Send(int id, [FromBody] SendIn body)
     {
         var user = await current.RequireAsync();

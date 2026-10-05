@@ -1,6 +1,7 @@
 using ClouderyApi.Shared.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using ClouderyApi.Shared.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -34,8 +35,8 @@ public sealed class AdminOnlyAuthorizationHandler(IOptions<AdminOptions> options
 
 /// <summary>
 /// 授权失败响应形状保持不变：只有 <c>[AdminOnly]</c> 一条授权元数据（类上无 <c>[Authorize]</c>）的端点，
-/// 未登录写 401 <c>{"success":false,"message":"请先登录"}</c>，非管理员写 403
-/// <c>{"success":false,"message":"无管理员权限，操作被拒绝"}</c>；
+/// 未登录写 401 <c>{"detail":"请先登录"}</c>，非管理员写 403
+/// <c>{"detail":"无管理员权限，操作被拒绝"}</c>；
 /// 其余端点（类级 <c>[Authorize]</c>）继续走框架默认挑战（401 + WWW-Authenticate: Bearer + 空体）。
 /// </summary>
 public sealed class AdminOnlyAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
@@ -53,15 +54,11 @@ public sealed class AdminOnlyAuthorizationMiddlewareResultHandler : IAuthorizati
             // 其余端点维持框架默认挑战（401 + WWW-Authenticate: Bearer + 空体）。
             if (authenticated || CountsAsSoleAuthorizeData(context))
             {
-                context.Response.StatusCode = authenticated
-                    ? StatusCodes.Status403Forbidden
-                    : StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json; charset=utf-8";
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    success = false,
-                    message = authenticated ? "无管理员权限，操作被拒绝" : "请先登录",
-                });
+                // 统一错误体，与控制器写出的形状一致（见 docs/API-ERROR-SHAPE.md）。
+                await ApiError.WriteAsync(
+                    context,
+                    authenticated ? StatusCodes.Status403Forbidden : StatusCodes.Status401Unauthorized,
+                    authenticated ? "无管理员权限，操作被拒绝" : "请先登录");
                 return;
             }
         }

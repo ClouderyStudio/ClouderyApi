@@ -2,6 +2,7 @@ using ClouderyApi.Modules.Scforge.Application;
 using ClouderyApi.Modules.Scforge.Domain;
 using ClouderyApi.Modules.Scforge.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Scforge.Api;
 
@@ -33,11 +34,11 @@ public abstract class ScforgeControllerBase : ControllerBase
         }
         catch (ScforgeRuleException ex)
         {
-            return BadRequest(new { success = false, message = ex.Message });
+            return ApiError.Result(400, ex.Message);
         }
         catch (ScforgeApiException ex)
         {
-            return StatusCode(ex.StatusCode, new { success = false, message = ex.Message });
+            return ApiError.Result(ex.StatusCode, ex.Message);
         }
     }
 

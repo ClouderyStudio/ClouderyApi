@@ -3,6 +3,7 @@ using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -23,7 +24,7 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     public async Task<ActionResult<ExamPaperView>> GetExamPaper(string id)
     {
         var paper = await papers.FindViewAsync(id);
-        if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
+        if (paper == null) return ApiError.Result(404, "未找到该试卷");
         return paper;
     }
 
@@ -33,7 +34,7 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     public async Task<ActionResult<ExamPaperFullView>> GetExamPaperFull(string id)
     {
         var paper = await papers.FindFullAsync(id);
-        if (paper == null) return NotFound(new { success = false, message = "未找到该试卷" });
+        if (paper == null) return ApiError.Result(404, "未找到该试卷");
         return paper;
     }
 
@@ -42,7 +43,7 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     public async Task<ActionResult<ExamGradeResult>> Grade(string id, [FromBody] GradeRequest request)
     {
         var result = await papers.GradeAsync(id, request);
-        if (result == null) return NotFound(new { success = false, message = "未找到该试卷" });
+        if (result == null) return ApiError.Result(404, "未找到该试卷");
         return result;
     }
 
@@ -55,9 +56,9 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
         switch (result.Outcome)
         {
             case ExamPaperWriteOutcome.DuplicateId:
-                return Conflict(new { success = false, message = "试卷ID已存在" });
+                return ApiError.Result(409, "试卷ID已存在");
             case ExamPaperWriteOutcome.SaveFailed:
-                return Conflict(new { success = false, message = "保存失败：ID 可能冲突" });
+                return ApiError.Result(409, "保存失败：ID 可能冲突");
         }
 
         return CreatedAtAction("GetExamPaper", new { id = result.Paper!.Id }, result.Paper);
@@ -69,8 +70,8 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     {
         return (await papers.UpdateAsync(id, input)) switch
         {
-            ExamPaperWriteOutcome.NotFound => NotFound(new { success = false, message = "未找到该试卷" }),
-            ExamPaperWriteOutcome.ConcurrencyConflict => Conflict(new { success = false, message = "并发冲突" }),
+            ExamPaperWriteOutcome.NotFound => ApiError.Result(404, "未找到该试卷"),
+            ExamPaperWriteOutcome.ConcurrencyConflict => ApiError.Result(409, "并发冲突"),
             _ => NoContent(),
         };
     }
@@ -81,6 +82,6 @@ public class ExamPapersController(ExamPaperAppService papers) : ControllerBase
     {
         return await papers.DeleteAsync(id)
             ? NoContent()
-            : NotFound(new { success = false, message = "未找到该试卷" });
+            : ApiError.Result(404, "未找到该试卷");
     }
 }

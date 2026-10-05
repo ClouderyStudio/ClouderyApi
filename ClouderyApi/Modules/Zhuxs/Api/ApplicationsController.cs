@@ -3,6 +3,7 @@ using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -23,7 +24,7 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
     public async Task<ActionResult<ApplicationOut>> GetZhuxsApplication(string id)
     {
         var zhuxsApplication = await applications.FindAsync(id);
-        if (zhuxsApplication == null) return NotFound();
+        if (zhuxsApplication == null) return ApiError.Result(404, "记录不存在");
         return zhuxsApplication;
     }
 
@@ -31,7 +32,7 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
     [AdminOnly]
     public async Task<IActionResult> PutZhuxsApplication(string id, [FromBody] ApplicationDto dto)
     {
-        return await applications.UpdateAsync(id, dto) ? NoContent() : NotFound();
+        return await applications.UpdateAsync(id, dto) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 
     [HttpPost]
@@ -45,7 +46,7 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
         }
         catch (ZhuxsWriteConflictException)
         {
-            return Conflict(new { success = false, message = "记录冲突" });
+            return ApiError.Result(409, "记录冲突");
         }
 
         return CreatedAtAction("GetZhuxsApplication", new { id = created.Id }, created);
@@ -55,6 +56,6 @@ public class ApplicationsController(ApplicationsAppService applications) : Contr
     [AdminOnly]
     public async Task<IActionResult> DeleteZhuxsApplication(string id)
     {
-        return await applications.DeleteAsync(id) ? NoContent() : NotFound();
+        return await applications.DeleteAsync(id) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 }

@@ -2,6 +2,7 @@ using ClouderyApi.Shared.Filters;
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -22,7 +23,7 @@ public sealed class ResultAnalysisController(ResultAnalysisAppService app) : Con
         var result = await app.AnalyzeAsync(body, cancellationToken);
         if (result is null)
         {
-            return BadRequest(new { success = false, message = "缺少量表标识（testId）" });
+            return ApiError.Result(400, "缺少量表标识（testId）");
         }
 
         return Ok(result);

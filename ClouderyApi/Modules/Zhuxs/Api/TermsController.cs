@@ -3,6 +3,7 @@ using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Zhuxs.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Zhuxs.Api;
 
@@ -23,7 +24,7 @@ public class TermsController(TermsAppService terms) : ControllerBase
     public async Task<ActionResult<TermOut>> GetZhuxsTerm(string id)
     {
         var zhuxsTerm = await terms.FindAsync(id);
-        if (zhuxsTerm == null) return NotFound();
+        if (zhuxsTerm == null) return ApiError.Result(404, "记录不存在");
         return zhuxsTerm;
     }
 
@@ -31,7 +32,7 @@ public class TermsController(TermsAppService terms) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> PutZhuxsTerm(string id, [FromBody] TermDto dto)
     {
-        return await terms.UpdateAsync(id, dto) ? NoContent() : NotFound();
+        return await terms.UpdateAsync(id, dto) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 
     [HttpPost]
@@ -45,7 +46,7 @@ public class TermsController(TermsAppService terms) : ControllerBase
         }
         catch (ZhuxsWriteConflictException)
         {
-            return Conflict(new { success = false, message = "记录冲突" });
+            return ApiError.Result(409, "记录冲突");
         }
 
         return CreatedAtAction("GetZhuxsTerm", new { id = created.Id }, created);
@@ -55,6 +56,6 @@ public class TermsController(TermsAppService terms) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> DeleteZhuxsTerm(string id)
     {
-        return await terms.DeleteAsync(id) ? NoContent() : NotFound();
+        return await terms.DeleteAsync(id) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 }

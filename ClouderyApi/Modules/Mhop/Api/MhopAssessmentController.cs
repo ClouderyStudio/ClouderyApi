@@ -28,7 +28,7 @@ public class MhopAssessmentController : MhopControllerBase
     /// 该端点匿名可用，不限流等于把模型账单对外开放。
     /// </summary>
     [HttpPost]
-    [IpRateLimit(MaxRequests = 8, WindowSeconds = 300, UseMhopErrorShape = true)]
+    [IpRateLimit(MaxRequests = 8, WindowSeconds = 300)]
     public async Task<IActionResult> Submit([FromBody] AssessmentIn body)
         => MhopOk(await _assessments.SubmitAsync(body));
 

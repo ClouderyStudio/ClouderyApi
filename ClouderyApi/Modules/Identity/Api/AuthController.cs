@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using ClouderyApi.Shared.Options;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Identity.Api;
 
@@ -102,7 +103,7 @@ public class AuthController : ControllerBase
             // 1. 验证请求参数
             if (string.IsNullOrEmpty(request.Code))
             {
-                return BadRequest(new { success = false, message = "授权码不能为空" });
+                return ApiError.Result(400, "授权码不能为空");
             }
 
             // 1.5 强制校验 OAuth state（防 CSRF 登录）：
@@ -111,7 +112,7 @@ public class AuthController : ControllerBase
             if (string.IsNullOrEmpty(request.State) || string.IsNullOrEmpty(cookieState) || request.State != cookieState)
             {
                 _logger.LogWarning("OAuth state 缺失或不匹配，拒绝登录（防 CSRF）");
-                return BadRequest(new { success = false, message = "state 校验失败，请重新发起登录" });
+                return ApiError.Result(400, "state 校验失败，请重新发起登录");
             }
 
             // 只记录授权码长度，绝不记录明文（授权码为一次性的敏感凭证）
@@ -126,7 +127,7 @@ public class AuthController : ControllerBase
             if (tokenResponse == null || string.IsNullOrEmpty(tokenResponse.AccessToken))
             {
                 _logger.LogWarning("换取 Token 失败");
-                return BadRequest(new { success = false, message = "换取访问令牌失败" });
+                return ApiError.Result(400, "换取访问令牌失败");
             }
 
             var accessToken = tokenResponse.AccessToken;
@@ -139,7 +140,7 @@ public class AuthController : ControllerBase
             if (casdoorUser == null || string.IsNullOrEmpty(casdoorUser.Id))
             {
                 _logger.LogWarning("解析用户信息失败");
-                return BadRequest(new { success = false, message = "获取用户信息失败" });
+                return ApiError.Result(400, "获取用户信息失败");
             }
 
             _logger.LogInformation("Casdoor 用户 {UserId} 登录成功", casdoorUser.Id);
@@ -150,7 +151,7 @@ public class AuthController : ControllerBase
             if (user == null)
             {
                 _logger.LogError("同步用户到数据库失败");
-                return StatusCode(500, new { success = false, message = "用户同步失败" });
+                return ApiError.Result(500, "用户同步失败");
             }
 
             // 4. 创建 ClaimsIdentity 并登录（建立 Cookie 会话）
@@ -197,7 +198,7 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "处理 OAuth 回调时发生异常");
-            return StatusCode(500, new { success = false, message = "服务器内部错误" });
+            return ApiError.Result(500, "服务器内部错误");
         }
     }
 
@@ -211,7 +212,7 @@ public class AuthController : ControllerBase
         {
             if (!User.Identity?.IsAuthenticated ?? true)
             {
-                return Unauthorized(new { success = false, message = "未登录" });
+                return ApiError.Result(401, "未登录");
             }
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -234,7 +235,7 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "获取当前用户信息失败");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
+            return ApiError.Result(500, "服务器错误");
         }
     }
 
@@ -266,7 +267,7 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "登出时发生异常");
-            return StatusCode(500, new { success = false, message = "服务器错误" });
+            return ApiError.Result(500, "服务器错误");
         }
     }
 

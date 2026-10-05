@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.SurvivalCraft.Api;
 
@@ -64,7 +65,7 @@ public class ServerController : ControllerBase
     public async Task<IActionResult> PostFromServerPath(string path, [FromBody] JsonElement? body)
     {
         if (!IsValidServerPath(path))
-            return BadRequest(new { success = false, message = "非法的服务器路径" });
+            return ApiError.Result(400, "非法的服务器路径");
 
         var requestLink = ApiBase + $"/server/{path}";
         var content = new StringContent(body?.ToString() ?? "", Encoding.UTF8, "application/json");
@@ -77,7 +78,7 @@ public class ServerController : ControllerBase
         }
         catch (HttpRequestException ex)
         {
-            return StatusCode(502, new { success = false, message = $"后端请求失败: {ex.Message}" });
+            return ApiError.Result(502, $"后端请求失败: {ex.Message}");
         }
     }
 
@@ -94,7 +95,7 @@ public class ServerController : ControllerBase
     public async Task<IActionResult> GetFromServerPath(string path)
     {
         if (!IsValidServerPath(path))
-            return BadRequest(new { success = false, message = "非法的服务器路径" });
+            return ApiError.Result(400, "非法的服务器路径");
 
         var requestLink = ApiBase + $"/server/{path}";
 
@@ -106,7 +107,7 @@ public class ServerController : ControllerBase
         }
         catch (HttpRequestException ex)
         {
-            return StatusCode(502, new { success = false, message = $"后端请求失败: {ex.Message}" });
+            return ApiError.Result(502, $"后端请求失败: {ex.Message}");
         }
     }
 }

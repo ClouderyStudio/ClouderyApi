@@ -3,6 +3,7 @@ using ClouderyApi.Shared.Authorization;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -23,7 +24,7 @@ public class MembersController(MembersAppService members) : ControllerBase
     public async Task<ActionResult<MemberOut>> GetClouderyMember(string id)
     {
         var clouderyMember = await members.FindAsync(id);
-        if (clouderyMember == null) return NotFound();
+        if (clouderyMember == null) return ApiError.Result(404, "记录不存在");
         return clouderyMember;
     }
 
@@ -31,7 +32,7 @@ public class MembersController(MembersAppService members) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> PutClouderyMember(string id, [FromBody] MemberDto dto)
     {
-        return await members.UpdateAsync(id, dto) ? NoContent() : NotFound();
+        return await members.UpdateAsync(id, dto) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 
     [HttpPost]
@@ -45,7 +46,7 @@ public class MembersController(MembersAppService members) : ControllerBase
         }
         catch (ClouderyWriteConflictException)
         {
-            return Conflict(new { success = false, message = "记录冲突" });
+            return ApiError.Result(409, "记录冲突");
         }
 
         return CreatedAtAction("GetClouderyMember", new { id = created.Id }, created);
@@ -55,6 +56,6 @@ public class MembersController(MembersAppService members) : ControllerBase
     [AdminOnly]
     public async Task<IActionResult> DeleteClouderyMember(string id)
     {
-        return await members.DeleteAsync(id) ? NoContent() : NotFound();
+        return await members.DeleteAsync(id) ? NoContent() : ApiError.Result(404, "记录不存在");
     }
 }

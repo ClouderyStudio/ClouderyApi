@@ -2,6 +2,7 @@ using System.Security.Claims;
 using ClouderyApi.Modules.Cloudery.Api.Contracts;
 using ClouderyApi.Modules.Cloudery.Application;
 using Microsoft.AspNetCore.Mvc;
+using ClouderyApi.Shared.Json;
 
 namespace ClouderyApi.Modules.Cloudery.Api;
 
@@ -53,7 +54,7 @@ public sealed class ExamResultsController(ExamResultAppService app) : Controller
         if (!TryGetUserId(out var userId)) return NotLoggedIn();
 
         var deleted = await app.DeleteAsync(userId, id, cancellationToken);
-        if (!deleted) return NotFound(new { success = false, message = "记录不存在" });
+        if (!deleted) return ApiError.Result(404, "记录不存在");
 
         return Ok(new { success = true, message = "已删除" });
     }
@@ -95,8 +96,8 @@ public sealed class ExamResultsController(ExamResultAppService app) : Controller
     }
 
     private IActionResult NotLoggedIn() =>
-        Unauthorized(new { success = false, message = "未登录，无法使用云端同步" });
+        ApiError.Result(401, "未登录，无法使用云端同步");
 
     private IActionResult Rejected(string message) =>
-        BadRequest(new { success = false, message });
+        ApiError.Result(400, message);
 }

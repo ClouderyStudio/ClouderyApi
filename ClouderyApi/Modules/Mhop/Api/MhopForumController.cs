@@ -54,13 +54,13 @@ public class MhopForumController : MhopControllerBase
     /// 发帖。每次发帖都会触发一次 AI 自动审核（外加可能的 AI 自动回复），按 IP 限流保护模型开销。
     /// </summary>
     [HttpPost("posts")]
-    [IpRateLimit(MaxRequests = 20, WindowSeconds = 300, UseMhopErrorShape = true)]
+    [IpRateLimit(MaxRequests = 20, WindowSeconds = 300)]
     public async Task<IActionResult> CreatePost([FromBody] PostIn body)
         => MhopStatus(201, await _forum.CreatePostAsync(body));
 
     /// <summary>人类回复。同样会触发 AI 审核，按 IP 限流。</summary>
     [HttpPost("posts/{postId:int}/replies")]
-    [IpRateLimit(MaxRequests = 30, WindowSeconds = 300, UseMhopErrorShape = true)]
+    [IpRateLimit(MaxRequests = 30, WindowSeconds = 300)]
     public async Task<IActionResult> CreateReply(int postId, [FromBody] ReplyIn body)
         => MhopStatus(201, await _forum.CreateReplyAsync(postId, body));
 
