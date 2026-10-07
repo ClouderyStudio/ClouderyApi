@@ -412,6 +412,11 @@ if (useForwardedHeaders)
 // 错误响应兜底：框架产生的空体 4xx/5xx 与未处理异常都补成统一的 { detail } 形状（见 docs/API-ERROR-SHAPE.md）。
 app.UseMiddleware<ApiErrorBodyMiddleware>();
 
+// CORS 必须早于任何会「短路并直接写响应」的中间件（全局限流、CSRF 校验）：
+// 否则这些响应带不上 Access-Control-Allow-Origin，浏览器按跨域失败处理，
+// 前端 axios 拿不到 response，只能显示英文 "Network Error"，看不到真正的 { detail } 文案。
+app.UseCors("AllowAllOrigins");
+
 // ===== MHOP：数据库自动迁移 + 种子数据 =====
 // 默认关闭（Mhop:AutoMigrate 留空时仅 Development 打开）：生产由部署脚本显式执行 --migrate。
 // 迁移失败不阻塞启动（可用 dotnet ef database update --context MhopDbContext 手动执行）。
@@ -466,8 +471,6 @@ app.Use(async (context, next) =>
     }
     await next();
 });
-
-app.UseCors("AllowAllOrigins");
 
 // CSRF 防护中间件：
 // Cookie 会话为 SameSite=None，跨站请求会携带 Cookie，必须校验 Origin。
