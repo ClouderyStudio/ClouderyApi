@@ -85,6 +85,7 @@ docker run -d --name cloudery-mysql -p 3306:3306 \
 ## 5. 提交与协作约定
 
 - 提交信息用中文 conventional 前缀：`refactor(scope): ...`、`fix(scope): ...`、`docs: ...`、`test(scope): ...`。
+- **提交信息正文（BODY）非必要不写，标题足以说明改动时只留标题**；确需正文时写要点，不要长篇复述。
 - 一个可验证的步骤一个提交，提交前 build（+ 按范围测试）。
 - **默认只提交到本地，不要 `git push`**：推送 `master` 会触发自动部署（见 `DEPLOY.md`），必须由用户明确同意。
 - 不要提交 `appsettings.json`、任何密钥、`uploads/`、`bin/`、`obj/`。

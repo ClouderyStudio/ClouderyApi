@@ -170,6 +170,8 @@ public sealed class AuthAppService
                 Username = username,
                 PasswordHash = _hasher.Hash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24))),
                 Email = email,
+                // 该路径已用邮箱验证码校验通过，直接标记为已验证。
+                EmailVerifiedAt = DateTime.UtcNow,
                 Role = MhopUserRole.User,
                 Status = MhopUserStatus.Active,
                 CreatedAt = DateTime.UtcNow,
@@ -222,6 +224,27 @@ public sealed class AuthAppService
             throw new DomainRuleException("该手机号已被其他账号绑定");
 
         user.Phone = phone;
+        await _db.SaveChangesAsync();
+        return MhopAuthMapper.ToUserOut(user);
+    }
+
+    /// <summary>
+    /// 绑定并验证邮箱：提交 {email, code}，验证码由匿名接口 POST /mhop/auth/email-code 下发。
+    /// 校验通过后写入 Email 并盖上 EmailVerifiedAt（发帖 / 回帖与漂流瓶的前置门槛）。
+    /// </summary>
+    public async Task<UserOut> BindEmailAsync(EmailBindIn body)
+    {
+        var user = await _current.RequireAsync();
+        var email = (body.Email ?? string.Empty).Trim().ToLowerInvariant();
+        if (!MhopEmailCodeService.ValidEmail(email))
+            throw new DomainRuleException("邮箱格式不正确");
+        if (!await _emailCodes.VerifyCodeAsync(email, body.Code ?? string.Empty))
+            throw new DomainRuleException("验证码错误或已过期");
+        if (await _db.MhopUsers.AnyAsync(u => u.Email == email && u.Id != user.Id))
+            throw new DomainRuleException("该邮箱已被其他账号绑定");
+
+        user.Email = email;
+        user.EmailVerifiedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return MhopAuthMapper.ToUserOut(user);
     }

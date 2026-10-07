@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using ClouderyApi.Modules.Mhop.Infrastructure;
 using ClouderyApi.Modules.Mhop.Infrastructure.Persistence;
 using ClouderyApi.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -178,6 +179,8 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, pub);
         Assert.Equal(JsonValueKind.Null, pubBody.RootElement.GetProperty("phone").ValueKind);
         Assert.Equal(0, pubBody.RootElement.GetProperty("permissions").GetArrayLength());
+        // 公开资料不泄露邮箱验证状态（未验证账号）
+        Assert.False(pubBody.RootElement.GetProperty("email_verified").GetBoolean());
         // 邮箱是邮箱验证码登录的唯一凭据，公开接口不得下发（否则可按 id 遍历全站 PII）。
         Assert.Equal(JsonValueKind.Null, pubBody.RootElement.GetProperty("email").ValueKind);
 
@@ -200,6 +203,69 @@ public sealed class MhopAuthContractTests : IntegrationTestBase
             await SendJsonAsync(HttpMethod.Put, "/mhop/auth/me/phone", new { phone = "13900139000" }, second));
         Assert.Equal(HttpStatusCode.BadRequest, status);
         Assert.Equal("该手机号已被其他账号绑定", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task BindEmail_requires_a_valid_code_and_is_reflected_in_profile()
+    {
+        var token = await RegisterAsync("emailbind");
+
+        // 未发码 / 错码：一律 400，不泄露验证码状态
+        var (wrong, wrongBody) = await ReadAsync(
+            await SendJsonAsync(HttpMethod.Put, "/mhop/auth/me/email",
+                new { email = "bind@example.com", code = "000000" }, token));
+        Assert.Equal(HttpStatusCode.BadRequest, wrong);
+        Assert.Equal("验证码错误或已过期", wrongBody.RootElement.GetProperty("detail").GetString());
+
+        // 未验证前对外字段为 false
+        var (before, beforeBody) = await ReadAsync(await GetAsync("/mhop/auth/me", token));
+        Assert.Equal(HttpStatusCode.OK, before);
+        Assert.False(beforeBody.RootElement.GetProperty("email_verified").GetBoolean());
+
+        var (badFormat, badFormatBody) = await ReadAsync(
+            await SendJsonAsync(HttpMethod.Put, "/mhop/auth/me/email",
+                new { email = "not-an-email", code = "123456" }, token));
+        Assert.Equal(HttpStatusCode.BadRequest, badFormat);
+        Assert.Equal("邮箱格式不正确", badFormatBody.RootElement.GetProperty("detail").GetString());
+
+        // 正确验证码：写入邮箱并盖上已验证标记
+        await MhopEmailVerify.VerifyEmailAsync(Factory, Client, token, "bind@example.com");
+
+        var (mine, mineBody) = await ReadAsync(await GetAsync("/mhop/auth/me", token));
+        Assert.Equal(HttpStatusCode.OK, mine);
+        Assert.Equal("bind@example.com", mineBody.RootElement.GetProperty("email").GetString());
+        Assert.True(mineBody.RootElement.GetProperty("email_verified").GetBoolean());
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MhopDbContext>();
+        var user = await db.MhopUsers.AsNoTracking().SingleAsync(u => u.Username == "emailbind");
+        Assert.NotNull(user.EmailVerifiedAt);
+    }
+
+    [Fact]
+    public async Task BindEmail_rejects_email_already_bound_to_another_account()
+    {
+        // 直接把第一个账号的邮箱落到库里，避免与第二个账号抢同一个地址的 60 秒重发间隔
+        await RegisterAsync("emailbindA");
+        using (var seedScope = Factory.Services.CreateScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<MhopDbContext>();
+            var firstUser = await seedDb.MhopUsers.SingleAsync(u => u.Username == "emailbindA");
+            firstUser.Email = "shared@example.com";
+            firstUser.EmailVerifiedAt = DateTime.UtcNow;
+            await seedDb.SaveChangesAsync();
+        }
+
+        var second = await RegisterAsync("emailbindB");
+        var codes = Factory.Services.GetRequiredService<MhopEmailCodeService>();
+        var issued = await codes.IssueCodeAsync("shared@example.com");
+        Assert.NotNull(issued.Code);
+
+        var (status, body) = await ReadAsync(
+            await SendJsonAsync(HttpMethod.Put, "/mhop/auth/me/email",
+                new { email = "shared@example.com", code = issued.Code }, second));
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("该邮箱已被其他账号绑定", body.RootElement.GetProperty("detail").GetString());
     }
 
     [Fact]

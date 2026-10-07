@@ -25,6 +25,7 @@ public static class MhopAuthMapper
         Username = user.Username,
         Email = maskEmail ? null : user.Email,
         Phone = maskPhone ? null : user.Phone,
+        EmailVerified = user.EmailVerifiedAt is not null,
         Role = user.Role,
         Status = user.Status,
         Avatar = user.Avatar ?? string.Empty,

@@ -19,9 +19,9 @@ ClouderyApi 是驱动 Cloudery 生态各站点后端的 ASP.NET Core Web API 服
 | SCForge 资源平台 | `/scforge` | 生存战争插件、模组资源目录：浏览 / 搜索 / 详情 / 版本下载、发布资源与追加版本、评论与回复、资源与评论赞踩（写操作需 Casdoor 会话） |
 | 长链 | `/misc/longlink` | 将普通链接编码为 IPv6.arpa 长链，解码并安全跳转（仅允许 http/https） |
 | MHOP 公共 | `/mhop` | 健康检查、援助热线、在线人数心跳（匿名） |
-| MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料与手机号绑定（登录后统一签发 **JWT Bearer**） |
+| MHOP 认证 | `/mhop/auth` | 注册 / 用户名密码登录 / 邮箱验证码登录 / **Casdoor 统一身份登录** / 当前用户 / 资料、手机号与邮箱绑定（登录后统一签发 **JWT Bearer**） |
 | MHOP 论坛 | `/mhop/forum` | 板块、帖子、回复（先审后发）、**审核通过后**的 AI 自动回复、点赞；`/mine/*` 与作者自助编辑 / 撤回审核 / 重新提交 / 删除 |
-| MHOP 漂流瓶 | `/mhop/bottles` | 投瓶 / 捞瓶 / 我的瓶子 / 瓶内消息 / 结束与举报；敏感词同步拦截，AI 初筛通过后入海 |
+| MHOP 漂流瓶 | `/mhop/bottles` | 投瓶 / 捞瓶 / 我的瓶子 / 瓶内消息 / 结束与举报；投瓶 / 捞瓶 / 发消息要求邮箱已通过验证码验证；敏感词同步拦截，AI 初筛通过后入海 |
 | MHOP 量表 | `/mhop/assessments` | PHQ-9 / GAD-7 / 自由倾诉：服务端计分 + AI 解读 |
 | MHOP 后台 | `/mhop/admin` | 数据看板、帖子巡检与**删除**、回复审核与**删除**、AI 回复撤回/恢复/重新生成、用户管理与**删除**、AI 日志（需管理员） |
 | MHOP 上传 | `/mhop/upload` | 头像 / 帖子图片上传；存储可切换本地磁盘（`/mhop/uploads/*`）或**远端阿里云 OSS** |
@@ -559,7 +559,7 @@ MHOP（公益心理辅助平台）原本是独立的 FastAPI + SQLAlchemy 后端
 | ---- | ---- | ---- |
 | 公共 | `/mhop/health`、`/mhop/hotlines`、`/mhop/online/*` | 匿名 |
 | 认证 | `/mhop/auth/*` | 注册 / 登录 / 邮箱验证码 / Casdoor 统一身份登录匿名；其余 `Authorization: Bearer <JWT>` |
-| 论坛 | `/mhop/forum/*` | 读取匿名可访问；发帖 / 回复要求登录且已绑定手机号 |
+| 论坛 | `/mhop/forum/*` | 读取匿名可访问；发帖 / 回复要求登录且已绑定手机号、邮箱已通过验证码验证 |
 | 量表 | `/mhop/assessments/*` | 提交匿名可用；`/mine` 需登录 |
 | 后台 | `/mhop/admin/*` | 需 `role=admin`（`MhopAdminAttribute`） |
 | 上传 | `/mhop/upload/*` | 需登录 |

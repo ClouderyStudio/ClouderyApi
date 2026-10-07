@@ -50,6 +50,11 @@ public class MhopAuthController : MhopControllerBase
     public async Task<IActionResult> BindPhone([FromBody] PhoneBindIn body)
         => MhopOk(await _auth.BindPhoneAsync(body));
 
+    /// <summary>绑定并验证邮箱（发帖 / 回帖与漂流瓶的前置门槛）。</summary>
+    [HttpPut("me/email")]
+    public async Task<IActionResult> BindEmail([FromBody] EmailBindIn body)
+        => MhopOk(await _auth.BindEmailAsync(body));
+
     [HttpGet("users/{userId:int}")]
     public async Task<IActionResult> GetUserPublic(int userId)
         => MhopOk(await _auth.GetUserPublicAsync(userId));

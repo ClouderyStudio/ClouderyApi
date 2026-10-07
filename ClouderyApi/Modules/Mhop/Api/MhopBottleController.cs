@@ -9,7 +9,8 @@ namespace ClouderyApi.Modules.Mhop.Api;
 
 /// <summary>
 /// 漂流瓶（前台）：投瓶、捞瓶、匿名持续对话、结束、举报。
-/// 全部接口需登录；会话访问严格限定双方，越权一律 404（不泄露存在性）。
+/// 全部接口需登录；投瓶 / 捞瓶 / 发消息还要求邮箱已通过验证码验证，
+/// 结束与举报不设该门槛（举报是反滥用通道）。会话访问严格限定双方，越权一律 404（不泄露存在性）。
 /// </summary>
 [ApiController]
 [Route("mhop/bottles")]
@@ -24,7 +25,7 @@ public class MhopBottleController(
     [IpRateLimit(MaxRequests = 20, WindowSeconds = 300)]
     public async Task<IActionResult> Throw([FromBody] ThrowIn body)
     {
-        var user = await current.RequireAsync();
+        var user = await current.RequireEmailVerifiedAsync();
         var bottle = await bottles.ThrowAsync(user, body.Content);
         return MhopOk(new
         {
@@ -39,7 +40,7 @@ public class MhopBottleController(
     [HttpPost("pick")]
     public async Task<IActionResult> Pick()
     {
-        var user = await current.RequireAsync();
+        var user = await current.RequireEmailVerifiedAsync();
         var picked = await bottles.PickAsync(user);
         if (picked is null)
             return MhopStatus(409, new { detail = "海里暂时没有漂着的瓶子，先扔一个，稍后再来捞捞看吧" });
@@ -92,7 +93,7 @@ public class MhopBottleController(
     [IpRateLimit(MaxRequests = 30, WindowSeconds = 300)]
     public async Task<IActionResult> Send(int id, [FromBody] SendIn body)
     {
-        var user = await current.RequireAsync();
+        var user = await current.RequireEmailVerifiedAsync();
         var message = await bottles.SendMessageAsync(user, id, body.Content);
         return MhopOk(MhopBottleMapper.ToMessageOut(message, user.Id));
     }

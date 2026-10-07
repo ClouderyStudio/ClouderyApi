@@ -8,7 +8,7 @@ using ClouderyApi.Modules.Mhop.Application;
 namespace ClouderyApi.Modules.Mhop.Infrastructure;
 
 /// <summary>
-/// 当前登录用户解析，对应 Python 后端的 deps.py（可选鉴权 / 登录用户 / 管理员 / 已绑定手机号）。
+/// 当前登录用户解析，对应 Python 后端的 deps.py（可选鉴权 / 登录用户 / 管理员 / 已绑定手机号 / 已通过邮箱验证）。
 /// 结果按请求缓存在 HttpContext.Items，避免同一请求内重复查库。
 /// </summary>
 public sealed class MhopCurrentUserAccessor
@@ -71,11 +71,37 @@ public sealed class MhopCurrentUserAccessor
         return user;
     }
 
+    /// <summary>发帖 / 回帖门槛之一：已绑定手机号（不做短信验证）。</summary>
     public async Task<MhopUser> RequirePhoneVerifiedAsync()
     {
         var user = await RequireAsync();
         if (string.IsNullOrEmpty(user.Phone)) throw new MhopApiException(403, "发帖前请先在个人主页绑定手机号");
         return user;
+    }
+
+    /// <summary>漂流瓶投瓶 / 捞瓶 / 发消息门槛：邮箱已通过验证码验证。</summary>
+    public async Task<MhopUser> RequireEmailVerifiedAsync()
+    {
+        var user = await RequireAsync();
+        EnsureEmailVerified(user);
+        return user;
+    }
+
+    /// <summary>
+    /// 发帖 / 回帖门槛：手机号与邮箱验证码两项必须同时满足（手机号先校验，
+    /// 与历史文案保持一致；邮箱未验证时再抛 403）。
+    /// </summary>
+    public async Task<MhopUser> RequirePostingAsync()
+    {
+        var user = await RequirePhoneVerifiedAsync();
+        EnsureEmailVerified(user);
+        return user;
+    }
+
+    private static void EnsureEmailVerified(MhopUser user)
+    {
+        if (user.EmailVerifiedAt is null)
+            throw new MhopApiException(403, "请先在个人主页绑定邮箱并完成邮箱验证");
     }
 
     private async Task<MhopUser?> ResolveAsync(HttpContext context)

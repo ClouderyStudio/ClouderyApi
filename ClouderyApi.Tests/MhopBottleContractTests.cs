@@ -30,6 +30,14 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
         return (token, user.Id);
     }
 
+    /// <summary>注册并验证邮箱：投瓶 / 捞瓶 / 发消息需要该门槛。</summary>
+    private async Task<(string Token, int UserId)> RegisterEligibleAsync(string username, string email)
+    {
+        var (token, userId) = await RegisterAsync(username);
+        await MhopEmailVerify.VerifyEmailAsync(Factory, Client, token, email);
+        return (token, userId);
+    }
+
     /// <summary>直接落库种一个瓶子（不走 HTTP 投瓶，避免触发异步 AI 初筛，保证断言确定性）。</summary>
     private async Task<int> SeedBottleAsync(
         int throwerId,
@@ -107,9 +115,39 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Throw_pick_and_message_require_a_verified_email_but_end_and_report_do_not()
+    {
+        var (token, userId) = await RegisterAsync("bottle_noemail");
+
+        // 投瓶 / 捞瓶 / 发消息：邮箱未通过验证码验证一律 403
+        foreach (var (path, payload) in new (string, object?)[]
+                 {
+                     ("/mhop/bottles", new { content = "你好" }),
+                     ("/mhop/bottles/pick", new { }),
+                     ("/mhop/bottles/1/messages", new { content = "你好" }),
+                 })
+        {
+            var (status, body) = await JsonHttp.PostJsonAsync(Client, path, payload!, token);
+            Assert.Equal(HttpStatusCode.Forbidden, status);
+            Assert.Equal("请先在个人主页绑定邮箱并完成邮箱验证", body.RootElement.GetProperty("detail").GetString());
+        }
+
+        // 结束 / 举报不设邮箱门槛：举报是反滥用通道，不能因为没验证邮箱就关掉
+        var bottleId = await SeedBottleAsync(userId, MhopBottleStatus.Picked, "已经开始的对话");
+        var (end, endBody) = await JsonHttp.PostJsonAsync(Client, "/mhop/bottles/" + bottleId + "/end", new { }, token);
+        Assert.Equal(HttpStatusCode.OK, end);
+        Assert.True(endBody.RootElement.GetProperty("success").GetBoolean());
+
+        var (report, reportBody) = await JsonHttp.PostJsonAsync(Client, "/mhop/bottles/" + bottleId + "/report",
+            new { reason = "广告" }, token);
+        Assert.Equal(HttpStatusCode.OK, report);
+        Assert.True(reportBody.RootElement.GetProperty("success").GetBoolean());
+    }
+
+    [Fact]
     public async Task Throw_returns_bottle_shape_with_hotline_only_for_crisis_content()
     {
-        var (token, _) = await RegisterAsync("bottle_thrower");
+        var (token, _) = await RegisterEligibleAsync("bottle_thrower", "bottle_thrower@example.com");
 
         var (ok, body) = await JsonHttp.PostJsonAsync(Client, "/mhop/bottles", new { content = "今天有点累，但还好" }, token);
         Assert.Equal(HttpStatusCode.OK, ok);
@@ -165,7 +203,7 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
     [Fact]
     public async Task Pick_returns_409_when_sea_is_empty_even_with_own_bottles()
     {
-        var (pickerToken, pickerId) = await RegisterAsync("bottle_picker_empty");
+        var (pickerToken, pickerId) = await RegisterEligibleAsync("bottle_picker_empty", "bottle_picker_empty@example.com");
         await SeedBottleAsync(pickerId, MhopBottleStatus.Drifting, "自己扔的瓶子");
 
         var (sea, seaBody) = await JsonHttp.GetJsonAsync(Client, "/mhop/bottles/sea/count", pickerToken);
@@ -180,7 +218,7 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
     [Fact]
     public async Task Pick_claims_a_drifting_bottle_and_details_hide_identity()
     {
-        var (pickerToken, _) = await RegisterAsync("bottle_picker");
+        var (pickerToken, _) = await RegisterEligibleAsync("bottle_picker", "bottle_picker@example.com");
         var (intruderToken, _) = await RegisterAsync("bottle_intruder");
         const int throwerId = 4242;
         var bottleId = await SeedBottleAsync(throwerId, MhopBottleStatus.Drifting, "海里的秘密");
@@ -223,8 +261,8 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
     [Fact]
     public async Task Conversation_flow_tracks_unread_after_id_and_end_state()
     {
-        var (throwerToken, throwerId) = await RegisterAsync("bottle_conv_thrower");
-        var (pickerToken, _) = await RegisterAsync("bottle_conv_picker");
+        var (throwerToken, throwerId) = await RegisterEligibleAsync("bottle_conv_thrower", "bottle_conv_thrower@example.com");
+        var (pickerToken, _) = await RegisterEligibleAsync("bottle_conv_picker", "bottle_conv_picker@example.com");
         var bottleId = await SeedBottleAsync(throwerId, MhopBottleStatus.Drifting, "海里的秘密");
 
         // 捞起前不能举报
@@ -300,8 +338,8 @@ public sealed class MhopBottleContractTests : IntegrationTestBase
     [Fact]
     public async Task Hidden_messages_are_not_delivered_and_pending_conversation_is_not_pickable()
     {
-        var (throwerToken, throwerId) = await RegisterAsync("bottle_hidden_thrower");
-        var (pickerToken, pickerId) = await RegisterAsync("bottle_hidden_picker");
+        var (throwerToken, throwerId) = await RegisterEligibleAsync("bottle_hidden_thrower", "bottle_hidden_thrower@example.com");
+        var (pickerToken, pickerId) = await RegisterEligibleAsync("bottle_hidden_picker", "bottle_hidden_picker@example.com");
         var bottleId = await SeedBottleAsync(throwerId, MhopBottleStatus.Picked, "已经开始的对话");
         await SeedMessageAsync(bottleId, throwerId, "可见消息");
         await SeedMessageAsync(bottleId, pickerId, "被隐藏的消息", hidden: true);

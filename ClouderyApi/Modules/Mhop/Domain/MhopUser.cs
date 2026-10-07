@@ -55,7 +55,13 @@ public class MhopUser : IHasDomainEvents
     [MaxLength(255)]
     public string? Email { get; set; }
 
-    /// <summary>手机号；发帖前必须绑定（不做短信验证）。</summary>
+    /// <summary>
+    /// 邮箱验证码校验通过的时间（UTC）；为空表示该邮箱尚未通过验证码验证。
+    /// 发帖 / 回帖与漂流瓶投瓶、捞瓶、发消息均要求该字段非空。
+    /// </summary>
+    public DateTime? EmailVerifiedAt { get; set; }
+
+    /// <summary>手机号；发帖 / 回帖前必须绑定（不做短信验证）。</summary>
     [MaxLength(20)]
     public string? Phone { get; set; }
 

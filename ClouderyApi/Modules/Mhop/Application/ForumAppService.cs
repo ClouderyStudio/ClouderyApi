@@ -160,7 +160,7 @@ public sealed class ForumAppService
 
     public async Task<PostOut> CreatePostAsync(PostIn body)
     {
-        var current = await _current.RequirePhoneVerifiedAsync();
+        var current = await _current.RequirePostingAsync();
         var content = ContentText.ForPost(body.Content);
         var board = BoardSlug.Create(body.Board);
 
@@ -179,7 +179,7 @@ public sealed class ForumAppService
 
     public async Task<ReplyOut> CreateReplyAsync(int postId, ReplyIn body)
     {
-        var current = await _current.RequirePhoneVerifiedAsync();
+        var current = await _current.RequirePostingAsync();
         var post = await _db.MhopPosts.FirstOrDefaultAsync(p => p.Id == postId);
         // 草稿仅作者可见，禁止他人（含作者本人）对其回复
         if (post is null || post.Status is ContentStatus.Rejected or ContentStatus.Draft)

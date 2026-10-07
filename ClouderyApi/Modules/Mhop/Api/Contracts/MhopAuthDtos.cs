@@ -39,6 +39,14 @@ public class PhoneBindIn
     [JsonPropertyName("phone")] public string Phone { get; set; } = string.Empty;
 }
 
+/// <summary>绑定并验证邮箱：验证码由匿名接口 POST /mhop/auth/email-code 下发。</summary>
+public class EmailBindIn
+{
+    [JsonPropertyName("email")] public string Email { get; set; } = string.Empty;
+
+    [JsonPropertyName("code")] public string Code { get; set; } = string.Empty;
+}
+
 public class ProfileUpdateIn
 {
     [JsonPropertyName("username")] public string Username { get; set; } = string.Empty;
@@ -56,6 +64,9 @@ public class UserOut
     public string? Email { get; set; }
 
     public string? Phone { get; set; }
+
+    /// <summary>邮箱是否已通过验证码验证（决定能否发帖 / 回帖与使用漂流瓶写操作）。</summary>
+    public bool EmailVerified { get; set; }
 
     public string Role { get; set; } = MhopUserRole.User;
 

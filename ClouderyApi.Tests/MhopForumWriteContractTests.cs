@@ -5,7 +5,7 @@ using ClouderyApi.Tests.TestSupport;
 namespace ClouderyApi.Tests;
 
 /// <summary>
-/// 发帖/回帖契约：鉴权与手机号门槛、201 状态码、敏感词命中后置为待复核（status=2）。
+/// 发帖/回帖契约：鉴权、手机号 + 邮箱验证码双重门槛、201 状态码、敏感词命中后置为待复核（status=2）。
 /// </summary>
 public sealed class MhopForumWriteContractTests : IntegrationTestBase
 {
@@ -22,6 +22,14 @@ public sealed class MhopForumWriteContractTests : IntegrationTestBase
         var token = await RegisterAsync(username);
         var (status, _) = await JsonHttp.PutJsonAsync(Client, "/mhop/auth/me/phone", new { phone }, token);
         Assert.Equal(HttpStatusCode.OK, status);
+        return token;
+    }
+
+    /// <summary>注册 → 绑手机 → 验证邮箱：满足发帖 / 回帖的全部门槛。</summary>
+    private async Task<string> RegisterEligibleAsync(string username, string phone, string email)
+    {
+        var token = await RegisterWithPhoneAsync(username, phone);
+        await MhopEmailVerify.VerifyEmailAsync(Factory, Client, token, email);
         return token;
     }
 
@@ -48,9 +56,22 @@ public sealed class MhopForumWriteContractTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Creating_post_requires_a_verified_email()
+    {
+        // 手机号门槛先判定：只绑手机号、未验证邮箱时被邮箱门槛拦下
+        var token = await RegisterWithPhoneAsync("forum_noemail", "13700137005");
+
+        var (status, body) = await JsonHttp.PostJsonAsync(Client, "/mhop/forum/posts",
+            new { content = "你好", board = "stress", is_anonymous = true }, token);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal("请先在个人主页绑定邮箱并完成邮箱验证", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
     public async Task Creating_post_validates_content_and_board()
     {
-        var token = await RegisterWithPhoneAsync("forum_invalid", "13700137001");
+        var token = await RegisterEligibleAsync("forum_invalid", "13700137001", "forum_invalid@example.com");
 
         var (empty, emptyBody) = await JsonHttp.PostJsonAsync(Client, "/mhop/forum/posts",
             new { content = "   ", board = "stress" }, token);
@@ -66,7 +87,7 @@ public sealed class MhopForumWriteContractTests : IntegrationTestBase
     [Fact]
     public async Task Created_post_is_pending_and_masked_then_sensitive_reply_is_held_for_review()
     {
-        var token = await RegisterWithPhoneAsync("forum_flow", "13700137002");
+        var token = await RegisterEligibleAsync("forum_flow", "13700137002", "forum_flow@example.com");
 
         var (created, createdBody) = await JsonHttp.PostJsonAsync(Client, "/mhop/forum/posts",
             new { content = "最近总是睡不好，想找人说说话。", board = "stress", is_anonymous = true }, token);
@@ -91,7 +112,7 @@ public sealed class MhopForumWriteContractTests : IntegrationTestBase
     [Fact]
     public async Task Replying_to_a_missing_post_returns_404()
     {
-        var token = await RegisterWithPhoneAsync("forum_missing", "13700137003");
+        var token = await RegisterEligibleAsync("forum_missing", "13700137003", "forum_missing@example.com");
 
         var (status, body) = await JsonHttp.PostJsonAsync(Client, "/mhop/forum/posts/987654/replies",
             new { content = "在吗", is_anonymous = true }, token);
@@ -103,7 +124,7 @@ public sealed class MhopForumWriteContractTests : IntegrationTestBase
     [Fact]
     public async Task Like_toggle_rejects_unknown_target_type()
     {
-        var token = await RegisterWithPhoneAsync("forum_like", "13700137004");
+        var token = await RegisterEligibleAsync("forum_like", "13700137004", "forum_like@example.com");
 
         var (status, body) = await JsonHttp.PostJsonAsync(Client, "/mhop/forum/likes/toggle",
             new { target_type = "bogus", target_id = 1 }, token);

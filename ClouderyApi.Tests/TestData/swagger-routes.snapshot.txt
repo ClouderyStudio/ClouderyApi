@@ -165,6 +165,7 @@ POST /zhuxs/Whitelists
 PUT /cloudery/Members/{id}
 PUT /exam/ExamPapers/{id}
 PUT /mhop/admin/users/{userId}/permissions
+PUT /mhop/auth/me/email
 PUT /mhop/auth/me/phone
 PUT /mhop/auth/profile
 PUT /mhop/forum/posts/{postId}
